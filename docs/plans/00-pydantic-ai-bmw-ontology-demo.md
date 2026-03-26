@@ -631,11 +631,11 @@ If a stage becomes blocked, mark it `BLOCKED`, write the reason in `Issues`, and
 | 2 | Add seed messages and SQLite repository | DONE | Added the 10-message BMW corpus, SQLite repository schema/write helpers, transaction support, and persistence tests. | `feat(pydantic-playground): add corpus and sqlite persistence` |
 | 3 | Implement ontology, extractor, and librarian agents | DONE | Added the shared model factory, three Pydantic AI agent builders with dynamic instructions, and agent builder tests. | `feat(pydantic-playground): add pydantic ai agents` |
 | 4 | Implement orchestration pipeline and CLI | DONE | Added sequential runner, CLI parsing, per-message progress output, and offline pipeline tests. | `feat(pydantic-playground): add sequential demo runner` |
-| 5 | Document and verify the demo | PENDING | | `docs(pydantic-playground): document demo workflow` |
+| 5 | Document and verify the demo | DONE | Added README runbook for offline and Gemini modes; verified `ruff`, `black`, offline CLI run, and `poetry run pytest`; offline `TestModel` path leaves ontology and fact tables empty. | `docs(pydantic-playground): document demo workflow` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED`
 
-Last stage completed: Implement orchestration pipeline and CLI
+Last stage completed: Document and verify the demo
 Last updated by: plan-runner-agent
 
 ---
