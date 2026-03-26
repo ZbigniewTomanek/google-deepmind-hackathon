@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "google-deepmind-hackathon"
 version = "0.1.0"
@@ -14,11 +18,23 @@ dev = [
     "pre-commit",
     "black",
     "flake8",
+    "pytest",
 ]
 
 [tool.black]
 line-length = 120
 target-version = ["py313"]
+
+[tool.poetry]
+packages = [{include = "pydantic_agents_playground", from = "src"}]
+
+[tool.poetry.group.dev.dependencies]
+black = "*"
+flake8 = "*"
+pre-commit = "*"
+pytest = "*"
+ruff = "*"
+ty = "*"
 
 [tool.ruff]
 line-length = 120
@@ -38,5 +54,11 @@ select = [
     "RUF",  # ruff-specific rules
 ]
 
-[tool.ty.src]
-root = "src"
+[tool.ty.environment]
+root = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
