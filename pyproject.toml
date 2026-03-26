@@ -9,6 +9,7 @@ description = "Google DeepMind x AI Tinkerers Hackathon - Warsaw 2026"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic-ai-slim[google]>=1.72.0",
+    "loguru>=0.7.3",
 ]
 
 [dependency-groups]
