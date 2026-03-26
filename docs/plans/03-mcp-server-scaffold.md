@@ -76,7 +76,7 @@ revise affected stages, and get user confirmation before continuing.
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | MCP package extensions & dependencies | DONE | Created directory structure, mcp_settings.py, __main__.py, server.py stub. Added fastmcp>=2.0, asyncpg, pydantic-settings, pytest-asyncio deps. FastMCP 3.1.1 installed, all imports verified. | `feat(mcp): add MCP package extensions, settings, and directory structure` |
-| 2 | FastMCP server with 3 tool stubs | PENDING | | |
+| 2 | FastMCP server with 3 tool stubs | DONE | Created server.py with FastMCP factory, health endpoint. Added remember/recall/discover tool stubs. All verifications pass. | `feat(mcp): add FastMCP server with remember/recall/discover tool stubs` |
 | 3 | Tool I/O schemas | PENDING | | |
 | 4 | Auth layer (dev-token + Google OAuth) | PENDING | | |
 | 5 | In-memory mock repository & role mapping | PENDING | | |

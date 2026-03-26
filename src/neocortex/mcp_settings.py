@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings
 
 
@@ -10,7 +12,7 @@ class MCPSettings(BaseSettings):
     server_name: str = "NeoCortex"
     server_host: str = "127.0.0.1"
     server_port: int = 8000
-    transport: str = "http"  # "http" | "stdio"
+    transport: Literal["stdio", "http", "sse", "streamable-http"] = "http"
 
     # Authentication — "none" | "dev_token" | "google_oauth"
     #  - none: no auth, all requests are anonymous
