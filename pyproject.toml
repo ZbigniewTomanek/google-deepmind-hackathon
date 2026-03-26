@@ -1,0 +1,42 @@
+[project]
+name = "google-deepmind-hackathon"
+version = "0.1.0"
+description = "Google DeepMind x AI Tinkerers Hackathon - Warsaw 2026"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic-ai-slim[google]>=1.72.0",
+]
+
+[dependency-groups]
+dev = [
+    "ty",
+    "ruff",
+    "pre-commit",
+    "black",
+    "flake8",
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py313"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+]
+
+[tool.ty.src]
+root = "src"
