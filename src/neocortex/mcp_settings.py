@@ -1,0 +1,31 @@
+from pydantic_settings import BaseSettings
+
+
+class MCPSettings(BaseSettings):
+    """MCP server configuration. Loaded from env vars with NEOCORTEX_ prefix."""
+
+    model_config = {"env_prefix": "NEOCORTEX_", "env_file": ".env", "env_file_encoding": "utf-8"}
+
+    # Server
+    server_name: str = "NeoCortex"
+    server_host: str = "127.0.0.1"
+    server_port: int = 8000
+    transport: str = "http"  # "http" | "stdio"
+
+    # Authentication — "none" | "dev_token" | "google_oauth"
+    #  - none: no auth, all requests are anonymous
+    #  - dev_token: static bearer token for testing (no browser flow needed)
+    #  - google_oauth: full Google OAuth via FastMCP OAuthProxy
+    auth_mode: str = "none"
+
+    # Dev-token auth (used when auth_mode = "dev_token")
+    dev_token: str = "dev-token-neocortex"  # Bearer token to accept
+    dev_user_id: str = "dev-user"  # Identity returned for the dev token
+
+    # Google OAuth (used when auth_mode = "google_oauth")
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    oauth_base_url: str = "http://localhost:8000"
+
+    # Feature flags
+    mock_db: bool = True  # Use in-memory mock until PG is wired

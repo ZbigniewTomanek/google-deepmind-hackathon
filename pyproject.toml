@@ -13,6 +13,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "fastmcp>=2.0",
 ]
 
 [dependency-groups]
@@ -30,6 +31,16 @@ dev = [
 line-length = 120
 target-version = ["py313"]
 
+[tool.poetry]
+packages = [{include = "pydantic_agents_playground", from = "src"}, {include = "neocortex", from = "src"}]
+
+[tool.poetry.group.dev.dependencies]
+black = "*"
+flake8 = "*"
+pre-commit = "*"
+pytest = "*"
+ruff = "*"
+ty = "*"
 [tool.ruff]
 line-length = 120
 target-version = "py313"
