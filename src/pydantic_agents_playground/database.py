@@ -6,10 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
+from loguru import logger
+
 from pydantic_agents_playground.schemas import (
     LibrarianPayload,
     OntologyClass,
     OntologyProperty,
+    PersistedEntity,
     PersistedFact,
     PersistedFactMention,
     SeedMessage,
@@ -25,11 +28,13 @@ class SQLiteRepository:
         self.db_path = db_path
         if db_path != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Opening SQLite database at {}", db_path)
         self.connection = sqlite3.connect(db_path)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
 
     def close(self) -> None:
+        logger.debug("Closing SQLite database at {}", self.db_path)
         self.connection.close()
 
     def __enter__(self) -> "SQLiteRepository":
@@ -41,15 +46,19 @@ class SQLiteRepository:
     @contextmanager
     def transaction(self) -> Iterator[None]:
         try:
+            logger.debug("Beginning SQLite transaction")
             self.connection.execute("BEGIN")
             yield
         except Exception:
             self.connection.rollback()
+            logger.exception("Rolled back SQLite transaction")
             raise
         else:
             self.connection.commit()
+            logger.debug("Committed SQLite transaction")
 
     def create_schema(self) -> None:
+        logger.info("Ensuring SQLite schema exists")
         self.connection.executescript("""
             CREATE TABLE IF NOT EXISTS messages (
                 message_id TEXT PRIMARY KEY,
@@ -144,6 +153,7 @@ class SQLiteRepository:
         self.connection.commit()
 
     def reset_database(self) -> None:
+        logger.warning("Resetting SQLite database tables")
         table_names = (
             "fact_mentions",
             "facts",
@@ -194,15 +204,54 @@ class SQLiteRepository:
             )
             for row in property_rows
         ]
+        logger.debug("Loaded ontology classes={} properties={}", len(classes), len(properties))
         return classes, properties
 
     def load_known_entity_ids(self) -> list[str]:
         rows = self.connection.execute("SELECT entity_id FROM entities ORDER BY entity_id").fetchall()
-        return [row["entity_id"] for row in rows]
+        entity_ids = [row["entity_id"] for row in rows]
+        logger.debug("Loaded {} known entity ids", len(entity_ids))
+        return entity_ids
+
+    def load_entities(self) -> list[PersistedEntity]:
+        rows = self.connection.execute("""
+            SELECT entity_id, label, class_id, canonical_name
+            FROM entities
+            ORDER BY entity_id
+            """).fetchall()
+        entities = [PersistedEntity.model_validate(dict(row)) for row in rows]
+        logger.debug("Loaded {} persisted entities", len(entities))
+        return entities
+
+    def load_canonical_fact_rows(self) -> list[dict[str, object]]:
+        rows = self.connection.execute("""
+            SELECT
+                fact_id,
+                subject_entity_id,
+                property_id,
+                value_type,
+                string_value,
+                number_value,
+                boolean_value,
+                date_value,
+                target_entity_id,
+                (
+                    SELECT COUNT(*)
+                    FROM fact_mentions
+                    WHERE fact_mentions.fact_id = facts.fact_id
+                ) AS mention_count
+            FROM facts
+            ORDER BY subject_entity_id, property_id, fact_id
+            """).fetchall()
+        fact_rows = [dict(row) for row in rows]
+        logger.debug("Loaded {} canonical fact rows", len(fact_rows))
+        return fact_rows
 
     def load_known_fact_signatures(self) -> list[str]:
         rows = self.connection.execute("SELECT fact_signature FROM facts ORDER BY fact_signature").fetchall()
-        return [row["fact_signature"] for row in rows]
+        fact_signatures = [row["fact_signature"] for row in rows]
+        logger.debug("Loaded {} known fact signatures", len(fact_signatures))
+        return fact_signatures
 
     def apply_librarian_payload(self, message_id: str, payload: LibrarianPayload) -> dict[str, int]:
         counts = {
@@ -247,6 +296,7 @@ class SQLiteRepository:
                 raise ValueError(f"Cannot insert fact mention without canonical fact: {fact_signature}")
             counts["fact_mentions"] += self._insert_fact_mention(fact_id, mention)
 
+        logger.info("Persisted payload for {} with counts={}", message_id, counts)
         return counts
 
     def record_processing_run(
@@ -259,6 +309,15 @@ class SQLiteRepository:
         fact_mention_count: int,
         summary: str,
     ) -> None:
+        logger.debug(
+            "Recording processing run for {} classes={} properties={} entities={} canonical_facts={} mentions={}",
+            message_id,
+            new_class_count,
+            new_property_count,
+            entity_count,
+            canonical_fact_count,
+            fact_mention_count,
+        )
         self.connection.execute(
             """
             INSERT INTO processing_runs (

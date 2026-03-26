@@ -1,6 +1,8 @@
 from collections.abc import Sequence
-from typing import cast
+from time import perf_counter
+from typing import Any, cast
 
+from loguru import logger
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
@@ -26,7 +28,9 @@ MODEL_PROVIDER = "google-gla"
 
 def build_model(use_test_model: bool):
     if use_test_model:
+        logger.info("Using TestModel for agent execution")
         return TestModel()
+    logger.info("Using GoogleModel model_name={} provider={}", MODEL_NAME, MODEL_PROVIDER)
     return GoogleModel(MODEL_NAME, provider=MODEL_PROVIDER)
 
 
@@ -209,3 +213,17 @@ def describe_fact_value(fact: ExtractedFact | PersistedFact | PersistedFactMenti
     if fact.value_type == "date":
         return fact.date_value or "missing-date"
     return fact.string_value or "missing-string"
+
+
+def run_stage[AgentDepsT, AgentOutputT](
+    agent: Agent[AgentDepsT, AgentOutputT],
+    prompt: str,
+    deps: AgentDepsT,
+    *,
+    stage_name: str,
+) -> Any:
+    logger.info("Starting {} stage", stage_name)
+    started_at = perf_counter()
+    result = agent.run_sync(prompt, deps=deps)
+    logger.info("{} stage finished in {:.2f}s", stage_name, perf_counter() - started_at)
+    return result
