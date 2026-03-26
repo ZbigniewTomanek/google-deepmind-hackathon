@@ -39,7 +39,7 @@ Repeat until all stages are DONE or a stage is BLOCKED.
 |---|-------|--------|-------|--------|
 | 1 | Docker Compose + SQL Migrations | DONE | Docker Compose with pgvector/pg16, 4 SQL migrations (extensions, schema, indexes, seed), .env files | `feat(storage): add Docker Compose...` |
 | 2 | Package Skeleton + PostgresService | DONE | Added asyncpg, pydantic-settings, pytest-asyncio deps; created src/neocortex/ with config.py and postgres_service.py | `feat(neocortex): add package skeleton...` |
-| 3 | GraphService — Ontology & Data CRUD | PENDING | | |
+| 3 | GraphService — Ontology & Data CRUD | DONE | Added models.py (Pydantic models for all entities) and graph_service.py (full CRUD for node_type, edge_type, node, edge, episode + neighbors) | `feat(neocortex): add GraphService...` |
 | 4 | GraphService — Search Methods | PENDING | | |
 | 5 | Integration Tests & Verification | PENDING | | |
 | 6 | Push to Remote | PENDING | | |
