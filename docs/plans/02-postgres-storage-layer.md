@@ -41,7 +41,7 @@ Repeat until all stages are DONE or a stage is BLOCKED.
 | 2 | Package Skeleton + PostgresService | DONE | Added asyncpg, pydantic-settings, pytest-asyncio deps; created src/neocortex/ with config.py and postgres_service.py | `feat(neocortex): add package skeleton...` |
 | 3 | GraphService — Ontology & Data CRUD | DONE | Added models.py (Pydantic models for all entities) and graph_service.py (full CRUD for node_type, edge_type, node, edge, episode + neighbors) | `feat(neocortex): add GraphService...` |
 | 4 | GraphService — Search Methods | DONE | Added search_by_vector, search_by_text, search_episodes_by_vector, search_with_neighbors, get_ontology_stats | `feat(neocortex): add vector, full-text, and graph-aware search to GraphService` |
-| 5 | Integration Tests & Verification | PENDING | | |
+| 5 | Integration Tests & Verification | DONE | conftest.py with session-scoped fixtures, 15 integration tests across 4 test files, pytest asyncio session loop scope | `test(neocortex): add integration tests...` |
 | 6 | Push to Remote | PENDING | | |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
