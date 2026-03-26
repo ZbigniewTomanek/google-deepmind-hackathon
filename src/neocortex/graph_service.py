@@ -321,6 +321,135 @@ class GraphService:
         )
         return [_record_to_dict(r) for r in rows]
 
+    # ── Search: Vector Similarity ────────────────────────────────
+
+    async def search_by_vector(self, embedding: list[float], limit: int = 10, type_id: int | None = None) -> list[dict]:
+        """Find nodes closest to the given embedding vector (cosine distance)."""
+        emb_str = str(embedding)
+        if type_id is not None:
+            rows = await self._pg.fetch(
+                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
+                          1 - (embedding <=> $1::vector) AS similarity
+                   FROM node
+                   WHERE embedding IS NOT NULL AND type_id = $2
+                   ORDER BY embedding <=> $1::vector
+                   LIMIT $3""",
+                emb_str,
+                type_id,
+                limit,
+            )
+        else:
+            rows = await self._pg.fetch(
+                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
+                          1 - (embedding <=> $1::vector) AS similarity
+                   FROM node
+                   WHERE embedding IS NOT NULL
+                   ORDER BY embedding <=> $1::vector
+                   LIMIT $2""",
+                emb_str,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    # ── Search: Full-Text (BM25 via tsvector) ────────────────────
+
+    async def search_by_text(self, query: str, limit: int = 10, type_id: int | None = None) -> list[dict]:
+        """Full-text search using PostgreSQL tsvector. Returns nodes ranked by ts_rank."""
+        if type_id is not None:
+            rows = await self._pg.fetch(
+                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
+                          ts_rank(tsv, plainto_tsquery('english', $1)) AS rank
+                   FROM node
+                   WHERE tsv @@ plainto_tsquery('english', $1) AND type_id = $2
+                   ORDER BY rank DESC
+                   LIMIT $3""",
+                query,
+                type_id,
+                limit,
+            )
+        else:
+            rows = await self._pg.fetch(
+                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
+                          ts_rank(tsv, plainto_tsquery('english', $1)) AS rank
+                   FROM node
+                   WHERE tsv @@ plainto_tsquery('english', $1)
+                   ORDER BY rank DESC
+                   LIMIT $2""",
+                query,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    # ── Search: Episodes by vector ───────────────────────────────
+
+    async def search_episodes_by_vector(
+        self, embedding: list[float], agent_id: str | None = None, limit: int = 10
+    ) -> list[dict]:
+        """Find episodes closest to the given embedding vector."""
+        emb_str = str(embedding)
+        if agent_id:
+            rows = await self._pg.fetch(
+                """SELECT id, agent_id, content, source_type, metadata, created_at,
+                          1 - (embedding <=> $1::vector) AS similarity
+                   FROM episode
+                   WHERE embedding IS NOT NULL AND agent_id = $2
+                   ORDER BY embedding <=> $1::vector
+                   LIMIT $3""",
+                emb_str,
+                agent_id,
+                limit,
+            )
+        else:
+            rows = await self._pg.fetch(
+                """SELECT id, agent_id, content, source_type, metadata, created_at,
+                          1 - (embedding <=> $1::vector) AS similarity
+                   FROM episode
+                   WHERE embedding IS NOT NULL
+                   ORDER BY embedding <=> $1::vector
+                   LIMIT $2""",
+                emb_str,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    # ── Search: Graph-aware neighbor expansion ───────────────────
+
+    async def search_with_neighbors(self, embedding: list[float], limit: int = 5) -> list[dict]:
+        """Vector search + expand results with immediate graph neighbors.
+        Returns primary hits annotated with their neighbors."""
+        hits = await self.search_by_vector(embedding, limit=limit)
+        results = []
+        for hit in hits:
+            neighbors = await self.get_neighbors(hit["id"])
+            hit["neighbors"] = neighbors
+            results.append(hit)
+        return results
+
+    # ── Ontology stats (for `discover` MCP tool) ─────────────────
+
+    async def get_ontology_stats(self) -> dict:
+        """Return ontology overview: type counts, node counts per type, edge counts per type."""
+        node_counts = await self._pg.fetch("""SELECT nt.name as type_name, count(n.id) as count
+               FROM node_type nt
+               LEFT JOIN node n ON n.type_id = nt.id
+               GROUP BY nt.id, nt.name
+               ORDER BY count DESC""")
+        edge_counts = await self._pg.fetch("""SELECT et.name as type_name, count(e.id) as count
+               FROM edge_type et
+               LEFT JOIN edge e ON e.type_id = et.id
+               GROUP BY et.id, et.name
+               ORDER BY count DESC""")
+        total_nodes = await self._pg.fetchval("SELECT count(*) FROM node")
+        total_edges = await self._pg.fetchval("SELECT count(*) FROM edge")
+        total_episodes = await self._pg.fetchval("SELECT count(*) FROM episode")
+        return {
+            "total_nodes": total_nodes,
+            "total_edges": total_edges,
+            "total_episodes": total_episodes,
+            "node_types": [dict(r) for r in node_counts],
+            "edge_types": [dict(r) for r in edge_counts],
+        }
+
     # ── Private helpers ──────────────────────────────────────────
 
     @staticmethod
