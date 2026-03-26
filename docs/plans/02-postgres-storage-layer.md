@@ -4,6 +4,17 @@
 
 Set up the foundational storage layer for the NeoCortex agent memory system. This includes a Docker Compose environment with PostgreSQL 16 (pgvector + tsvector), pre-generated SQL migrations, and a Python SDK with two service layers: `PostgresService` (connection management, health checks, migrations) and `GraphService` (ontology CRUD, node/edge/episode CRUD, basic search). This layer is the foundation on which the MCP memory server will be built.
 
+## Prerequisites
+
+Before starting, ensure the following are available on your machine:
+
+- **Docker** and **Docker Compose** installed and the Docker daemon running
+- **uv** package manager (used instead of pip/poetry)
+- **Python 3.13+** (see `.python-version`)
+- **Port 5432** is free (no other PostgreSQL instance running)
+
+Quick check: `docker compose version && uv --version && python3 --version`
+
 ## Execution Protocol
 
 To execute this plan, follow this loop for each stage:
@@ -31,6 +42,7 @@ Repeat until all stages are DONE or a stage is BLOCKED.
 | 3 | GraphService — Ontology & Data CRUD | PENDING | | |
 | 4 | GraphService — Search Methods | PENDING | | |
 | 5 | Integration Tests & Verification | PENDING | | |
+| 6 | Push to Remote | PENDING | | |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
@@ -48,7 +60,7 @@ Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 ```yaml
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.0-pg16
     container_name: neocortex-postgres
     environment:
       POSTGRES_DB: neocortex
@@ -71,7 +83,7 @@ volumes:
 ```
 
 Key points:
-- `pgvector/pgvector:pg16` image has pgvector pre-installed
+- `pgvector/pgvector:0.8.0-pg16` image has pgvector pre-installed (pinned for reproducibility)
 - Named volume `pgdata` for local persistence across restarts
 - `migrations/init/` mounted to `/docker-entrypoint-initdb.d` — PostgreSQL runs these `.sql` files alphabetically on first init only
 - Health check ensures container reports healthy only when PG is accepting connections
@@ -164,10 +176,10 @@ CREATE TABLE _migration (
 -- Indexes for search and traversal
 -- =============================================================
 
--- Vector similarity search (cosine) on nodes
+-- Vector similarity search (cosine) on nodes — HNSW works on empty tables
 CREATE INDEX idx_node_embedding ON node
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
+    USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 -- Full-text search (GIN) on auto-generated tsvector
 CREATE INDEX idx_node_tsv ON node USING GIN (tsv);
@@ -184,10 +196,10 @@ CREATE INDEX idx_edge_source_type ON edge (source_id, type_id);
 -- Episode lookup by agent + time
 CREATE INDEX idx_episode_agent ON episode (agent_id, created_at DESC);
 
--- Vector similarity search on episodes
+-- Vector similarity search on episodes — HNSW works on empty tables
 CREATE INDEX idx_episode_embedding ON episode
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
+    USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 -- Ontology lookups by name
 CREATE INDEX idx_node_type_name ON node_type (name);
@@ -197,7 +209,7 @@ CREATE INDEX idx_edge_type_name ON edge_type (name);
 CREATE INDEX idx_node_type ON node (type_id);
 ```
 
-**Important**: IVFFlat indexes require data to be present for effective training. On an empty database, the index is created but will be suboptimal. For production, consider running `REINDEX` after initial data load, or switching to HNSW (`WITH (m = 16, ef_construction = 64)`) which doesn't require training. For hackathon MVP, IVFFlat with `lists = 100` is fine — if the table has fewer rows than lists, PG silently falls back to sequential scan.
+**Note**: HNSW indexes are used instead of IVFFlat because they work correctly on empty tables (no training data needed) and perform well on small datasets. For very large datasets (millions of rows), consider switching to IVFFlat with appropriate `lists` parameter after initial data load.
 
 #### 1.5 Create `migrations/init/004_seed_ontology.sql`
 
@@ -233,21 +245,35 @@ INSERT INTO edge_type (name, description) VALUES
 ON CONFLICT (name) DO NOTHING;
 ```
 
-#### 1.6 Create `.env` file (gitignored) and update `.gitignore`
+#### 1.6 Create `.env.example` (committed) and `.env` (gitignored), update `.gitignore`
 
-`.env`:
+`.env.example` (committed to git — documents required env vars):
 ```
-POSTGRES_DSN=postgresql://neocortex:neocortex@localhost:5432/neocortex
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=neocortex
+POSTGRES_PASSWORD=neocortex
+POSTGRES_DATABASE=neocortex
 ```
 
-Add to `.gitignore`:
+`.env` (gitignored — copy from `.env.example` and adjust if needed):
 ```
-# Environment
-.env
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=neocortex
+POSTGRES_PASSWORD=neocortex
+POSTGRES_DATABASE=neocortex
+```
 
+These env vars are loaded by `PostgresConfig` via pydantic-settings (prefix `POSTGRES_`). The defaults match the Docker Compose config, so `.env` is only needed if you change credentials.
+
+Add to `.gitignore` (if not already present):
+```
 # Docker volumes (should not be committed)
 pgdata/
 ```
+
+Note: `.env` is already in the existing `.gitignore`.
 
 ### Verification
 
@@ -273,7 +299,7 @@ pgdata/
 
 #### 2.1 Update `pyproject.toml`
 
-Add new dependencies:
+Add new dependencies to `[project] dependencies`:
 
 ```toml
 dependencies = [
@@ -285,16 +311,7 @@ dependencies = [
 ]
 ```
 
-Update packages to include neocortex:
-```toml
-[tool.poetry]
-packages = [
-    {include = "pydantic_agents_playground", from = "src"},
-    {include = "neocortex", from = "src"},
-]
-```
-
-Add pytest-asyncio to dev deps:
+Add pytest-asyncio to dev deps in `[dependency-groups]`:
 ```toml
 [dependency-groups]
 dev = [
@@ -307,6 +324,8 @@ dev = [
     "pytest-asyncio",
 ]
 ```
+
+**Note**: No package discovery changes needed — `[tool.setuptools.packages.find] where = ["src"]` already auto-discovers any package under `src/` with an `__init__.py`. The `[tool.poetry]` section in `pyproject.toml` is vestigial (build system is setuptools); do not modify it.
 
 #### 2.2 Create package structure
 
@@ -334,7 +353,7 @@ from pydantic_settings import BaseSettings
 class PostgresConfig(BaseSettings):
     """PostgreSQL connection configuration."""
 
-    model_config = {"env_prefix": "POSTGRES_"}
+    model_config = {"env_prefix": "POSTGRES_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
     host: str = "localhost"
     port: int = 5432
@@ -426,7 +445,7 @@ class PostgresService:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(query, *args)
 
-    async def fetchval(self, query: str, *args):
+    async def fetchval(self, query: str, *args) -> object:
         """Execute a query and return a single value."""
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, *args)
@@ -570,7 +589,9 @@ class GraphService:
             return None
         row = await self._pg.fetchrow(
             "UPDATE node_type SET name = $1, description = $2 WHERE id = $3 RETURNING *",
-            name or current.name, description if description is not None else current.description, id,
+            name if name is not None else current.name,
+            description if description is not None else current.description,
+            id,
         )
         return NodeType(**dict(row))
 
@@ -605,7 +626,9 @@ class GraphService:
             return None
         row = await self._pg.fetchrow(
             "UPDATE edge_type SET name = $1, description = $2 WHERE id = $3 RETURNING *",
-            name or current.name, description if description is not None else current.description, id,
+            name if name is not None else current.name,
+            description if description is not None else current.description,
+            id,
         )
         return EdgeType(**dict(row))
 
@@ -678,7 +701,7 @@ class GraphService:
                 updated_at = now()
                WHERE id = $5
                RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
-            name or current.name,
+            name if name is not None else current.name,
             content if content is not None else current.content,
             props_json,
             emb_str,
@@ -788,9 +811,8 @@ class GraphService:
 
     # ── Neighbors (graph traversal helper) ───────────────────────
 
-    async def get_neighbors(self, node_id: int, depth: int = 1) -> list[dict]:
-        """Get neighboring nodes up to `depth` hops. Returns list of dicts with node info and edge metadata."""
-        # Single-hop for now; multi-hop can use recursive CTE
+    async def get_neighbors(self, node_id: int) -> list[dict]:
+        """Get immediate neighboring nodes (1-hop). Returns list of dicts with node info and edge metadata."""
         rows = await self._pg.fetch(
             """SELECT
                 n.id, n.name, n.type_id, n.content, n.source, n.created_at,
@@ -845,10 +867,10 @@ class GraphService:
 - [ ] `uv run ruff check src/neocortex/` passes
 - [ ] `uv run black --check src/neocortex/` passes
 - [ ] `uv run python -c "from neocortex.graph_service import GraphService; print('import OK')"` succeeds
-- [ ] Manual smoke test: start Docker, run a small async script that creates a node_type, node, edge_type, edge, and episode, then reads them back. Script outline:
+- [ ] Manual smoke test: start Docker (`docker compose up -d`), create a temporary script, run it, verify output, then delete it before committing. The script should create a node_type, node, edge_type, edge, and episode, then read them back:
 
 ```python
-# tests/smoke_graph.py (manual, not committed — just for verification)
+# /tmp/smoke_graph.py (temporary — run then delete, do NOT commit)
 import asyncio
 from neocortex.postgres_service import PostgresService
 from neocortex.graph_service import GraphService
@@ -869,6 +891,8 @@ async def main():
 
 asyncio.run(main())
 ```
+
+Run with `uv run python /tmp/smoke_graph.py`. Expected: node types list includes seed data, node and episode created successfully. Delete the script after verification.
 
 ### Commit
 
@@ -919,7 +943,6 @@ Append these methods to the `GraphService` class:
 
     async def search_by_text(self, query: str, limit: int = 10, type_id: int | None = None) -> list[dict]:
         """Full-text search using PostgreSQL tsvector. Returns nodes ranked by ts_rank."""
-        tsquery = " & ".join(query.strip().split())  # simple AND query
         if type_id is not None:
             rows = await self._pg.fetch(
                 """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
@@ -974,14 +997,14 @@ Append these methods to the `GraphService` class:
     # ── Search: Graph-aware neighbor expansion ───────────────────
 
     async def search_with_neighbors(
-        self, embedding: list[float], limit: int = 5, expand_depth: int = 1
+        self, embedding: list[float], limit: int = 5
     ) -> list[dict]:
-        """Vector search + expand results with graph neighbors.
-        Returns primary hits annotated with their immediate neighbors."""
+        """Vector search + expand results with immediate graph neighbors.
+        Returns primary hits annotated with their neighbors."""
         hits = await self.search_by_vector(embedding, limit=limit)
         results = []
         for hit in hits:
-            neighbors = await self.get_neighbors(hit["id"], depth=expand_depth)
+            neighbors = await self.get_neighbors(hit["id"])
             hit["neighbors"] = neighbors
             results.append(hit)
         return results
@@ -1020,10 +1043,10 @@ Append these methods to the `GraphService` class:
 
 - [ ] `uv run ruff check src/neocortex/` passes
 - [ ] `uv run black --check src/neocortex/` passes
-- [ ] Manual smoke test with Docker running: create nodes with dummy 768-dim embeddings, then call `search_by_vector`, `search_by_text`, and `get_ontology_stats`. Verify results are returned and ranked.
+- [ ] Manual smoke test with Docker running: create a temporary script, run it, verify output, then delete it. It should create nodes with dummy 768-dim embeddings, then call `search_by_vector`, `search_by_text`, and `get_ontology_stats`.
 
 ```python
-# Quick verification snippet (not committed)
+# /tmp/smoke_search.py (temporary — run then delete, do NOT commit)
 import asyncio
 from neocortex.postgres_service import PostgresService
 from neocortex.graph_service import GraphService
@@ -1054,6 +1077,8 @@ async def main():
 asyncio.run(main())
 ```
 
+Run with `uv run python /tmp/smoke_search.py`. Expected: vector search returns VecA first, text search returns PostgreSQL first, stats show correct counts. Delete the script after verification.
+
 ### Commit
 
 `feat(neocortex): add vector, full-text, and graph-aware search to GraphService`
@@ -1070,22 +1095,13 @@ asyncio.run(main())
 #### 5.1 Create `tests/conftest.py` with shared fixtures
 
 ```python
-import asyncio
-import pytest
 import pytest_asyncio
 from neocortex.config import PostgresConfig
 from neocortex.postgres_service import PostgresService
 from neocortex.graph_service import GraphService
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def pg_service():
     """Session-scoped PostgresService connected to the Docker PostgreSQL."""
     config = PostgresConfig()
@@ -1095,18 +1111,26 @@ async def pg_service():
     await service.disconnect()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="session")
 async def graph_service(pg_service):
-    """Per-test GraphService. Cleans up created test data after each test."""
+    """Per-test GraphService. Cleans up created test data after each test.
+
+    IMPORTANT: All test data must follow naming conventions for cleanup:
+    - Nodes: use source="test_<something>"
+    - Episodes: use agent_id="test_<something>"
+    - Node types: use name="Test_<Something>"
+    - Edge types: use name="TEST_<SOMETHING>"
+    """
     gs = GraphService(pg_service)
     yield gs
-    # Cleanup: remove test data (nodes cascade to edges)
+    # Cleanup: remove test data (edges cascade from nodes via ON DELETE CASCADE)
     await pg_service.execute("DELETE FROM episode WHERE agent_id LIKE 'test_%'")
-    await pg_service.execute("DELETE FROM edge WHERE properties::text LIKE '%test_%'")
     await pg_service.execute("DELETE FROM node WHERE source LIKE 'test_%'")
     await pg_service.execute("DELETE FROM node_type WHERE name LIKE 'Test_%'")
     await pg_service.execute("DELETE FROM edge_type WHERE name LIKE 'TEST_%'")
 ```
+
+**Note**: This `conftest.py` only provides fixtures for neocortex integration tests. Existing tests in `tests/` (e.g., `test_agents.py`, `test_database.py`) are unaffected — they don't use these fixtures. If running `uv run pytest tests/ -v`, all tests (old and new) will run together; ensure Docker is up so neocortex tests pass.
 
 #### 5.2 Create `tests/test_postgres_service.py`
 
@@ -1299,6 +1323,7 @@ Add to `pyproject.toml`:
 ```toml
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
 ```
 
@@ -1312,6 +1337,58 @@ testpaths = ["tests"]
 ### Commit
 
 `test(neocortex): add integration tests for PostgresService and GraphService`
+
+---
+
+## Stage 6: Push to Remote
+
+**Goal**: Push all committed changes from Stages 1-5 to the remote repository.
+**Dependencies**: Stage 5 (all tests passing)
+
+### Steps
+
+#### 6.1 Verify all stages are DONE
+
+Check the progress tracker above. All stages 1-5 must be DONE. If any stage is BLOCKED, do not push — stop and report.
+
+#### 6.2 Verify clean working tree
+
+```bash
+git status
+```
+
+There should be no uncommitted changes (other than untracked files unrelated to this plan). If there are uncommitted changes related to this plan, something was missed — go back and fix.
+
+#### 6.3 Verify commit history
+
+```bash
+git log --oneline -10
+```
+
+You should see 5 commits from this plan (one per stage). Verify the messages match the expected commits from each stage.
+
+#### 6.4 Push to remote
+
+```bash
+git push origin main
+```
+
+If the push is rejected (e.g., remote has diverged), pull with rebase first:
+```bash
+git pull --rebase origin main
+```
+
+Then re-run the test suite (`uv run pytest tests/ -v`) to ensure the rebase didn't break anything, and push again.
+
+### Verification
+
+- [ ] `git push` succeeds without errors
+- [ ] `git log --oneline -5` matches the expected commits from Stages 1-5
+- [ ] Remote branch is up to date: `git status` shows "Your branch is up to date with 'origin/main'"
+
+### Commit
+
+No new commit — this stage only pushes existing commits.
 
 ---
 
@@ -1330,7 +1407,8 @@ After all stages are complete, run the full validation:
 ```
 project-root/
 ├── docker-compose.yml
-├── .env                              (gitignored)
+├── .env                              (gitignored, copy from .env.example)
+├── .env.example                      (committed, documents required env vars)
 ├── migrations/
 │   └── init/
 │       ├── 001_extensions.sql
@@ -1371,8 +1449,8 @@ _None yet._
 
 ### Decision: IVFFlat vs HNSW for vector indexes
 - **Options**: A) IVFFlat (requires training, `lists=100`) B) HNSW (no training, works well on small data)
-- **Chosen**: A (IVFFlat) for initial setup
-- **Rationale**: Matches the schema from the existing hackathon plan. On small datasets PG falls back to sequential scan anyway. Can switch to HNSW later if needed — it's just an index change, no schema migration required.
+- **Chosen**: B (HNSW) with `m=16, ef_construction=64`
+- **Rationale**: HNSW works correctly on empty tables (no training data needed), which is critical since Docker init scripts create indexes before any data exists. Performs well on small-to-medium datasets typical for a hackathon. Can switch to IVFFlat later for very large datasets if needed — it's just an index change, no schema migration required.
 
 ### Decision: Search methods scope
 - **Options**: A) Basic building blocks only B) Full hybrid scoring with weighted formula
