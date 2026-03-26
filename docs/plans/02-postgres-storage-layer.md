@@ -37,7 +37,7 @@ Repeat until all stages are DONE or a stage is BLOCKED.
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | Docker Compose + SQL Migrations | PENDING | | |
+| 1 | Docker Compose + SQL Migrations | DONE | Docker Compose with pgvector/pg16, 4 SQL migrations (extensions, schema, indexes, seed), .env files | `feat(storage): add Docker Compose...` |
 | 2 | Package Skeleton + PostgresService | PENDING | | |
 | 3 | GraphService — Ontology & Data CRUD | PENDING | | |
 | 4 | GraphService — Search Methods | PENDING | | |
