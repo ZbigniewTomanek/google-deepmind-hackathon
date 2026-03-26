@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    container_name: neocortex-postgres
+    environment:
+      POSTGRES_DB: neocortex
+      POSTGRES_USER: neocortex
+      POSTGRES_PASSWORD: neocortex
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neocortex -d neocortex"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+    driver: local
