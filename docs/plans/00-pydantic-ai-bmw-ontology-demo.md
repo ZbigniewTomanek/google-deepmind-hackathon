@@ -627,13 +627,16 @@ If a stage becomes blocked, mark it `BLOCKED`, write the reason in `Issues`, and
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | Create package skeleton and shared schemas | PENDING | | `feat(pydantic-playground): add package skeleton and shared models` |
+| 1 | Create package skeleton and shared schemas | DONE | Added package skeleton, shared Pydantic schemas, packaging metadata, and a schema smoke test. | `feat(pydantic-playground): add package skeleton and shared models` |
 | 2 | Add seed messages and SQLite repository | PENDING | | `feat(pydantic-playground): add corpus and sqlite persistence` |
 | 3 | Implement ontology, extractor, and librarian agents | PENDING | | `feat(pydantic-playground): add pydantic ai agents` |
 | 4 | Implement orchestration pipeline and CLI | PENDING | | `feat(pydantic-playground): add sequential demo runner` |
 | 5 | Document and verify the demo | PENDING | | `docs(pydantic-playground): document demo workflow` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED`
+
+Last stage completed: Create package skeleton and shared schemas
+Last updated by: plan-runner-agent
 
 ---
 
