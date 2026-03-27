@@ -720,7 +720,7 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 4 | GraphRouter (Heuristic Routing) | TODO | |
 | 5 | Multi-Graph Adapter | DONE | Multi-schema adapter rewrite, recall provenance fields, discover graph aggregation, and Stage 5 tests added. |
 | 6 | Multi-Token Dev Auth | TODO | |
-| 7 | Server Wiring & Auto-Provisioning | TODO | |
+| 7 | Server Wiring & Auto-Provisioning | DONE | Wired `SchemaManager` and `GraphRouter` into server lifespan, auto-provisioned the shared graph at startup, and verified first-write agent graph creation. |
 | 8 | RLS Cleanup | TODO | |
 | 9 | Tests | TODO | |
 | 10 | E2E Validation & Smoke Test | TODO | |
@@ -738,10 +738,10 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 4 | GraphRouter (Heuristic Routing) | DONE | Added `GraphRouter` MVP routing heuristics with personal-first recall/discover fan-out and Stage 4 unit tests; `poetry run pytest` passed. | 2026-03-27 |
 | 5 | Multi-Graph Adapter | DONE | Rewrote the adapter for router-driven schema fan-out, added `RecallItem` provenance fields and discover graph aggregation, and verified with `poetry run pytest`. | 2026-03-27 |
 | 6 | Multi-Token Dev Auth | DONE | Added JSON-backed multi-token dev auth, mounted `dev_tokens.json` in Docker Compose, and added Stage 6 auth tests; `poetry run pytest` passed. | 2026-03-27 |
-| 7 | Server Wiring & Auto-Provisioning | PENDING | | 2026-03-27 |
+| 7 | Server Wiring & Auto-Provisioning | DONE | Wired `SchemaManager` and `GraphRouter` into server lifespan, auto-created `ncx_shared__knowledge` on startup, added a server lifespan integration test, and `poetry run pytest` passed. | 2026-03-27 |
 | 8 | RLS Cleanup | PENDING | | 2026-03-27 |
 | 9 | Tests | PENDING | | 2026-03-27 |
 | 10 | E2E Validation & Smoke Test | PENDING | | 2026-03-27 |
 
-**Last stage completed**: Multi-Token Dev Auth
+**Last stage completed**: Server Wiring & Auto-Provisioning
 **Last updated by**: plan-runner-agent

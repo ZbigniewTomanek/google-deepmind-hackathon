@@ -7,9 +7,11 @@ from neocortex.auth import create_auth
 from neocortex.config import PostgresConfig
 from neocortex.db.adapter import GraphServiceAdapter
 from neocortex.db.mock import InMemoryRepository
+from neocortex.graph_router import GraphRouter
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
 from neocortex.postgres_service import PostgresService
+from neocortex.schema_manager import SchemaManager
 
 
 def create_server(settings: MCPSettings | None = None) -> FastMCP:
@@ -28,8 +30,18 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
         await pg.connect()
         try:
             graph = GraphService(pg)
-            repo = GraphServiceAdapter(graph, pool=pg.pool, pg=pg)
-            yield {"repo": repo, "pg": pg, "graph": graph, "settings": settings}
+            schema_mgr = SchemaManager(pg)
+            await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
+            router = GraphRouter(schema_mgr, pg.pool)
+            repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg)
+            yield {
+                "repo": repo,
+                "pg": pg,
+                "graph": graph,
+                "schema_mgr": schema_mgr,
+                "router": router,
+                "settings": settings,
+            }
         finally:
             await pg.disconnect()
 
