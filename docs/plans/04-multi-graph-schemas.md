@@ -741,7 +741,7 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 7 | Server Wiring & Auto-Provisioning | DONE | Wired `SchemaManager` and `GraphRouter` into server lifespan, auto-created `ncx_shared__knowledge` on startup, added a server lifespan integration test, and `poetry run pytest` passed. | 2026-03-27 |
 | 8 | RLS Cleanup | DONE | Shared-schema RLS now provisions grants/policies only for shared graphs, shared reads use graph-scoped roles, and shared-schema/private-schema coverage was updated; `poetry run pytest` passed. | 2026-03-27 |
 | 9 | Tests | DONE | Added missing GraphRouter and multi-graph adapter coverage, added MCP multi-graph fixtures, and verified with `poetry run pytest` plus `uv run pytest tests/ -v`; `pytest-cov` was not available in the Poetry environment for the >80% coverage check. | 2026-03-27 |
-| 10 | E2E Validation & Smoke Test | PENDING | | 2026-03-27 |
+| 10 | E2E Validation & Smoke Test | DONE | Added `scripts/e2e_smoke_test.py`, validated live multi-agent isolation against the running server, updated the stale discover expectation, and verified with `poetry run pytest` plus `uv run pytest tests/ -v`. | 2026-03-27 |
 
-**Last stage completed**: Tests
+**Last stage completed**: E2E Validation & Smoke Test
 **Last updated by**: plan-runner-agent

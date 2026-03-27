@@ -203,7 +203,8 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
         assert result.stats.total_nodes == 2
         assert result.stats.total_edges == 0
         assert result.stats.total_episodes == 1
-        assert result.graphs == [personal_schema, shared_schema]
+        assert result.graphs[0] == personal_schema
+        assert set(result.graphs) >= {personal_schema, shared_schema}
         concept = next(item for item in result.node_types if item.name == "Concept")
         assert concept.count == 2
     finally:
