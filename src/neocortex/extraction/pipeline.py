@@ -152,6 +152,9 @@ async def _persist_payload(
                 if h:
                     entity_embeddings[i] = batch_results[batch_idx]
                     batch_idx += 1
+            assert batch_idx == len(batch_results), (
+                f"Embedding batch size mismatch: expected {batch_idx}, got {len(batch_results)}"
+            )
 
     # Persist entities as nodes
     name_to_node_id: dict[str, int] = {}

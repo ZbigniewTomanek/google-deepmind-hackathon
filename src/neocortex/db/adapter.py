@@ -154,14 +154,17 @@ class GraphServiceAdapter:
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM node_type WHERE name = $1", name
+                """INSERT INTO node_type (name, description) VALUES ($1, $2)
+                   ON CONFLICT (name) DO NOTHING
+                   RETURNING *""",
+                name,
+                description,
             )
             if row is not None:
                 return NodeType(**dict(row))
+            # Concurrent insert won — fetch the existing row
             row = await conn.fetchrow(
-                "INSERT INTO node_type (name, description) VALUES ($1, $2) RETURNING *",
-                name,
-                description,
+                "SELECT * FROM node_type WHERE name = $1", name
             )
             if row is None:
                 raise RuntimeError(f"Failed to create node type: {name}")
@@ -179,14 +182,17 @@ class GraphServiceAdapter:
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM edge_type WHERE name = $1", name
+                """INSERT INTO edge_type (name, description) VALUES ($1, $2)
+                   ON CONFLICT (name) DO NOTHING
+                   RETURNING *""",
+                name,
+                description,
             )
             if row is not None:
                 return EdgeType(**dict(row))
+            # Concurrent insert won — fetch the existing row
             row = await conn.fetchrow(
-                "INSERT INTO edge_type (name, description) VALUES ($1, $2) RETURNING *",
-                name,
-                description,
+                "SELECT * FROM edge_type WHERE name = $1", name
             )
             if row is None:
                 raise RuntimeError(f"Failed to create edge type: {name}")
@@ -254,7 +260,7 @@ class GraphServiceAdapter:
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
-                "FROM node WHERE name = $1 AND type_id = $2",
+                "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
                 name,
                 type_id,
             )
