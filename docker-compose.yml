@@ -17,6 +17,26 @@ services:
       timeout: 3s
       retries: 5
 
+  neocortex-mcp:
+    build:
+      context: .
+      dockerfile: docker/mcp/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      NEOCORTEX_TRANSPORT: http
+      NEOCORTEX_SERVER_HOST: "0.0.0.0"
+      NEOCORTEX_MOCK_DB: "false"
+      NEOCORTEX_AUTH_MODE: "none"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: neocortex
+      POSTGRES_PASSWORD: neocortex
+      POSTGRES_DATABASE: neocortex
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
     driver: local
