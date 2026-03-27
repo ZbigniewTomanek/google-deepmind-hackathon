@@ -1467,9 +1467,9 @@ GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
 | 5 | Wire Extraction into Remember & Ingest | DONE | remember tool enqueues extraction, EpisodeProcessor replaces StubProcessor, backward-compat shim, 9 tests |
 | 6 | Enhanced Recall with Graph Traversal | DONE | search_nodes on protocol/adapter/mock, GraphContext model, recall tool with traversal, recall_traversal_depth setting, 15 tests |
 | 7 | TUI, Discover & E2E Validation | DONE | TUI recall shows graph context trees, discover uses dot-leader format, E2E demo script, 9 integration tests |
-| 8 | CLI-Reproducible E2E Smoke Tests | PENDING | |
+| 8 | CLI-Reproducible E2E Smoke Tests | DONE | 6-step E2E script: ingest→wait→ontology→graph→recall→isolation, compatible with run_e2e.sh runner |
 
-- **Last stage completed**: Stage 7 — TUI, Discover & E2E Validation
+- **Last stage completed**: Stage 8 — CLI-Reproducible E2E Smoke Tests
 - **Last updated by**: plan-runner-agent
 - **Blocked**: —
 
