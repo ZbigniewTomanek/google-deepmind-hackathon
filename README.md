@@ -112,7 +112,7 @@ All planned components are implemented and tested. The system is functional end-
 | Storage | Graph CRUD, search, connection pooling, health checks |
 | Multi-graph | Schema manager, router, adapter fan-out, isolation |
 | Auth | Dev tokens, role mapping, RLS enforcement |
-| E2E | Multi-agent smoke test script (`scripts/e2e_smoke_test.py`) |
+| E2E | MCP multi-agent smoke test (`scripts/e2e_mcp_test.py`), ingestion API smoke test (`scripts/e2e_ingestion_test.py`) |
 
 ### POC: Pydantic AI Agent Pipeline — Complete
 

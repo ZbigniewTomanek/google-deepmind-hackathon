@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from neocortex.auth.tokens import load_token_map
 from neocortex.ingestion.routes import router
 from neocortex.ingestion.stub_processor import StubProcessor
 from neocortex.mcp_settings import MCPSettings
@@ -22,6 +23,7 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
         app.state.services_ctx = ctx
         app.state.processor = processor
         app.state.settings = settings
+        app.state.token_map = load_token_map(settings)
 
         try:
             yield

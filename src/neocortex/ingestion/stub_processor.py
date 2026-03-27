@@ -1,11 +1,18 @@
 import json
+import logging
 
 from neocortex.db.protocol import MemoryRepository
 from neocortex.ingestion.models import IngestionResult
 
+logger = logging.getLogger(__name__)
+
 
 class StubProcessor:
-    """Stub ingestion processor that stores raw episodes via MemoryRepository."""
+    """Stub ingestion processor that stores raw episodes via MemoryRepository.
+
+    Note: ``metadata`` is accepted but intentionally not persisted — a future
+    ``ExtractionPipeline`` implementation will handle metadata propagation.
+    """
 
     def __init__(self, repo: MemoryRepository) -> None:
         self._repo = repo
@@ -35,11 +42,12 @@ class StubProcessor:
             try:
                 await self._repo.store_episode(agent_id, json.dumps(event), source_type="ingestion_event")
                 stored += 1
-            except Exception as exc:
+            except Exception:
+                logger.exception("Event ingestion failed after %d/%d events", stored, len(events))
                 return IngestionResult(
                     status="partial",
                     episodes_created=stored,
-                    message=f"Failed after {stored}/{len(events)} events: {exc}",
+                    message=f"Failed after {stored}/{len(events)} events",
                 )
         return IngestionResult(
             status="stored",

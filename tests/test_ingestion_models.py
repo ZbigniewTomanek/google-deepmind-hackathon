@@ -20,6 +20,11 @@ def test_text_request_requires_text():
         TextIngestionRequest()  # ty: ignore[missing-argument]
 
 
+def test_text_request_rejects_empty_text():
+    with pytest.raises(ValidationError):
+        TextIngestionRequest(text="")
+
+
 def test_events_request_minimal():
     req = EventsIngestionRequest(events=[{"type": "click"}])
     assert len(req.events) == 1
@@ -34,6 +39,11 @@ def test_events_request_with_metadata():
 def test_events_request_requires_events():
     with pytest.raises(ValidationError):
         EventsIngestionRequest()  # ty: ignore[missing-argument]
+
+
+def test_events_request_rejects_empty_list():
+    with pytest.raises(ValidationError):
+        EventsIngestionRequest(events=[])
 
 
 def test_ingestion_result_stored():

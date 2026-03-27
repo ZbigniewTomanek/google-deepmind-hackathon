@@ -7,6 +7,7 @@ Hackathon project (Google DeepMind x AI Tinkerers, Warsaw 2026). MCP server prov
 ```
 src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
   server.py              # Server factory + async lifespan
+  services.py            # Shared service factory (create_services / shutdown_services)
   db/protocol.py         # MemoryRepository protocol — THE contract for all storage
   db/adapter.py          # GraphServiceAdapter — production impl (multi-schema fan-out)
   db/mock.py             # InMemoryRepository — test impl (no Docker needed)
@@ -15,6 +16,11 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
   graph_router.py        # Heuristic routing: which schema(s) per operation
   schema_manager.py      # Graph schema lifecycle (create/drop/list)
   auth/                  # Pluggable auth (none / dev_token / google_oauth)
+  ingestion/             # FastAPI bulk-ingestion REST API (:8001)
+    app.py               # App factory with lifespan (reuses create_services)
+    routes.py            # POST /ingest/text, /ingest/document, /ingest/events
+    protocol.py          # IngestionProcessor protocol
+    stub_processor.py    # Stores raw episodes via MemoryRepository
 
 src/pydantic_agents_playground/  # Standalone POC: 3-agent extraction pipeline (SQLite)
 migrations/init/         # Auto-applied on first Docker start (001-006)
@@ -28,9 +34,10 @@ For full layout, configuration reference, and how-to guides, see `docs/developme
 ```bash
 uv sync                                           # Install deps
 uv run pytest tests/ -v                            # Unit tests (no Docker needed)
-NEOCORTEX_MOCK_DB=true uv run python -m neocortex  # Run server with mock DB
+NEOCORTEX_MOCK_DB=true uv run python -m neocortex  # Run MCP server with mock DB
+NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion  # Run ingestion API with mock DB
 docker compose up -d postgres                      # Start PostgreSQL
-uv run python -m neocortex                         # Run server with real DB
+uv run python -m neocortex                         # Run MCP server with real DB
 ```
 
 ## Architecture Rules

@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# E2E smoke test coordinator for the multi-graph NeoCortex server.
+# E2E smoke test coordinator for the ingestion API.
 #
-# Starts PostgreSQL + MCP server, waits for readiness, runs the smoke test,
-# and tears everything down on exit.
+# Starts PostgreSQL + ingestion server, waits for readiness, runs the smoke
+# test, and tears everything down on exit.
 #
 # Usage:
-#   ./scripts/run_e2e.sh            # default: run locally (server as background process)
-#   ./scripts/run_e2e.sh --docker   # run everything via docker compose
+#   ./scripts/run_e2e_ingestion.sh            # default: run locally (server as background process)
+#   ./scripts/run_e2e_ingestion.sh --docker   # run everything via docker compose
 #
 # Environment overrides:
-#   NEOCORTEX_BASE_URL   (default: http://127.0.0.1:8000)
-#   KEEP_RUNNING=1       keep services up after test (skip teardown)
+#   NEOCORTEX_INGESTION_BASE_URL  (default: http://127.0.0.1:8001)
+#   KEEP_RUNNING=1                keep services up after test (skip teardown)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-BASE_URL="${NEOCORTEX_BASE_URL:-http://127.0.0.1:8000}"
+BASE_URL="${NEOCORTEX_INGESTION_BASE_URL:-http://127.0.0.1:8001}"
 HEALTH_URL="$BASE_URL/health"
 MAX_WAIT=60          # seconds to wait for server readiness
 SERVER_PID=""
@@ -40,7 +40,7 @@ cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
-        log "Stopped MCP server (PID $SERVER_PID)."
+        log "Stopped ingestion server (PID $SERVER_PID)."
     fi
 
     if [[ "$MODE" == "docker" ]]; then
@@ -89,8 +89,8 @@ if [[ "$MODE" == "docker" ]]; then
     docker compose up -d --build
     wait_for_healthy "$HEALTH_URL" "$MAX_WAIT"
 
-    log "Running E2E smoke test..."
-    uv run python scripts/e2e_smoke_test.py
+    log "Running ingestion E2E smoke test..."
+    uv run python scripts/e2e_ingestion_test.py
 else
     # ---------- Local mode: PG in Docker, server as local process -----------
     log "Starting PostgreSQL via docker compose..."
@@ -111,17 +111,17 @@ else
         fail "PostgreSQL did not become ready within ${MAX_WAIT}s."
     fi
 
-    log "Starting NeoCortex MCP server..."
+    log "Starting NeoCortex ingestion server..."
     NEOCORTEX_AUTH_MODE=dev_token \
     NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
     NEOCORTEX_MOCK_DB=false \
-    uv run python -m neocortex &
+    uv run python -m neocortex.ingestion &
     SERVER_PID=$!
 
     wait_for_healthy "$HEALTH_URL" "$MAX_WAIT"
 
-    log "Running E2E smoke test..."
-    uv run python scripts/e2e_smoke_test.py
+    log "Running ingestion E2E smoke test..."
+    uv run python scripts/e2e_ingestion_test.py
 fi
 
-ok "ALL E2E CHECKS PASSED"
+ok "ALL INGESTION E2E CHECKS PASSED"

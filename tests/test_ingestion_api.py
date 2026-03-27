@@ -77,6 +77,11 @@ def test_text_ingestion_invalid_token(auth_client):
     assert resp.status_code == 401
 
 
+def test_text_ingestion_empty_text_rejected(anon_client):
+    resp = anon_client.post("/ingest/text", json={"text": ""})
+    assert resp.status_code == 422
+
+
 # --- Document upload ---
 
 
@@ -144,6 +149,11 @@ def test_events_ingestion(anon_client):
     data = resp.json()
     assert data["status"] == "stored"
     assert data["episodes_created"] == 2
+
+
+def test_events_ingestion_empty_list_rejected(anon_client):
+    resp = anon_client.post("/ingest/events", json={"events": []})
+    assert resp.status_code == 422
 
 
 def test_events_ingestion_with_metadata(anon_client):

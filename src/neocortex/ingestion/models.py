@@ -4,12 +4,12 @@ from pydantic import BaseModel, Field
 
 
 class TextIngestionRequest(BaseModel):
-    text: str
+    text: str = Field(min_length=1)
     metadata: dict = Field(default_factory=dict)
 
 
 class EventsIngestionRequest(BaseModel):
-    events: list[dict]
+    events: list[dict] = Field(min_length=1)
     metadata: dict = Field(default_factory=dict)
 
 
