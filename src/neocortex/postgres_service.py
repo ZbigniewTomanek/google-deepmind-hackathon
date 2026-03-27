@@ -79,6 +79,9 @@ class PostgresService:
     async def apply_migration(self, name: str, sql: str) -> bool:
         """Apply a named migration if not already applied. Returns True if applied."""
         async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute("""CREATE TABLE IF NOT EXISTS _migration (
+                       id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+                       applied_at TIMESTAMPTZ DEFAULT now())""")
             already = await conn.fetchval("SELECT 1 FROM _migration WHERE name = $1", name)
             if already:
                 logger.debug("Migration '{}' already applied, skipping", name)

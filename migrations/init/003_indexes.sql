@@ -27,9 +27,5 @@ CREATE INDEX idx_episode_embedding ON episode
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
--- Ontology lookups by name
-CREATE INDEX idx_node_type_name ON node_type (name);
-CREATE INDEX idx_edge_type_name ON edge_type (name);
-
 -- Node filtering by type
 CREATE INDEX idx_node_type ON node (type_id);
