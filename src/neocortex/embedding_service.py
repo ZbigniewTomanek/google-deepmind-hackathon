@@ -14,7 +14,7 @@ class EmbeddingService:
     """
 
     def __init__(self, model: str | None = None, dimensions: int = 768) -> None:
-        self._model = model or "gemini-embedding-exp-03-07"
+        self._model = model or "gemini-embedding-001"
         self._dimensions = dimensions
         self._client = None
 
@@ -48,7 +48,7 @@ class EmbeddingService:
                 return None
             return self._normalize(list(values))
         except Exception:
-            logger.warning("Embedding API call failed for text (length={})", len(text))
+            logger.opt(exception=True).warning("Embedding API call failed for text (length={})", len(text))
             return None
 
     async def embed_batch(self, texts: list[str]) -> list[list[float] | None]:
@@ -69,7 +69,7 @@ class EmbeddingService:
                 return [None] * len(texts)
             return [self._normalize(list(emb.values)) if emb.values is not None else None for emb in embeddings]
         except Exception:
-            logger.warning("Batch embedding API call failed for {} texts", len(texts))
+            logger.opt(exception=True).warning("Batch embedding API call failed for {} texts", len(texts))
             return [None] * len(texts)
 
     @staticmethod

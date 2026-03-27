@@ -34,6 +34,8 @@ NeoCortex is structured as a layered system: MCP tools at the top provide a simp
 
 Both services use `create_services()` from `services.py` for initialization, sharing the same `MemoryRepository` protocol. The ingestion API uses a `StubProcessor` that stores raw episodes; a future `ExtractionPipeline` will replace it for richer processing.
 
+A **Developer TUI** (`python -m neocortex.tui`) provides an interactive terminal interface for testing. It connects to the MCP server via `fastmcp.Client` with streamable-HTTP transport and supports all three tools (remember, recall, discover).
+
 ## MCP Tools
 
 Agents interact with 3 high-level tools. They never operate on the graph directly.
@@ -77,7 +79,33 @@ Knowledge graph represented via normalized relational tables in PostgreSQL.
 | Semantic | pgvector cosine similarity on `node.embedding` (768 dimensions) |
 | Lexical | tsvector + GIN index for full-text search (BM25-like ranking) |
 | Graph traversal | JOINs on `edge` table with neighbor expansion |
-| Hybrid recall | Weighted combination: `0.4 * cosine + 0.3 * ts_rank + 0.3 * recency_decay` |
+| Hybrid recall | Weighted combination: `0.4 * vector_sim + 0.35 * ts_rank + 0.25 * recency_decay` (configurable, auto-redistributes when signals are missing) |
+
+## Embedding Service
+
+`EmbeddingService` (`embedding_service.py`) generates 768-dimensional normalized embeddings via the Gemini API. It is instantiated in `create_services()` and available to tools via `ctx.lifespan_context["embeddings"]`.
+
+| Aspect | Detail |
+|--------|--------|
+| Model | Configurable via `NEOCORTEX_EMBEDDING_MODEL` (default: `gemini-embedding-001`) |
+| Dimensions | 768 (MRL truncation from 3072, 75% storage savings) |
+| Normalization | L2 normalization after truncation per Gemini best practices |
+| Fallback | When `GOOGLE_API_KEY` is unset, `embed()` returns `None`; recall degrades to text-only |
+| Integration | `remember` generates and stores embedding per episode; `recall` embeds the query for hybrid scoring |
+
+## Hybrid Recall Scoring
+
+`scoring.py` implements the scoring pipeline used by `recall`. Each result receives a weighted combination of up to three signals:
+
+| Signal | Source | Weight (default) |
+|--------|--------|-------------------|
+| Vector similarity | `1 - (embedding <=> query_embedding)` via pgvector | 0.40 |
+| Text rank | `ts_rank(tsv, plainto_tsquery())` via tsvector | 0.35 |
+| Recency | Exponential decay: `2^(-hours_ago / half_life)`, half-life = 7 days | 0.25 |
+
+When a signal is unavailable (e.g., no embedding exists for a result, or episodes lack tsvector), its weight is **redistributed proportionally** to the remaining signals. This means the system degrades gracefully: text-only when no embeddings exist, vector+recency for episodes (which lack tsvector), and so on.
+
+All weights and the recency half-life are configurable via `NEOCORTEX_RECALL_WEIGHT_*` environment variables.
 
 ## Multi-Graph Architecture
 

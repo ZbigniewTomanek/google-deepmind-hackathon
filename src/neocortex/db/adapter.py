@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from neocortex.graph_router import GraphRouter
 
 
+def _escape_ilike(query: str) -> str:
+    """Escape special ILIKE characters for use with ``ESCAPE '\\'``."""
+    return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class GraphServiceAdapter:
     """Adapt GraphService to the MemoryRepository protocol."""
 
@@ -149,13 +154,13 @@ class GraphServiceAdapter:
 
         # 2. Vector search (new) — returns nodes with cosine similarity
         vector_hits: list[dict] = []
-        if query_embedding:
+        if query_embedding is not None:
             vector_hits = await self._graph.search_by_vector(query_embedding, limit=limit)
 
         # 3. Episode search — text (ILIKE, existing) + vector (new)
         episodes = await self._graph.list_episodes(agent_id=agent_id, limit=max(limit * 5, 20))
         vector_episodes: list[dict] = []
-        if query_embedding:
+        if query_embedding is not None:
             vector_episodes = await self._graph.search_episodes_by_vector(
                 query_embedding, agent_id=agent_id, limit=limit
             )
@@ -292,7 +297,7 @@ class GraphServiceAdapter:
                     self._settings.recall_vector_distance_threshold,
                     limit,
                 )
-                escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                escaped_query = _escape_ilike(query)
                 episode_rows = await conn.fetch(
                     """SELECT id, content, source_type, created_at,
                               CASE WHEN embedding IS NOT NULL
@@ -323,7 +328,7 @@ class GraphServiceAdapter:
                     query,
                     limit,
                 )
-                escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                escaped_query = _escape_ilike(query)
                 episode_rows = await conn.fetch(
                     """SELECT id, content, source_type, created_at,
                               NULL::double precision AS vector_sim

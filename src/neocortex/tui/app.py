@@ -81,6 +81,9 @@ class NeoCortexApp(App):
         super().__init__()
         self._server_url = server_url
         self._token = token
+        # Each operation opens/closes its own MCP session (stateless by design).
+        # This avoids stale-connection issues and keeps the TUI resilient to
+        # server restarts between operations.
         self._client = NeoCortexClient(base_url=server_url, token=token)
         self._current_mode = "remember"
 
