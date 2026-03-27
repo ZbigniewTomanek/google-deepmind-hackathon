@@ -38,9 +38,9 @@ GraphRouter (NEW)
     |  recall   -> fan-out across agent's graphs + shared, merge/rerank
     |  discover -> aggregate across accessible graphs
     v
-SchemaManager (NEW)             GraphService (MODIFIED)
-    |  create/drop/list            |  now schema-aware
-    |  schemas, provision          |  SET search_path per operation
+SchemaManager (NEW)             GraphService (UNCHANGED)
+    |  create/drop/list            |  admin-level CRUD (public schema)
+    |  schemas, provision          |  NOT used in multi-graph hot path
     |  tables + indexes            |
     v                              v
           PostgreSQL
@@ -52,21 +52,24 @@ SchemaManager (NEW)             GraphService (MODIFIED)
                                 episode                  episode   (+ RLS)
 ```
 
+**Key insight**: The adapter already executes raw SQL on scoped connections for `store_episode`, `recall`, and `get_stats`. GraphService is only used as a fallback when no pool is available (mock mode). The multi-graph adapter continues this pattern -- all hot-path queries are raw SQL on schema-scoped connections. GraphService stays unchanged as the admin API.
+
 ### Key Files Affected
 
 | File | Change |
 |------|--------|
 | `migrations/init/006_graph_registry.sql` | NEW: graph_registry table in public |
-| `migrations/init/007_schema_template.sql` | NEW: SQL template for graph schema provisioning |
+| `migrations/templates/graph_schema.sql` | NEW: SQL template for graph schema provisioning |
 | `src/neocortex/schema_manager.py` | NEW: Schema lifecycle management |
 | `src/neocortex/graph_router.py` | NEW: Heuristic routing layer |
-| `src/neocortex/graph_service.py` | MODIFY: schema-aware (search_path) |
-| `src/neocortex/postgres_service.py` | MODIFY: add schema-scoped connection helper |
-| `src/neocortex/db/adapter.py` | MODIFY: use GraphRouter instead of single GraphService |
-| `src/neocortex/db/scoped.py` | MODIFY: schema-scoped connections replace role-scoped |
+| `src/neocortex/db/adapter.py` | MODIFY: use GraphRouter for multi-schema fan-out |
+| `src/neocortex/db/scoped.py` | MODIFY: add schema-scoped connections alongside role-scoped |
 | `src/neocortex/db/protocol.py` | MINOR: protocol stays, implementations change |
 | `src/neocortex/server.py` | MODIFY: wire SchemaManager + GraphRouter in lifespan |
-| `src/neocortex/schemas/memory.py` | MINOR: add graph_name to RecallItem for provenance |
+| `src/neocortex/schemas/memory.py` | MODIFY: add source_kind + graph_name to RecallItem |
+| `src/neocortex/auth/dev.py` | MODIFY: multi-token auth from JSON file |
+| `src/neocortex/mcp_settings.py` | MODIFY: add dev_tokens_file setting |
+| `src/neocortex/auth/dependencies.py` | MODIFY: resolve agent_id from multi-token map |
 | `migrations/init/005_rls_roles.sql` | MODIFY: only apply RLS during shared schema provisioning |
 
 ---
@@ -90,7 +93,7 @@ SchemaManager (NEW)             GraphService (MODIFIED)
    );
    ```
 
-2. Create `migrations/init/007_schema_template.sql` -- a pure reference file (NOT executed at init). This is the DDL template that `SchemaManager` will execute dynamically for each new graph:
+2. Create `migrations/templates/graph_schema.sql` -- a pure reference file (NOT in `init/`, NOT auto-executed). This is the DDL template that `SchemaManager` will execute dynamically for each new graph:
    - `CREATE SCHEMA IF NOT EXISTS {schema_name}`
    - All table definitions from `002_schema.sql` but in the new schema
    - All indexes from `003_indexes.sql` but in the new schema
@@ -98,12 +101,12 @@ SchemaManager (NEW)             GraphService (MODIFIED)
    - Conditionally apply RLS from `005_rls_roles.sql` (only if `is_shared=True`)
    - Use `{schema_name}` placeholders for string substitution
 
-3. Update `docker-compose.yml`: ensure `006_graph_registry.sql` is applied at init (it already will be since it's in `migrations/init/`). The `007_schema_template.sql` should NOT be auto-applied -- rename or move it to indicate it's a template (e.g., `migrations/templates/graph_schema.sql`).
+3. Create `migrations/templates/` directory. Note: only files in `migrations/init/` are auto-applied by docker-entrypoint. The template is loaded programmatically by `SchemaManager`.
 
 ### Verification
 - `docker compose down -v && docker compose up -d` -- registry table exists
 - `\dt public.*` shows `graph_registry`
-- Template SQL file exists and contains valid DDL with `{schema_name}` placeholders
+- Template SQL file exists at `migrations/templates/graph_schema.sql` with `{schema_name}` placeholders
 
 ### Commit
 `feat(multi-graph): add graph registry table and schema provisioning template`
@@ -176,12 +179,12 @@ SchemaManager (NEW)             GraphService (MODIFIED)
 
 ## Stage 3: Schema-Scoped Connections
 
-**Goal**: Replace role-scoped connections (`SET LOCAL ROLE`) with schema-scoped connections (`SET search_path`). Keep role-scoping only for shared graphs.
+**Goal**: Add schema-scoped connections (`SET search_path`) alongside the existing role-scoped connections. Keep role-scoping only for shared graphs.
 
 ### Steps
 
 1. Modify `src/neocortex/db/scoped.py`:
-   - Rename `scoped_connection` to `role_scoped_connection` (keep for shared graphs)
+   - Keep existing `scoped_connection` (renamed to `role_scoped_connection`)
    - Add new `schema_scoped_connection(pool, schema_name)` context manager:
      ```python
      @asynccontextmanager
@@ -197,14 +200,14 @@ SchemaManager (NEW)             GraphService (MODIFIED)
      - If the schema is shared: also sets role via `SET LOCAL ROLE`
      - If per-agent schema: only sets search_path
 
-2. Add `_validate_schema_name(name)` -- must match `^ncx_[a-z0-9_]+$` pattern.
+2. Add `_validate_schema_name(name)` -- must match `^ncx_[a-z0-9]+__[a-z0-9_]+$` pattern (enforces the `ncx_{agent}__{purpose}` structure with required double-underscore separator).
 
 3. Modify `src/neocortex/postgres_service.py`:
    - Add helper: `async def execute_in_schema(self, schema_name: str, query: str, *args)`
    - This is convenience for one-off queries in a specific schema
 
 ### Verification
-- Unit test: `_validate_schema_name` accepts valid names, rejects bad ones
+- Unit test: `_validate_schema_name` accepts `ncx_alice__personal`, rejects `ncx___`, `ncx_`, `public`, `ncx_a`
 - Integration test: create schema, use `schema_scoped_connection`, verify queries hit correct schema
 - Integration test: shared schema uses both search_path AND role
 
@@ -213,45 +216,7 @@ SchemaManager (NEW)             GraphService (MODIFIED)
 
 ---
 
-## Stage 4: Schema-Aware GraphService
-
-**Goal**: Make `GraphService` operate within a specific schema by accepting a connection/schema parameter.
-
-### Steps
-
-1. Modify `src/neocortex/graph_service.py`:
-   - Add `schema_name: str | None = None` to `__init__`. When set, all queries use schema-qualified table names OR the service operates within a pre-scoped connection.
-   - **Approach**: Rather than schema-qualifying every table name in SQL (fragile), the `GraphService` should receive a pre-scoped `asyncpg.Connection` (where `search_path` is already set). This means `GraphService` methods should accept an optional `conn` parameter:
-     ```python
-     async def create_node(self, ..., conn: asyncpg.Connection | None = None) -> Node:
-         # If conn provided, use it (already scoped to correct schema)
-         # If not, use self._pg (legacy behavior, public schema)
-     ```
-   - Alternatively (simpler): Create a **factory** that produces a `GraphService` bound to a specific schema connection:
-     ```python
-     class ScopedGraphService:
-         """GraphService operating within a specific schema."""
-         def __init__(self, conn: asyncpg.Connection):
-             self._conn = conn
-         # Same methods as GraphService but use self._conn directly
-     ```
-   - **Recommended**: Use the connection-passing approach. Each method in `GraphService` gets an optional `conn` parameter. When `None`, it falls back to `self._pg` (current behavior). When provided, it uses the pre-scoped connection.
-
-2. This is a refactor of `GraphService` internals. External API stays the same but gains `conn` parameter on each method.
-
-3. Ensure all SQL queries use unqualified table names (which they already do). The `search_path` handles schema routing.
-
-### Verification
-- Existing tests still pass (conn=None falls back to current behavior)
-- New test: create schema, scope connection, create node via GraphService with conn -- verify node is in correct schema
-- Test: nodes in schema A are not visible when querying schema B
-
-### Commit
-`refactor(graph-service): add optional conn parameter for schema-scoped operations`
-
----
-
-## Stage 5: GraphRouter (Heuristic Routing Layer)
+## Stage 4: GraphRouter (Heuristic Routing Layer)
 
 **Goal**: New component that decides which graph schema(s) to use for each operation type. This is the brain that keeps tool API opaque.
 
@@ -316,13 +281,36 @@ SchemaManager (NEW)             GraphService (MODIFIED)
 
 ---
 
-## Stage 6: Multi-Graph Adapter
+## Stage 5: Multi-Graph Adapter
 
-**Goal**: Rewrite `GraphServiceAdapter` to use `GraphRouter` for multi-graph operations. This is the integration point where everything comes together.
+**Goal**: Rewrite `GraphServiceAdapter` to use `GraphRouter` for multi-graph operations. Fix `RecallItem` schema for mixed node/episode provenance. Use parallel fan-out for recall.
 
 ### Steps
 
-1. Rewrite `src/neocortex/db/adapter.py`:
+1. Fix `src/neocortex/schemas/memory.py` -- `RecallItem` must handle both nodes and episodes cleanly:
+   ```python
+   class RecallItem(BaseModel):
+       item_id: int                          # was node_id -- generic ID (node or episode)
+       name: str
+       content: str
+       item_type: str                        # was node_type -- "Episode" or a node type name
+       score: float = Field(..., description="Hybrid relevance score")
+       source: str | None = None
+       source_kind: Literal["node", "episode"]  # NEW: disambiguates what item_id refers to
+       graph_name: str | None = None            # NEW: which graph schema this came from
+   ```
+   Note: `node_id` → `item_id` and `node_type` → `item_type` are renames. Update all references in adapter, tools, tests, and mock.
+
+2. Update `DiscoverResult`:
+   ```python
+   class DiscoverResult(BaseModel):
+       node_types: list[TypeInfo]
+       edge_types: list[TypeInfo]
+       stats: GraphStats
+       graphs: list[str] = []    # NEW: schemas accessible to this agent
+   ```
+
+3. Rewrite `src/neocortex/db/adapter.py`:
    ```python
    class GraphServiceAdapter:
        def __init__(self, graph: GraphService, router: GraphRouter,
@@ -335,26 +323,43 @@ SchemaManager (NEW)             GraphService (MODIFIED)
        async def store_episode(self, agent_id, content, context, source_type) -> int:
            schema = await self._router.route_store(agent_id)
            async with schema_scoped_connection(self._pool, schema) as conn:
-               # INSERT INTO episode using conn (search_path set to schema)
-               ...
+               row = await conn.fetchrow(
+                   """INSERT INTO episode (agent_id, content, source_type, metadata)
+                      VALUES ($1, $2, $3, $4::jsonb) RETURNING id""",
+                   agent_id, content, source_type, json.dumps(metadata),
+               )
+           return int(row["id"])
 
        async def recall(self, query, agent_id, limit) -> list[RecallItem]:
            schemas = await self._router.route_recall(agent_id)
-           all_results = []
-           for schema in schemas:
-               async with schema_scoped_connection(self._pool, schema) as conn:
-                   # Full-text + episode search in this schema
-                   results = await self._recall_in_schema(conn, query, schema, limit)
-                   all_results.extend(results)
+           # Parallel fan-out across schemas
+           tasks = [
+               self._recall_in_schema(schema, query, limit)
+               for schema in schemas
+           ]
+           results_per_schema = await asyncio.gather(*tasks)
+           all_results = [item for batch in results_per_schema for item in batch]
            # Deduplicate, re-rank, truncate to limit
            all_results.sort(key=lambda r: r.score, reverse=True)
            return all_results[:limit]
 
-       async def get_node_types(self) -> list[TypeInfo]:
+       async def _recall_in_schema(self, schema, query, limit) -> list[RecallItem]:
+           async with schema_scoped_connection(self._pool, schema) as conn:
+               # Full-text search on nodes
+               node_rows = await conn.fetch(...)
+               # ILIKE search on episodes
+               episode_rows = await conn.fetch(...)
+               # Type name lookup
+               type_rows = await conn.fetch("SELECT id, name FROM node_type")
+           type_names = {int(r["id"]): str(r["name"]) for r in type_rows}
+           # Build RecallItems with source_kind="node"|"episode" and graph_name=schema
+           ...
+
+       async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
            # Aggregate across all accessible schemas
            ...
 
-       async def get_edge_types(self) -> list[TypeInfo]:
+       async def get_edge_types(self, agent_id: str | None = None) -> list[TypeInfo]:
            ...
 
        async def get_stats(self, agent_id) -> GraphStats:
@@ -362,19 +367,103 @@ SchemaManager (NEW)             GraphService (MODIFIED)
            ...
    ```
 
-2. Add `graph_name` field to `RecallItem` schema for provenance (which graph did this result come from):
-   - Modify `src/neocortex/schemas/memory.py`: add `graph_name: str | None = None` to `RecallItem`
+4. Update `src/neocortex/db/protocol.py` -- `MemoryRepository` protocol signatures stay the same. The `RecallItem` field renames are transparent to callers since they access by name.
 
-3. Update `DiscoverResult` to include per-graph breakdown:
-   - Add `graphs: list[str]` field showing which graphs the agent has access to
+5. Update `src/neocortex/db/mock.py` (`InMemoryRepository`) -- adapt to the new `RecallItem` field names (`item_id`, `item_type`, `source_kind`).
+
+6. Update `src/neocortex/tools/discover.py` -- pass `graphs` list from router into `DiscoverResult`.
 
 ### Verification
 - Integration test: create 2 schemas, store data in each, recall merges results from both
-- Test: results include `graph_name` provenance
-- Test: discover aggregates stats across schemas
+- Test: results include `graph_name` provenance and correct `source_kind`
+- Test: discover aggregates stats across schemas and lists accessible graphs
 
 ### Commit
 `feat(multi-graph): rewrite adapter for multi-graph routing and fan-out recall`
+
+---
+
+## Stage 6: Multi-Token Dev Auth
+
+**Goal**: Replace the single dev-token with a JSON file mapping multiple tokens to agent IDs, so different agents can be tested without switching auth modes.
+
+### Steps
+
+1. Create `dev_tokens.json` at project root:
+   ```json
+   {
+     "alice-token": "alice",
+     "bob-token": "bob",
+     "shared-token": "shared",
+     "dev-token-neocortex": "dev-user"
+   }
+   ```
+
+2. Modify `src/neocortex/mcp_settings.py`:
+   ```python
+   class MCPSettings(BaseSettings):
+       # ... existing fields ...
+
+       # Dev-token auth (used when auth_mode = "dev_token")
+       dev_token: str = "dev-token-neocortex"       # DEPRECATED: kept for single-token compat
+       dev_user_id: str = "dev-user"                 # DEPRECATED: kept for single-token compat
+       dev_tokens_file: str = ""                      # Path to JSON mapping {token: agent_id}
+   ```
+
+3. Modify `src/neocortex/auth/dev.py`:
+   ```python
+   import json
+   from pathlib import Path
+
+   class DevTokenAuth(AuthProvider):
+       """Multi-token auth for development and agent testing."""
+
+       def __init__(self, settings: MCPSettings):
+           super().__init__(base_url=settings.oauth_base_url)
+           self._token_map: dict[str, str] = {}
+
+           # Load from JSON file if configured
+           if settings.dev_tokens_file:
+               tokens_path = Path(settings.dev_tokens_file)
+               if tokens_path.exists():
+                   self._token_map = json.loads(tokens_path.read_text())
+
+           # Fallback: single legacy token
+           if not self._token_map:
+               self._token_map = {settings.dev_token: settings.dev_user_id}
+
+       async def verify_token(self, token: str) -> AccessToken | None:
+           agent_id = self._token_map.get(token)
+           if agent_id is None:
+               return None
+
+           return AccessToken(
+               token=token,
+               client_id="neocortex-dev-client",
+               scopes=["openid"],
+               claims={"sub": agent_id},
+           )
+   ```
+
+4. Update `docker-compose.yml` for the `neocortex-mcp` service:
+   ```yaml
+   environment:
+     NEOCORTEX_AUTH_MODE: "dev_token"
+     NEOCORTEX_DEV_TOKENS_FILE: "/app/dev_tokens.json"
+   volumes:
+     - ./dev_tokens.json:/app/dev_tokens.json:ro
+   ```
+
+5. The `get_agent_id_from_context` in `dependencies.py` already extracts `claims["sub"]` from the token -- no changes needed there. The multi-token map makes `verify_token` return different `sub` claims per token.
+
+### Verification
+- Unit test: `DevTokenAuth` with multi-token file resolves alice-token → "alice", bob-token → "bob"
+- Unit test: unknown token returns `None`
+- Unit test: fallback to single legacy token when no file configured
+- Manual test: `curl -H "Authorization: Bearer alice-token" http://localhost:8000/...` resolves as agent "alice"
+
+### Commit
+`feat(auth): support multiple dev tokens mapped to agent IDs via JSON file`
 
 ---
 
@@ -389,6 +478,7 @@ SchemaManager (NEW)             GraphService (MODIFIED)
    @asynccontextmanager
    async def app_lifespan(server):
        if settings.mock_db:
+           # Mock mode: unchanged -- InMemoryRepository, no SchemaManager/Router
            repo = InMemoryRepository()
            yield {"repo": repo, "settings": settings}
            return
@@ -408,15 +498,16 @@ SchemaManager (NEW)             GraphService (MODIFIED)
            await pg.disconnect()
    ```
 
-2. The `GraphRouter.route_store()` already auto-creates the agent's personal graph on first use (via `SchemaManager.ensure_default_graphs`). No additional wiring needed for auto-provisioning.
+2. The `GraphRouter.route_store()` already auto-creates the agent's personal graph on first use. No additional wiring needed for auto-provisioning.
 
-3. Update `InMemoryRepository` to also support multi-graph semantics (or keep it simple with single-graph mock -- acceptable for testing).
+3. Mock mode (`InMemoryRepository`) is intentionally left as-is -- single-graph, no routing. It continues to work for unit tests via the `MemoryRepository` protocol. Multi-graph behavior is only tested via integration tests with real PostgreSQL.
 
 ### Verification
-- Server starts, shared knowledge graph schema is created automatically
-- First `remember` call from a new agent creates their personal graph schema
+- Server starts, `ncx_shared__knowledge` schema is created automatically
+- First `remember` call from a new agent creates their `ncx_{agent}__personal` schema
 - Health check still works
-- Mock mode still works
+- Mock mode still works (`NEOCORTEX_MOCK_DB=true`)
+- All existing unit tests pass (they use mock mode)
 
 ### Commit
 `feat(multi-graph): wire SchemaManager and GraphRouter into server lifespan`
@@ -479,50 +570,116 @@ SchemaManager (NEW)             GraphService (MODIFIED)
 3. Create `tests/test_multi_graph_adapter.py`:
    - `test_store_in_agent_schema` -- episode lands in correct schema
    - `test_recall_merges_across_schemas` -- results from personal + shared
-   - `test_recall_provenance` -- RecallItem.graph_name set correctly
+   - `test_recall_provenance` -- RecallItem.graph_name and source_kind set correctly
    - `test_discover_aggregates_stats` -- stats sum across schemas
+   - `test_discover_lists_graphs` -- DiscoverResult.graphs populated
    - `test_schema_isolation` -- data in schema A not in schema B
 
-4. Update `tests/mcp/test_rls.py`:
+4. Create `tests/test_dev_token_auth.py`:
+   - `test_multi_token_from_file` -- loads JSON, resolves tokens to agent IDs
+   - `test_unknown_token_rejected` -- returns None
+   - `test_fallback_single_token` -- works when no file configured
+
+5. Update `tests/mcp/test_rls.py`:
    - Adapt to shared schema context
    - Test RLS only applies to shared schemas
 
-5. Update `tests/mcp/conftest.py`:
+6. Update `tests/mcp/conftest.py`:
    - Add fixtures for multi-graph setup (SchemaManager, GraphRouter)
 
 ### Verification
-- `poetry run pytest tests/ -v` -- all tests pass
+- `uv run pytest tests/ -v` -- all tests pass
 - Coverage for new modules > 80%
 
 ### Commit
-`test(multi-graph): add comprehensive tests for schema manager, router, and adapter`
+`test(multi-graph): add comprehensive tests for schema manager, router, adapter, and auth`
 
 ---
 
-## Stage 10: Validation & Integration Smoke Test
+## Stage 10: E2E Validation & Smoke Test
 
-**Goal**: End-to-end validation that the full MCP server works with multi-graph routing.
+**Goal**: End-to-end validation that the full MCP server works with multi-graph routing and multi-agent identity.
 
 ### Steps
 
-1. `docker compose down -v && docker compose up -d` -- clean start
-2. Start MCP server: `python -m neocortex`
-3. Call `remember(text="Alice likes pizza")` as agent "alice"
-   - Verify: `ncx_alice__personal` schema created
-   - Verify: episode stored in `ncx_alice__personal.episode`
-4. Call `remember(text="Shared fact: PostgreSQL supports pgvector")` as agent "alice"
-   - Verify: stored in `ncx_alice__personal` (router default)
-5. Call `recall(query="pizza")` as agent "alice"
-   - Verify: result found from personal schema
-6. Call `discover()` as agent "alice"
-   - Verify: stats reflect agent's graph + shared graph
-7. Repeat with agent "bob" -- verify complete isolation
-8. Verify shared graph is visible to both agents in recall
+1. Create `scripts/e2e_smoke_test.py` -- automated validation script:
+   ```python
+   """E2E smoke test for multi-graph architecture.
+
+   Prerequisites:
+     docker compose up -d postgres
+     NEOCORTEX_AUTH_MODE=dev_token NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+       uv run python -m neocortex
+
+   Usage:
+     uv run python scripts/e2e_smoke_test.py
+   """
+   import asyncio
+   import httpx
+
+   BASE_URL = "http://localhost:8000"
+   ALICE_TOKEN = "alice-token"
+   BOB_TOKEN = "bob-token"
+
+   async def main():
+       async with httpx.AsyncClient() as client:
+           # 1. Health check
+           r = await client.get(f"{BASE_URL}/health")
+           assert r.status_code == 200
+
+           # 2. Alice stores a memory
+           r = await mcp_call(client, ALICE_TOKEN, "remember",
+                              {"text": "Alice likes pizza"})
+           assert r["episode_id"] > 0
+
+           # 3. Bob stores a memory
+           r = await mcp_call(client, BOB_TOKEN, "remember",
+                              {"text": "Bob likes sushi"})
+           assert r["episode_id"] > 0
+
+           # 4. Alice recalls -- sees her own data, not Bob's
+           r = await mcp_call(client, ALICE_TOKEN, "recall",
+                              {"query": "pizza"})
+           assert any("pizza" in item["content"].lower() for item in r["results"])
+           assert not any("sushi" in item["content"].lower() for item in r["results"])
+
+           # 5. Bob recalls -- sees his own data, not Alice's
+           r = await mcp_call(client, BOB_TOKEN, "recall",
+                              {"query": "sushi"})
+           assert any("sushi" in item["content"].lower() for item in r["results"])
+           assert not any("pizza" in item["content"].lower() for item in r["results"])
+
+           # 6. Alice discovers -- shows her graph + shared
+           r = await mcp_call(client, ALICE_TOKEN, "discover", {})
+           assert "ncx_alice__personal" in r["graphs"]
+
+           # 7. Verify schema isolation in DB directly
+           # (optional: query PG to confirm schemas exist)
+
+       print("ALL CHECKS PASSED")
+
+   asyncio.run(main())
+   ```
+   Note: The `mcp_call` helper should use the appropriate MCP client protocol (HTTP SSE or streamable-http) to call tools with the bearer token.
+
+2. Manual verification (if MCP client protocol is complex):
+   - `docker compose down -v && docker compose up -d` -- clean start
+   - Start MCP server: `NEOCORTEX_AUTH_MODE=dev_token NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json uv run python -m neocortex`
+   - Use `curl` or an MCP inspector to call tools with different bearer tokens
+   - Verify schema isolation by querying PostgreSQL directly:
+     ```sql
+     \dn ncx_*
+     SELECT * FROM ncx_alice__personal.episode;
+     SELECT * FROM ncx_bob__personal.episode;
+     ```
+
+3. Verify all existing tests still pass: `uv run pytest tests/ -v`
 
 ### Verification
-- All 8 steps pass
+- Automated script passes OR manual steps 1-7 verified
 - No errors in server logs
-- Existing test suite still passes
+- Schemas `ncx_alice__personal`, `ncx_bob__personal`, `ncx_shared__knowledge` exist
+- Data isolation confirmed: Alice's data not in Bob's schema and vice versa
 
 ### Commit
 `docs(plan): mark stage 10 as DONE in multi-graph schemas plan`
@@ -560,13 +717,13 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 1 | Graph Registry & Schema Template SQL | TODO | |
 | 2 | SchemaManager | TODO | |
 | 3 | Schema-Scoped Connections | TODO | |
-| 4 | Schema-Aware GraphService | TODO | |
-| 5 | GraphRouter (Heuristic Routing) | TODO | |
-| 6 | Multi-Graph Adapter | TODO | |
+| 4 | GraphRouter (Heuristic Routing) | TODO | |
+| 5 | Multi-Graph Adapter | TODO | |
+| 6 | Multi-Token Dev Auth | TODO | |
 | 7 | Server Wiring & Auto-Provisioning | TODO | |
 | 8 | RLS Cleanup | TODO | |
 | 9 | Tests | TODO | |
-| 10 | Validation & Integration Smoke Test | TODO | |
+| 10 | E2E Validation & Smoke Test | TODO | |
 
 **Last stage completed**: N/A
-**Last updated by**: Plan creation (2026-03-27)
+**Last updated by**: Plan revision (2026-03-27) -- review fixes applied
