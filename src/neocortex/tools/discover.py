@@ -1,5 +1,6 @@
 from fastmcp import Context
 
+from neocortex.auth.dependencies import get_agent_id_from_context
 from neocortex.schemas.memory import DiscoverResult, GraphStats
 
 
@@ -15,9 +16,10 @@ async def discover(query: str | None = None, ctx: Context | None = None) -> Disc
         raise RuntimeError("FastMCP context is required for discover().")
 
     repo = ctx.lifespan_context["repo"]
+    agent_id = get_agent_id_from_context(ctx)
     node_types = await repo.get_node_types()
     edge_types = await repo.get_edge_types()
-    stats = await repo.get_stats()
+    stats = await repo.get_stats(agent_id=agent_id)
     return DiscoverResult(
         node_types=node_types,
         edge_types=edge_types,

@@ -81,14 +81,14 @@ revise affected stages, and get user confirmation before continuing.
 | 4 | Auth layer (dev-token + Google OAuth) | DONE | Added pluggable auth factory, dev-token `AuthProvider`, and auth-aware agent ID dependency. Used FastMCP `GoogleProvider` because current version's `OAuthProxy` constructor differs from the plan. Verified with smoke test, ruff, and pytest. | `feat(mcp): add pluggable auth layer with dev-token and Google OAuth modes` |
 | 5 | In-memory mock repository & role mapping | DONE | Added MemoryRepository protocol, in-memory repo, OAuth-sub to PG-role mapping, FastMCP lifespan repo wiring, and tools now use shared repo state via Context. | `feat(mcp): add MemoryRepository protocol, InMemoryRepository, role mapping, and wire tools via lifespan` |
 | 6 | MCP-layer tests | DONE | Added MCP tool, schema, mock repo, role mapping, and server tests under tests/mcp. Added pytest bootstrap files to avoid `tests/mcp` shadowing FastMCP's `mcp` dependency during collection. | `test(mcp): add unit tests for MCP tools, schemas, mock repo, and auth helpers` |
-| 7 | Rebase onto Plan 02 | PENDING | | |
-| 8 | PostgreSQL integration — wire tools to GraphService | PENDING | | |
-| 9 | RLS policies & role-based access | PENDING | | |
+| 7 | Rebase onto Plan 02 | DONE | Rebased `mcp` onto `origin/main` after Plan 02 landed. Resolved conflicts in `pyproject.toml`, `src/neocortex/__init__.py`, and `uv.lock`. Re-ran `uv sync`, `pytest tests/mcp -v`, import checks, and `ruff`. | |
+| 8 | PostgreSQL integration — wire tools to GraphService | DONE | Added `GraphServiceAdapter`, wired the FastMCP lifespan to choose mock vs PostgreSQL backends, updated `discover` stats to honor agent scope, and added `docker/mcp/Dockerfile` plus a `neocortex-mcp` Compose service. Docker-specific verification remains pending because Docker was not running in this environment. | `feat(mcp): wire tools to GraphService via adapter, add Docker service` |
+| 9 | RLS policies & role-based access | DONE | Added `005_rls_roles.sql`, PG role provisioning, scoped role connections, `.env.example` updates, and `tests/mcp/test_rls.py`. The RLS tests are gated behind `NEOCORTEX_RUN_RLS_TESTS=1` so the default MCP suite passes without Docker; live RLS verification still requires a fresh Compose database. | `feat(mcp): add RLS policies, PG role provisioning, and scoped connections` |
 | 10 | Push to remote, create PR, and merge to main | PENDING | | |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
-Last stage completed: Stage 6: MCP-layer tests
+Last stage completed: Stage 9: RLS policies & role-based access
 Last updated by: plan-runner-agent
 
 ---

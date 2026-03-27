@@ -24,5 +24,5 @@ class MemoryRepository(Protocol):
     async def get_edge_types(self) -> list[TypeInfo]:
         """Return available edge types."""
 
-    async def get_stats(self) -> GraphStats:
+    async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         """Return graph summary statistics."""
