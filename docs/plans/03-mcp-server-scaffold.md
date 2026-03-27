@@ -78,7 +78,7 @@ revise affected stages, and get user confirmation before continuing.
 | 1 | MCP package extensions & dependencies | DONE | Created directory structure, mcp_settings.py, __main__.py, server.py stub. Added fastmcp>=2.0, asyncpg, pydantic-settings, pytest-asyncio deps. FastMCP 3.1.1 installed, all imports verified. | `feat(mcp): add MCP package extensions, settings, and directory structure` |
 | 2 | FastMCP server with 3 tool stubs | DONE | Created server.py with FastMCP factory, health endpoint. Added remember/recall/discover tool stubs. All verifications pass. | `feat(mcp): add FastMCP server with remember/recall/discover tool stubs` |
 | 3 | Tool I/O schemas | DONE | Created Pydantic schemas in schemas/memory.py (RememberResult, RecallItem, RecallResult, TypeInfo, GraphStats, DiscoverResult). Updated tool stubs to return typed models. | `feat(mcp): add Pydantic schemas for MCP tool inputs and outputs` |
-| 4 | Auth layer (dev-token + Google OAuth) | PENDING | | |
+| 4 | Auth layer (dev-token + Google OAuth) | DONE | Added pluggable auth factory, dev-token `AuthProvider`, and auth-aware agent ID dependency. Used FastMCP `GoogleProvider` because current version's `OAuthProxy` constructor differs from the plan. Verified with smoke test, ruff, and pytest. | `feat(mcp): add pluggable auth layer with dev-token and Google OAuth modes` |
 | 5 | In-memory mock repository & role mapping | PENDING | | |
 | 6 | MCP-layer tests | PENDING | | |
 | 7 | Rebase onto Plan 02 | PENDING | | |
@@ -87,6 +87,9 @@ revise affected stages, and get user confirmation before continuing.
 | 10 | Push to remote, create PR, and merge to main | PENDING | | |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
+
+Last stage completed: Stage 4: Auth layer (dev-token + Google OAuth)
+Last updated by: plan-runner-agent
 
 ---
 
