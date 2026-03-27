@@ -1,3 +1,13 @@
+x-common-env: &common-env
+  NEOCORTEX_MOCK_DB: "false"
+  NEOCORTEX_AUTH_MODE: "dev_token"
+  NEOCORTEX_DEV_TOKENS_FILE: "/app/dev_tokens.json"
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: neocortex
+  POSTGRES_PASSWORD: neocortex
+  POSTGRES_DATABASE: neocortex
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.0-pg16
@@ -24,16 +34,23 @@ services:
     ports:
       - "8000:8000"
     environment:
+      <<: *common-env
       NEOCORTEX_TRANSPORT: http
       NEOCORTEX_SERVER_HOST: "0.0.0.0"
-      NEOCORTEX_MOCK_DB: "false"
-      NEOCORTEX_AUTH_MODE: "dev_token"
-      NEOCORTEX_DEV_TOKENS_FILE: "/app/dev_tokens.json"
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: neocortex
-      POSTGRES_PASSWORD: neocortex
-      POSTGRES_DATABASE: neocortex
+    volumes:
+      - ./dev_tokens.json:/app/dev_tokens.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  neocortex-ingestion:
+    build:
+      context: .
+      dockerfile: docker/ingestion/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      <<: *common-env
     volumes:
       - ./dev_tokens.json:/app/dev_tokens.json:ro
     depends_on:
