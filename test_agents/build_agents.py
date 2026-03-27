@@ -1,4 +1,4 @@
-"""Compile test agents and write to build/."""
+"""Compile test agents into build/."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from agents import build_chat, build_joke_subagent, build_search_orchestrator, b
 from agents.config import build_config
 
 BUILD_DIR = Path(__file__).resolve().parent / "build"
-SCRIPTS_DIR = Path(__file__).resolve().parent / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parent / "agent_scripts"
 
 
 def compile_and_write() -> Path:
@@ -32,17 +32,6 @@ def compile_and_write() -> Path:
     for agent_def in agents:
         compiled = compile_agent(agent_def, target="opencode")
         writer.write(compiled)
-
-    # Make build/ a self-contained opencode project root
-    # so opencode doesn't walk up to the parent git repo
-    if not (BUILD_DIR / ".git").exists():
-        import subprocess
-
-        subprocess.run(["git", "init"], cwd=BUILD_DIR, capture_output=True)
-
-    # Ensure data and config dirs exist inside build
-    (BUILD_DIR / ".opencode" / "data").mkdir(parents=True, exist_ok=True)
-    (BUILD_DIR / ".opencode_config").mkdir(parents=True, exist_ok=True)
 
     return BUILD_DIR
 

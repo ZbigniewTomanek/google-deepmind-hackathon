@@ -6,7 +6,7 @@ from pathlib import Path
 
 from open_agent_compiler.builders import ToolBuilder
 
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "agent_scripts"
 
 
 def build_joke_tool():

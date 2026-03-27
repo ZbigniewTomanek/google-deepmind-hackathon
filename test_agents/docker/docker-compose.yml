@@ -1,5 +1,4 @@
 # Docker Compose for NeoCortex Test Agents
-# Separate from the main project's docker-compose.yml
 #
 # Services:
 #   - opencode-web: OpenCode web UI (port 4098)
@@ -9,15 +8,18 @@
 # Start the main project's services first: docker compose up -d postgres neocortex-mcp
 #
 # All opencode state lives inside test_agents/build/:
-#   build/.opencode/agents/   — compiled agent definitions
-#   build/.opencode/data/     — opencode DB, logs, sessions
-#   build/opencode.json       — provider/model config
-#   build/.git                — marks build/ as project root for opencode
+#   build/.opencode/agents/  — compiled agent definitions
+#   build/.opencode/data/    — opencode DB, logs, sessions
+#   build/opencode.json      — provider/model config
+#   build/.git               — marks build/ as project root for opencode
+#
+# The build/ dir is mounted at /app inside Docker (isolated from parent git repo)
+# so opencode detects /app as the project root.
 
 x-common-env: &common-env
   HOME: /home/appuser
-  XDG_DATA_HOME: ${PROJECT_ROOT}/test_agents/build/.opencode/data
-  XDG_CONFIG_HOME: ${PROJECT_ROOT}/test_agents/build/.opencode_config
+  XDG_DATA_HOME: /app/.opencode/data
+  XDG_CONFIG_HOME: /app/.opencode/config
   UV_PROJECT_ENVIRONMENT: /tmp/.venv
 
 services:
@@ -31,20 +33,16 @@ services:
         GID: ${HOST_GID:-1000}
     network_mode: host
     volumes:
-      - ${PROJECT_ROOT}:${PROJECT_ROOT}
+      - ${PROJECT_ROOT}/test_agents/build:/app
+      - ${PROJECT_ROOT}/test_agents/build/.opencode:/.opencode
+      - ${PROJECT_ROOT}/test_agents/build/opencode.json:/opencode.json
       - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
       <<: *common-env
     env_file:
       - ../.env
-    working_dir: ${PROJECT_ROOT}/test_agents/build
-    command: >
-      sh -c "cd ${PROJECT_ROOT} &&
-             uv sync &&
-             cd test_agents &&
-             uv run python build_agents.py &&
-             cd build &&
-             opencode web --hostname 0.0.0.0 --port 4098"
+    working_dir: /app
+    command: opencode web --hostname 0.0.0.0 --port 4098
     restart: unless-stopped
 
   agent-api:
@@ -57,17 +55,18 @@ services:
         GID: ${HOST_GID:-1000}
     network_mode: host
     volumes:
-      - ${PROJECT_ROOT}:${PROJECT_ROOT}
+      - ${PROJECT_ROOT}:/workspace
+      - ${PROJECT_ROOT}/test_agents/build:/app
       - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
       <<: *common-env
+      OPENCODE_PORT: ${OPENCODE_PORT:-4098}
     env_file:
       - ../.env
-    working_dir: ${PROJECT_ROOT}/test_agents
+    working_dir: /workspace/test_agents
     command: >
-      sh -c "cd ${PROJECT_ROOT} &&
-             uv sync &&
-             cd test_agents &&
+      sh -c "uv sync --directory /workspace &&
+             cd /workspace/test_agents &&
              uv run python run.py"
     depends_on:
       opencode-web:

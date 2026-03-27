@@ -23,16 +23,16 @@ from app.models import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Compile agents on startup if build directory doesn't exist."""
+    """Compile agents on startup if not already compiled."""
     build_dir = Path(__file__).resolve().parent.parent / "build"
-    if not (build_dir / ".opencode").exists():
-        print("Build directory not found — compiling agents...")
+    if not (build_dir / ".opencode" / "agents").exists():
+        print("Agents not found — compiling...")
         from build_agents import compile_and_write
 
         compile_and_write()
         print("Agents compiled successfully.")
     else:
-        print(f"Using existing build at {build_dir}")
+        print(f"Using existing agents at {build_dir / '.opencode' / 'agents'}")
     yield
 
 
