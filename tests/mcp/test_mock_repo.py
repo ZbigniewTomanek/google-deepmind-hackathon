@@ -22,7 +22,8 @@ async def test_recall_filters_by_substring_and_agent_id(mock_repo) -> None:
 
     assert len(results) == 1
     assert results[0].content == "Alice likes tea"
-    assert results[0].node_id == 1
+    assert results[0].item_id == 1
+    assert results[0].source_kind == "episode"
 
 
 @pytest.mark.asyncio

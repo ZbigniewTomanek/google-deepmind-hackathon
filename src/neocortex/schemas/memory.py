@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 # --- Tool Outputs ---
@@ -10,12 +12,14 @@ class RememberResult(BaseModel):
 
 
 class RecallItem(BaseModel):
-    node_id: int
+    item_id: int
     name: str
     content: str
-    node_type: str
+    item_type: str
     score: float = Field(..., description="Hybrid relevance score")
     source: str | None = None
+    source_kind: Literal["node", "episode"]
+    graph_name: str | None = None
 
 
 class RecallResult(BaseModel):
@@ -41,3 +45,4 @@ class DiscoverResult(BaseModel):
     node_types: list[TypeInfo]
     edge_types: list[TypeInfo]
     stats: GraphStats
+    graphs: list[str] = []
