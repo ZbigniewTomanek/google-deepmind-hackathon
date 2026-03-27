@@ -137,9 +137,81 @@ class SchemaManager:
     def _build_rls_block(schema_name: str) -> str:
         statements = [
             f"-- Shared graph RLS provisioned for {schema_name}.",
-            f"ALTER TABLE {schema_name}.node ADD COLUMN IF NOT EXISTS owner_role TEXT;",
-            f"ALTER TABLE {schema_name}.edge ADD COLUMN IF NOT EXISTS owner_role TEXT;",
-            f"ALTER TABLE {schema_name}.episode ADD COLUMN IF NOT EXISTS owner_role TEXT;",
+            "DO $$",
+            "BEGIN",
+            "    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'neocortex_agent') THEN",
+            "        CREATE ROLE neocortex_agent NOLOGIN;",
+            "    END IF;",
+            "END",
+            "$$;",
+            f"GRANT USAGE ON SCHEMA {schema_name} TO neocortex_agent;",
+            (
+                f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {schema_name}.node, "
+                f"{schema_name}.edge, {schema_name}.episode TO neocortex_agent;"
+            ),
+            f"GRANT SELECT, INSERT ON TABLE {schema_name}.node_type, {schema_name}.edge_type TO neocortex_agent;",
+            f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {schema_name} TO neocortex_agent;",
+            f"ALTER TABLE {schema_name}.node ADD COLUMN IF NOT EXISTS owner_role TEXT DEFAULT current_user;",
+            f"ALTER TABLE {schema_name}.edge ADD COLUMN IF NOT EXISTS owner_role TEXT DEFAULT current_user;",
+            f"ALTER TABLE {schema_name}.episode ADD COLUMN IF NOT EXISTS owner_role TEXT DEFAULT current_user;",
+            f"CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_owner ON {schema_name}.node (owner_role);",
+            f"CREATE INDEX IF NOT EXISTS idx_{schema_name}_edge_owner ON {schema_name}.edge (owner_role);",
+            f"CREATE INDEX IF NOT EXISTS idx_{schema_name}_episode_owner ON {schema_name}.episode (owner_role);",
+            f"ALTER TABLE {schema_name}.node ENABLE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {schema_name}.edge ENABLE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {schema_name}.episode ENABLE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {schema_name}.node FORCE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {schema_name}.edge FORCE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {schema_name}.episode FORCE ROW LEVEL SECURITY;",
+            f"DROP POLICY IF EXISTS node_select_policy ON {schema_name}.node;",
+            f"DROP POLICY IF EXISTS node_insert_policy ON {schema_name}.node;",
+            f"DROP POLICY IF EXISTS node_update_policy ON {schema_name}.node;",
+            f"DROP POLICY IF EXISTS node_delete_policy ON {schema_name}.node;",
+            (
+                f"CREATE POLICY node_select_policy ON {schema_name}.node FOR SELECT "
+                "USING (owner_role = current_user OR owner_role IS NULL);"
+            ),
+            (
+                f"CREATE POLICY node_insert_policy ON {schema_name}.node FOR INSERT "
+                "WITH CHECK (owner_role = current_user OR owner_role IS NULL);"
+            ),
+            (
+                f"CREATE POLICY node_update_policy ON {schema_name}.node FOR UPDATE "
+                "USING (owner_role = current_user) WITH CHECK (owner_role = current_user);"
+            ),
+            f"CREATE POLICY node_delete_policy ON {schema_name}.node FOR DELETE USING (owner_role = current_user);",
+            f"DROP POLICY IF EXISTS edge_select_policy ON {schema_name}.edge;",
+            f"DROP POLICY IF EXISTS edge_insert_policy ON {schema_name}.edge;",
+            f"DROP POLICY IF EXISTS edge_update_policy ON {schema_name}.edge;",
+            f"DROP POLICY IF EXISTS edge_delete_policy ON {schema_name}.edge;",
+            (
+                f"CREATE POLICY edge_select_policy ON {schema_name}.edge FOR SELECT "
+                "USING (owner_role = current_user OR owner_role IS NULL);"
+            ),
+            (
+                f"CREATE POLICY edge_insert_policy ON {schema_name}.edge FOR INSERT "
+                "WITH CHECK (owner_role = current_user OR owner_role IS NULL);"
+            ),
+            (
+                f"CREATE POLICY edge_update_policy ON {schema_name}.edge FOR UPDATE "
+                "USING (owner_role = current_user) WITH CHECK (owner_role = current_user);"
+            ),
+            f"CREATE POLICY edge_delete_policy ON {schema_name}.edge FOR DELETE USING (owner_role = current_user);",
+            f"DROP POLICY IF EXISTS episode_select_policy ON {schema_name}.episode;",
+            f"DROP POLICY IF EXISTS episode_insert_policy ON {schema_name}.episode;",
+            f"DROP POLICY IF EXISTS episode_delete_policy ON {schema_name}.episode;",
+            (
+                f"CREATE POLICY episode_select_policy ON {schema_name}.episode FOR SELECT "
+                "USING (owner_role = current_user);"
+            ),
+            (
+                f"CREATE POLICY episode_insert_policy ON {schema_name}.episode FOR INSERT "
+                "WITH CHECK (owner_role = current_user);"
+            ),
+            (
+                f"CREATE POLICY episode_delete_policy ON {schema_name}.episode FOR DELETE "
+                "USING (owner_role = current_user);"
+            ),
         ]
         return "\n".join(statements)
 
