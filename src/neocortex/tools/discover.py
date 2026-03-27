@@ -13,11 +13,13 @@ async def discover(ctx: Context | None = None) -> DiscoverResult:
 
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
-    node_types = await repo.get_node_types()
-    edge_types = await repo.get_edge_types()
+    node_types = await repo.get_node_types(agent_id=agent_id)
+    edge_types = await repo.get_edge_types(agent_id=agent_id)
     stats = await repo.get_stats(agent_id=agent_id)
+    graphs = await repo.list_graphs(agent_id=agent_id)
     return DiscoverResult(
         node_types=node_types,
         edge_types=edge_types,
         stats=stats if isinstance(stats, GraphStats) else GraphStats.model_validate(stats),
+        graphs=graphs,
     )

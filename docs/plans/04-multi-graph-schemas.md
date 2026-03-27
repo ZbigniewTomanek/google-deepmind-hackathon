@@ -718,7 +718,7 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 2 | SchemaManager | TODO | |
 | 3 | Schema-Scoped Connections | TODO | |
 | 4 | GraphRouter (Heuristic Routing) | TODO | |
-| 5 | Multi-Graph Adapter | TODO | |
+| 5 | Multi-Graph Adapter | DONE | Multi-schema adapter rewrite, recall provenance fields, discover graph aggregation, and Stage 5 tests added. |
 | 6 | Multi-Token Dev Auth | TODO | |
 | 7 | Server Wiring & Auto-Provisioning | TODO | |
 | 8 | RLS Cleanup | TODO | |
@@ -736,12 +736,12 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 2 | SchemaManager | DONE | Added `SchemaManager`, `GraphInfo`, schema template loading/provisioning, registry-backed create/list/drop/default helpers, and Stage 2 tests; `poetry run pytest` passed. | 2026-03-27 |
 | 3 | Schema-Scoped Connections | DONE | Added role/schema/graph scoped connection helpers, schema validation, `execute_in_schema`, and Stage 3 integration tests; `poetry run pytest` passed. | 2026-03-27 |
 | 4 | GraphRouter (Heuristic Routing) | DONE | Added `GraphRouter` MVP routing heuristics with personal-first recall/discover fan-out and Stage 4 unit tests; `poetry run pytest` passed. | 2026-03-27 |
-| 5 | Multi-Graph Adapter | PENDING | | 2026-03-27 |
+| 5 | Multi-Graph Adapter | DONE | Rewrote the adapter for router-driven schema fan-out, added `RecallItem` provenance fields and discover graph aggregation, and verified with `poetry run pytest`. | 2026-03-27 |
 | 6 | Multi-Token Dev Auth | PENDING | | 2026-03-27 |
 | 7 | Server Wiring & Auto-Provisioning | PENDING | | 2026-03-27 |
 | 8 | RLS Cleanup | PENDING | | 2026-03-27 |
 | 9 | Tests | PENDING | | 2026-03-27 |
 | 10 | E2E Validation & Smoke Test | PENDING | | 2026-03-27 |
 
-**Last stage completed**: GraphRouter (Heuristic Routing)
+**Last stage completed**: Multi-Graph Adapter
 **Last updated by**: plan-runner-agent

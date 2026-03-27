@@ -51,23 +51,31 @@ class InMemoryRepository:
 
             matches.append(
                 RecallItem(
-                    node_id=int(episode["id"]),
+                    item_id=int(episode["id"]),
                     name=f"Episode #{episode['id']}",
                     content=content,
-                    node_type="Episode",
+                    item_type="Episode",
                     score=1.0,
                     source=str(episode["source_type"]),
+                    source_kind="episode",
+                    graph_name=None,
                 )
             )
 
         return matches[:limit]
 
-    async def get_node_types(self) -> list[TypeInfo]:
+    async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
+        del agent_id
         return []
 
-    async def get_edge_types(self) -> list[TypeInfo]:
+    async def get_edge_types(self, agent_id: str | None = None) -> list[TypeInfo]:
+        del agent_id
         return []
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         count = sum(1 for e in self._episodes if agent_id is None or e["agent_id"] == agent_id)
         return GraphStats(total_nodes=0, total_edges=0, total_episodes=count)
+
+    async def list_graphs(self, agent_id: str) -> list[str]:
+        del agent_id
+        return []
