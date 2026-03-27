@@ -1460,7 +1460,7 @@ GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
 
 | Stage | Title | Status | Notes |
 |---|---|---|---|
-| 1 | Extend MemoryRepository Protocol | PENDING | |
+| 1 | Extend MemoryRepository Protocol | DONE | Protocol, adapter, mock, 22 tests |
 | 2 | Background Jobs Framework | PENDING | |
 | 3 | Medical Domain Seed Corpus | PENDING | |
 | 4 | Extraction Pipeline Module | PENDING | |
@@ -1469,8 +1469,8 @@ GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
 | 7 | TUI, Discover & E2E Validation | PENDING | |
 | 8 | CLI-Reproducible E2E Smoke Tests | PENDING | |
 
-- **Last stage completed**: —
-- **Last updated by**: —
+- **Last stage completed**: Stage 1 — Extend MemoryRepository Protocol
+- **Last updated by**: plan-runner-agent
 - **Blocked**: —
 
 ---

@@ -10,6 +10,7 @@ import asyncpg
 from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connection
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
+from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
 from neocortex.scoring import HybridWeights, compute_hybrid_score, compute_recency_score
@@ -138,6 +139,372 @@ class GraphServiceAdapter:
         if self._router is None:
             return []
         return await self._router.route_discover(agent_id)
+
+    # ── Type Management ──
+
+    async def get_or_create_node_type(
+        self, agent_id: str, name: str, description: str | None = None
+    ) -> NodeType:
+        if self._pool is None or self._router is None:
+            existing = await self._graph.get_node_type_by_name(name)
+            if existing is not None:
+                return existing
+            return await self._graph.create_node_type(name, description)
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM node_type WHERE name = $1", name
+            )
+            if row is not None:
+                return NodeType(**dict(row))
+            row = await conn.fetchrow(
+                "INSERT INTO node_type (name, description) VALUES ($1, $2) RETURNING *",
+                name,
+                description,
+            )
+            if row is None:
+                raise RuntimeError(f"Failed to create node type: {name}")
+            return NodeType(**dict(row))
+
+    async def get_or_create_edge_type(
+        self, agent_id: str, name: str, description: str | None = None
+    ) -> EdgeType:
+        if self._pool is None or self._router is None:
+            existing = await self._graph.get_edge_type_by_name(name)
+            if existing is not None:
+                return existing
+            return await self._graph.create_edge_type(name, description)
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM edge_type WHERE name = $1", name
+            )
+            if row is not None:
+                return EdgeType(**dict(row))
+            row = await conn.fetchrow(
+                "INSERT INTO edge_type (name, description) VALUES ($1, $2) RETURNING *",
+                name,
+                description,
+            )
+            if row is None:
+                raise RuntimeError(f"Failed to create edge type: {name}")
+            return EdgeType(**dict(row))
+
+    # ── Episode Read ──
+
+    async def get_episode(self, agent_id: str, episode_id: int) -> Episode | None:
+        if self._pool is None or self._router is None:
+            return await self._graph.get_episode(episode_id)
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            row = await conn.fetchrow(
+                "SELECT id, agent_id, content, source_type, metadata, created_at "
+                "FROM episode WHERE id = $1",
+                episode_id,
+            )
+        if row is None:
+            return None
+        d = dict(row)
+        if isinstance(d.get("metadata"), str):
+            d["metadata"] = json.loads(d["metadata"])
+        return Episode(**d)
+
+    # ── Node CRUD ──
+
+    async def upsert_node(
+        self,
+        agent_id: str,
+        name: str,
+        type_id: int,
+        content: str | None = None,
+        properties: dict | None = None,
+        embedding: list[float] | None = None,
+        source: str | None = None,
+    ) -> Node:
+        props = properties or {}
+        if self._pool is None or self._router is None:
+            # Fallback: use GraphService directly
+            nodes = await self._graph.list_nodes(type_id=type_id, limit=10000)
+            for node in nodes:
+                if node.name.lower() == name.lower() and node.type_id == type_id:
+                    merged_props = {**node.properties, **props}
+                    updated = await self._graph.update_node(
+                        node.id,
+                        name=name,
+                        content=content or node.content,
+                        properties=merged_props,
+                        embedding=embedding,
+                    )
+                    return updated if updated is not None else node
+            return await self._graph.create_node(
+                type_id=type_id,
+                name=name,
+                content=content,
+                properties=props,
+                embedding=embedding,
+                source=source,
+            )
+
+        schema_name = await self._router.route_store(agent_id)
+        props_json = json.dumps(props)
+        emb_str = str(embedding) if embedding else None
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            row = await conn.fetchrow(
+                "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
+                "FROM node WHERE name = $1 AND type_id = $2",
+                name,
+                type_id,
+            )
+            if row is not None:
+                existing_props = row["properties"]
+                if isinstance(existing_props, str):
+                    existing_props = json.loads(existing_props)
+                merged = {**(existing_props or {}), **props}
+                merged_json = json.dumps(merged)
+                updated_row = await conn.fetchrow(
+                    """UPDATE node SET
+                        content = COALESCE($1, content),
+                        properties = $2::jsonb,
+                        embedding = COALESCE($3::vector, embedding),
+                        updated_at = now()
+                       WHERE id = $4
+                       RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
+                    content,
+                    merged_json,
+                    emb_str,
+                    row["id"],
+                )
+                if updated_row is None:
+                    raise RuntimeError("Failed to update node")
+                d = dict(updated_row)
+                if isinstance(d.get("properties"), str):
+                    d["properties"] = json.loads(d["properties"])
+                return Node(**d)
+            else:
+                new_row = await conn.fetchrow(
+                    """INSERT INTO node (type_id, name, content, properties, embedding, source)
+                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6)
+                       RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
+                    type_id,
+                    name,
+                    content,
+                    props_json,
+                    emb_str,
+                    source,
+                )
+                if new_row is None:
+                    raise RuntimeError("Failed to create node")
+                d = dict(new_row)
+                if isinstance(d.get("properties"), str):
+                    d["properties"] = json.loads(d["properties"])
+                return Node(**d)
+
+    async def find_nodes_by_name(self, agent_id: str, name: str) -> list[Node]:
+        if self._pool is None or self._router is None:
+            nodes = await self._graph.list_nodes(limit=10000)
+            return [n for n in nodes if n.name.lower() == name.lower()]
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            rows = await conn.fetch(
+                "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
+                "FROM node WHERE lower(name) = lower($1)",
+                name,
+            )
+        results = []
+        for row in rows:
+            d = dict(row)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append(Node(**d))
+        return results
+
+    # ── Edge CRUD ──
+
+    async def upsert_edge(
+        self,
+        agent_id: str,
+        source_id: int,
+        target_id: int,
+        type_id: int,
+        weight: float = 1.0,
+        properties: dict | None = None,
+    ) -> Edge:
+        props = properties or {}
+        if self._pool is None or self._router is None:
+            edges = await self._graph.get_edges_from(source_id, type_id=type_id)
+            for edge in edges:
+                if edge.target_id == target_id:
+                    # Update existing edge — no direct update method on GraphService,
+                    # so delete and recreate
+                    merged = {**edge.properties, **props}
+                    await self._graph.delete_edge(edge.id)
+                    return await self._graph.create_edge(
+                        source_id=source_id,
+                        target_id=target_id,
+                        type_id=type_id,
+                        weight=weight,
+                        properties=merged,
+                    )
+            return await self._graph.create_edge(
+                source_id=source_id,
+                target_id=target_id,
+                type_id=type_id,
+                weight=weight,
+                properties=props,
+            )
+
+        schema_name = await self._router.route_store(agent_id)
+        props_json = json.dumps(props)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
+                   VALUES ($1, $2, $3, $4, $5::jsonb)
+                   ON CONFLICT (source_id, target_id, type_id)
+                   DO UPDATE SET
+                       weight = $4,
+                       properties = edge.properties || $5::jsonb
+                   RETURNING *""",
+                source_id,
+                target_id,
+                type_id,
+                weight,
+                props_json,
+            )
+            if row is None:
+                raise RuntimeError("Failed to upsert edge")
+            d = dict(row)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            return Edge(**d)
+
+    # ── Graph Traversal ──
+
+    async def get_node_neighborhood(
+        self, agent_id: str, node_id: int, depth: int = 2
+    ) -> list[dict]:
+        if self._pool is None or self._router is None:
+            return await self._bfs_via_graph_service(node_id, depth)
+
+        schema_name = await self._router.route_store(agent_id)
+        return await self._bfs_in_schema(schema_name, node_id, depth)
+
+    async def _bfs_via_graph_service(self, node_id: int, depth: int) -> list[dict]:
+        visited: set[int] = {node_id}
+        results: list[dict] = []
+        current_frontier = [node_id]
+
+        for dist in range(1, depth + 1):
+            next_frontier: list[int] = []
+            for nid in current_frontier:
+                neighbors = await self._graph.get_neighbors(nid)
+                for neighbor in neighbors:
+                    neighbor_id = int(neighbor["id"])
+                    if neighbor_id not in visited:
+                        visited.add(neighbor_id)
+                        next_frontier.append(neighbor_id)
+                        neighbor_node = await self._graph.get_node(neighbor_id)
+                        if neighbor_node is not None:
+                            edge_id = int(neighbor["edge_id"])
+                            edge = await self._graph.get_edge(edge_id)
+                            results.append({
+                                "node": neighbor_node,
+                                "edges": [edge] if edge else [],
+                                "distance": dist,
+                            })
+            current_frontier = next_frontier
+            if not current_frontier:
+                break
+
+        return results
+
+    async def _bfs_in_schema(
+        self, schema_name: str, node_id: int, depth: int
+    ) -> list[dict]:
+        if self._pool is None:
+            raise RuntimeError("Connection pool required")
+
+        visited: set[int] = {node_id}
+        results: list[dict] = []
+        current_frontier = [node_id]
+
+        for dist in range(1, depth + 1):
+            if not current_frontier:
+                break
+            next_frontier: list[int] = []
+            async with schema_scoped_connection(self._pool, schema_name) as conn:
+                for nid in current_frontier:
+                    # Get all edges connected to this node
+                    edge_rows = await conn.fetch(
+                        """SELECT e.*, 'outgoing' AS direction
+                           FROM edge e WHERE e.source_id = $1
+                           UNION ALL
+                           SELECT e.*, 'incoming' AS direction
+                           FROM edge e WHERE e.target_id = $1""",
+                        nid,
+                    )
+                    for erow in edge_rows:
+                        ed = dict(erow)
+                        direction = ed.pop("direction")
+                        neighbor_id = int(ed["target_id"]) if direction == "outgoing" else int(ed["source_id"])
+                        if neighbor_id in visited:
+                            continue
+                        visited.add(neighbor_id)
+                        next_frontier.append(neighbor_id)
+
+                        if isinstance(ed.get("properties"), str):
+                            ed["properties"] = json.loads(ed["properties"])
+                        edge_obj = Edge(**ed)
+
+                        node_row = await conn.fetchrow(
+                            "SELECT id, type_id, name, content, properties, source, "
+                            "created_at, updated_at FROM node WHERE id = $1",
+                            neighbor_id,
+                        )
+                        if node_row is not None:
+                            nd = dict(node_row)
+                            if isinstance(nd.get("properties"), str):
+                                nd["properties"] = json.loads(nd["properties"])
+                            node_obj = Node(**nd)
+                            results.append({
+                                "node": node_obj,
+                                "edges": [edge_obj],
+                                "distance": dist,
+                            })
+            current_frontier = next_frontier
+
+        return results
+
+    # ── Bulk Queries ──
+
+    async def list_all_node_names(self, agent_id: str) -> list[str]:
+        if self._pool is None or self._router is None:
+            nodes = await self._graph.list_nodes(limit=100000)
+            return [n.name for n in nodes]
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            rows = await conn.fetch("SELECT name FROM node ORDER BY name")
+        return [str(row["name"]) for row in rows]
+
+    async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
+        if self._pool is None or self._router is None:
+            return []
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            rows = await conn.fetch(
+                """SELECT src.name AS source, et.name AS rel, tgt.name AS target
+                   FROM edge e
+                   JOIN node src ON src.id = e.source_id
+                   JOIN node tgt ON tgt.id = e.target_id
+                   JOIN edge_type et ON et.id = e.type_id
+                   ORDER BY src.name, et.name, tgt.name"""
+            )
+        return [f"{row['source']}→{row['rel']}→{row['target']}" for row in rows]
 
     async def _recall_via_graph(
         self, query: str, agent_id: str, limit: int, query_embedding: list[float] | None = None
