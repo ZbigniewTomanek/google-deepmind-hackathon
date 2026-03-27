@@ -1,0 +1,134 @@
+[
+  {
+    "question_id": "q_user",
+    "question_type": "single-session-user",
+    "question": "What tea does the user like?",
+    "answer": "oolong",
+    "question_date": "2025/01/05 (Sun) 09:30",
+    "haystack_session_ids": ["user_0", "user_1"],
+    "haystack_dates": ["2024/12/01 (Sun) 10:00", "2024/12/02 (Mon) 11:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I keep buying oolong tea.", "has_answer": true},
+        {"role": "assistant", "content": "Oolong has a great balance."}
+      ],
+      [
+        {"role": "user", "content": "I also like hiking."},
+        {"role": "assistant", "content": "That sounds fun."}
+      ]
+    ],
+    "answer_session_ids": ["user_0"]
+  },
+  {
+    "question_id": "q_assistant",
+    "question_type": "single-session-assistant",
+    "question": "What recipe did the assistant suggest?",
+    "answer": "tomato soup",
+    "question_date": "2025/01/05 10:30",
+    "haystack_session_ids": ["assistant_0"],
+    "haystack_dates": ["2024/12/03 12:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "What can I cook with tomatoes?"},
+        {"role": "assistant", "content": "You could make tomato soup.", "has_answer": true}
+      ]
+    ],
+    "answer_session_ids": ["assistant_0"]
+  },
+  {
+    "question_id": "q_preference",
+    "question_type": "single-session-preference",
+    "question": "What resources should be recommended?",
+    "answer": ["Adobe Premiere Pro advanced guides", "motion graphics tutorials"],
+    "question_date": "2025/01/06 (Mon) 08:15",
+    "haystack_session_ids": ["pref_0"],
+    "haystack_dates": ["2024/12/04 (Wed) 15:45"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I want Premiere Pro resources that cover advanced settings.", "has_answer": true},
+        {"role": "assistant", "content": "I can suggest some focused guides."}
+      ]
+    ],
+    "answer_session_ids": ["pref_0"]
+  },
+  {
+    "question_id": "q_multi",
+    "question_type": "multi-session",
+    "question": "How many cities has the user lived in?",
+    "answer": 3,
+    "question_date": "2025/01/07 (Tue) 07:00",
+    "haystack_session_ids": ["multi_0", "multi_1", "multi_2"],
+    "haystack_dates": ["2024/10/01 (Tue) 09:00", "2024/11/01 (Fri) 09:00", "2024/12/01 (Sun) 09:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I grew up in Gdansk.", "has_answer": true},
+        {"role": "assistant", "content": "Nice city."}
+      ],
+      [
+        {"role": "user", "content": "I moved to Krakow for work.", "has_answer": true},
+        {"role": "assistant", "content": "That is a big change."}
+      ],
+      [
+        {"role": "user", "content": "Now I live in Warsaw.", "has_answer": true},
+        {"role": "assistant", "content": "Warsaw has a lot going on."}
+      ]
+    ],
+    "answer_session_ids": ["multi_0", "multi_1", "multi_2"]
+  },
+  {
+    "question_id": "q_temporal",
+    "question_type": "temporal-reasoning",
+    "question": "Which conference came after the one in Berlin?",
+    "answer": "Warsaw summit",
+    "question_date": "2025/01/08 (Wed) 20:10",
+    "haystack_session_ids": ["temp_0", "temp_1"],
+    "haystack_dates": ["2024/09/14 (Sat) 10:00", "2024/11/20 (Wed) 16:30"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I attended the Berlin meetup in September.", "has_answer": true},
+        {"role": "assistant", "content": "How was it?"}
+      ],
+      [
+        {"role": "user", "content": "Then I went to the Warsaw summit in November.", "has_answer": true},
+        {"role": "assistant", "content": "That sounds packed."}
+      ]
+    ],
+    "answer_session_ids": ["temp_1"]
+  },
+  {
+    "question_id": "q_update",
+    "question_type": "knowledge-update",
+    "question": "What is the user's current job title?",
+    "answer": "staff engineer",
+    "question_date": "2025/01/09 (Thu) 14:20",
+    "haystack_session_ids": ["update_0", "update_1"],
+    "haystack_dates": ["2024/08/01 (Thu) 10:00", "2024/12/20 (Fri) 18:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I started as a software engineer.", "has_answer": true},
+        {"role": "assistant", "content": "Congratulations."}
+      ],
+      [
+        {"role": "user", "content": "I was promoted to staff engineer this month.", "has_answer": true},
+        {"role": "assistant", "content": "That is a big milestone."}
+      ]
+    ],
+    "answer_session_ids": ["update_1"]
+  },
+  {
+    "question_id": "q_missing_abs",
+    "question_type": "single-session-user",
+    "question": "What is the user's hamster called?",
+    "answer": "You did not mention this information.",
+    "question_date": "2025/01/10 (Fri) 18:05",
+    "haystack_session_ids": ["abs_0"],
+    "haystack_dates": ["2024/12/10 (Tue) 08:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "My cat is called Luna."},
+        {"role": "assistant", "content": "Luna is a great name."}
+      ]
+    ],
+    "answer_session_ids": []
+  }
+]

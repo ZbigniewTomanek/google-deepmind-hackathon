@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "textual>=3.0",
     "click>=8.0",
+    "openai>=1.0",
 ]
 
 [dependency-groups]
@@ -49,7 +50,7 @@ ty = "*"
 [tool.ruff]
 line-length = 120
 target-version = "py313"
-src = ["src"]
+src = ["src", "benchmarks"]
 
 [tool.ruff.lint]
 select = [
@@ -65,7 +66,7 @@ select = [
 ]
 
 [tool.ty.environment]
-root = ["src"]
+root = ["src", "benchmarks"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

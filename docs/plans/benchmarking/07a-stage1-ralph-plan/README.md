@@ -55,14 +55,14 @@ When this plan is complete, an operator should be able to run a single benchmark
 | ID | Task | Status | Dependencies | Notes |
 | --- | --- | --- | --- | --- |
 | 01 | Scaffold the `benchmarks/` package and repo wiring | 🟢 Complete | None | Completed 2026-03-27: tree, gitignore rules, base README, shared models, and CLI scaffolding added. |
-| 02 | Add the LongMemEval downloader and dataset lock | 🔴 Not Started | 01 | Version-pin the cleaned dataset and record the verified SHA256. |
-| 03 | Implement the LongMemEval loader and normalized benchmark models | 🔴 Not Started | 01, 02 | Parse question/session data, categories, timestamps, and test fixtures. |
-| 04 | Implement judges and answer-model configuration | 🔴 Not Started | 01, 03 | Add LongMemEval-compatible judge prompts, mock judge, and F1 scorer. |
-| 05 | Implement the direct NeoCortex adapter with question isolation | 🔴 Not Started | 01, 03 | Preserve current NeoCortex ingest/recall semantics, including embeddings. |
-| 06 | Implement run-state checkpointing and the per-question pipeline runner | 🔴 Not Started | 03, 04, 05 | Resume by question, not by a contaminated global corpus. |
-| 07 | Implement report generation and diagnostic outputs | 🔴 Not Started | 06 | Emit summary, markdown report, and failures JSONL from completed question results. |
-| 08 | Add MCP and REST smoke transports plus isolated benchmark DB compose | 🔴 Not Started | 05, 06 | Smoke and integration only, not the primary scored path. |
-| 09 | Add end-to-end tests and benchmark operator docs | 🔴 Not Started | 07, 08 | Finish with smoke coverage and clear run instructions. |
+| 02 | Add the LongMemEval downloader and dataset lock | 🟢 Complete | 01 | Completed 2026-03-27: pinned the cleaned LongMemEval-S Hugging Face revision, verified SHA256, added skip-or-refresh download flow, and wrote a local manifest. |
+| 03 | Implement the LongMemEval loader and normalized benchmark models | 🟢 Complete | 01, 02 | Completed 2026-03-27: added a streaming LongMemEval loader, parsed question and session timestamps, preserved answer-session provenance, and added fixture-backed loader tests. |
+| 04 | Implement judges and answer-model configuration | 🟢 Complete | 01, 03 | Completed 2026-03-27: added LongMemEval-style prompt routing, mock and OpenAI judge paths, token-level F1 scoring, separate answer/judge CLI model config, and unit coverage. |
+| 05 | Implement the direct NeoCortex adapter with question isolation | 🟢 Complete | 01, 03 | Completed 2026-03-27: added direct adapter lifecycle via `create_services()`, deterministic per-question scope identities, embedding-aware ingest/recall, scoped cleanup, and mock-db isolation tests. |
+| 06 | Implement run-state checkpointing and the per-question pipeline runner | 🟢 Complete | 03, 04, 05 | Completed 2026-03-27: added resumable per-question execution, persisted run/question artifacts, direct-only Stage 1 enforcement, and verified clean `--resume` behavior on a mock-db smoke run. |
+| 07 | Implement report generation and diagnostic outputs | 🟢 Complete | 06 | Completed 2026-03-27: added stable summary/report/failures artifacts, wired report generation into the resumable runner, and verified mock-run diagnostics plus machine-readable failure records. |
+| 08 | Add MCP and REST smoke transports plus isolated benchmark DB compose | 🟢 Complete | 05, 06 | Completed 2026-03-27: wired MCP streamable-HTTP and REST smoke adapters, added smoke coverage against live local HTTP servers, and replaced the placeholder bench compose with isolated `postgres-bench` plus bench-only HTTP service variants using `POSTGRES_DATABASE`. |
+| 09 | Add end-to-end tests and benchmark operator docs | 🟢 Complete | 07, 08 | Completed 2026-03-27: added failed-question resume coverage, expanded operator docs with direct-only run instructions and artifact inspection guidance, and verified both mock smoke and 1-question paid-model validation runs. |
 
 ## Dependency Notes
 

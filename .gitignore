@@ -213,3 +213,9 @@ data/
 
 # Docker volumes (should not be committed)
 pgdata/
+
+# Benchmarking
+benchmarks/datasets/*
+!benchmarks/datasets/.gitkeep
+benchmarks/reports/results/*
+!benchmarks/reports/results/.gitkeep

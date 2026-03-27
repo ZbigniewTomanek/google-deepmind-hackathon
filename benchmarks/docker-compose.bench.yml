@@ -1,0 +1,64 @@
+x-bench-neocortex-env: &bench-neocortex-env
+  NEOCORTEX_MOCK_DB: "false"
+  NEOCORTEX_AUTH_MODE: "dev_token"
+  NEOCORTEX_DEV_TOKENS_FILE: "/app/dev_tokens.json"
+  POSTGRES_HOST: postgres-bench
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: neocortex
+  POSTGRES_PASSWORD: neocortex
+  POSTGRES_DATABASE: neocortex_bench
+
+services:
+  postgres-bench:
+    image: pgvector/pgvector:0.8.0-pg16
+    container_name: neocortex-postgres-bench
+    environment:
+      POSTGRES_DB: neocortex_bench
+      POSTGRES_USER: neocortex
+      POSTGRES_PASSWORD: neocortex
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata-bench:/var/lib/postgresql/data
+      - ./migrations/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neocortex -d neocortex_bench"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  neocortex-mcp-bench:
+    profiles: ["bench"]
+    build:
+      context: .
+      dockerfile: docker/mcp/Dockerfile
+    ports:
+      - "8010:8000"
+    environment:
+      <<: *bench-neocortex-env
+      NEOCORTEX_TRANSPORT: http
+      NEOCORTEX_SERVER_HOST: "0.0.0.0"
+    volumes:
+      - ./dev_tokens.json:/app/dev_tokens.json:ro
+    depends_on:
+      postgres-bench:
+        condition: service_healthy
+
+  neocortex-ingestion-bench:
+    profiles: ["bench"]
+    build:
+      context: .
+      dockerfile: docker/ingestion/Dockerfile
+    ports:
+      - "8011:8001"
+    environment:
+      <<: *bench-neocortex-env
+    volumes:
+      - ./dev_tokens.json:/app/dev_tokens.json:ro
+    depends_on:
+      postgres-bench:
+        condition: service_healthy
+
+volumes:
+  pgdata-bench:
+    driver: local
