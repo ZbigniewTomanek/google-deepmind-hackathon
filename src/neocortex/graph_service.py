@@ -9,7 +9,8 @@ from neocortex.postgres_service import PostgresService
 
 def _record_to_dict(row: asyncpg.Record | None) -> dict[str, Any]:
     """Convert asyncpg Record to dict (helps the type checker)."""
-    assert row is not None, "Expected a database row but got None"
+    if row is None:
+        raise ValueError("Expected a database row but got None")
     return dict(row.items())
 
 
@@ -44,16 +45,14 @@ class GraphService:
     async def update_node_type(
         self, id: int, name: str | None = None, description: str | None = None
     ) -> NodeType | None:
-        current = await self.get_node_type(id)
-        if not current:
-            return None
         row = await self._pg.fetchrow(
-            "UPDATE node_type SET name = $1, description = $2 WHERE id = $3 RETURNING *",
-            name if name is not None else current.name,
-            description if description is not None else current.description,
+            """UPDATE node_type SET name = COALESCE($1, name), description = COALESCE($2, description)
+               WHERE id = $3 RETURNING *""",
+            name,
+            description,
             id,
         )
-        return NodeType(**_record_to_dict(row))
+        return NodeType(**_record_to_dict(row)) if row else None
 
     async def delete_node_type(self, id: int) -> bool:
         result = await self._pg.execute("DELETE FROM node_type WHERE id = $1", id)
@@ -84,16 +83,14 @@ class GraphService:
     async def update_edge_type(
         self, id: int, name: str | None = None, description: str | None = None
     ) -> EdgeType | None:
-        current = await self.get_edge_type(id)
-        if not current:
-            return None
         row = await self._pg.fetchrow(
-            "UPDATE edge_type SET name = $1, description = $2 WHERE id = $3 RETURNING *",
-            name if name is not None else current.name,
-            description if description is not None else current.description,
+            """UPDATE edge_type SET name = COALESCE($1, name), description = COALESCE($2, description)
+               WHERE id = $3 RETURNING *""",
+            name,
+            description,
             id,
         )
-        return EdgeType(**_record_to_dict(row))
+        return EdgeType(**_record_to_dict(row)) if row else None
 
     async def delete_edge_type(self, id: int) -> bool:
         result = await self._pg.execute("DELETE FROM edge_type WHERE id = $1", id)
@@ -158,25 +155,24 @@ class GraphService:
         properties: dict | None = None,
         embedding: list[float] | None = None,
     ) -> Node | None:
-        current = await self.get_node(id)
-        if not current:
-            return None
-        props_json = json.dumps(properties) if properties is not None else json.dumps(current.properties)
+        props_json = json.dumps(properties) if properties is not None else None
         emb_str = str(embedding) if embedding is not None else None
         row = await self._pg.fetchrow(
             """UPDATE node SET
-                name = $1, content = $2, properties = $3::jsonb,
+                name = COALESCE($1, name),
+                content = COALESCE($2, content),
+                properties = COALESCE($3::jsonb, properties),
                 embedding = COALESCE($4::vector, embedding),
                 updated_at = now()
                WHERE id = $5
                RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
-            name if name is not None else current.name,
-            content if content is not None else current.content,
+            name,
+            content,
             props_json,
             emb_str,
             id,
         )
-        return self._row_to_node(row)
+        return self._row_to_node(row) if row else None
 
     async def delete_node(self, id: int) -> bool:
         result = await self._pg.execute("DELETE FROM node WHERE id = $1", id)
@@ -273,7 +269,7 @@ class GraphService:
         return self._row_to_episode(row) if row else None
 
     async def list_episodes(self, agent_id: str | None = None, limit: int = 50) -> list[Episode]:
-        if agent_id:
+        if agent_id is not None:
             rows = await self._pg.fetch(
                 """SELECT id, agent_id, content, source_type, metadata, created_at
                    FROM episode WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2""",
@@ -351,7 +347,7 @@ class GraphService:
             )
         return [dict(r) for r in rows]
 
-    # ── Search: Full-Text (BM25 via tsvector) ────────────────────
+    # ── Search: Full-Text (tsvector + ts_rank) ─────────────────────
 
     async def search_by_text(self, query: str, limit: int = 10, type_id: int | None = None) -> list[dict]:
         """Full-text search using PostgreSQL tsvector. Returns nodes ranked by ts_rank."""
@@ -387,7 +383,7 @@ class GraphService:
     ) -> list[dict]:
         """Find episodes closest to the given embedding vector."""
         emb_str = str(embedding)
-        if agent_id:
+        if agent_id is not None:
             rows = await self._pg.fetch(
                 """SELECT id, agent_id, content, source_type, metadata, created_at,
                           1 - (embedding <=> $1::vector) AS similarity

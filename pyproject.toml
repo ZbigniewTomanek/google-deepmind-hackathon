@@ -30,17 +30,6 @@ dev = [
 line-length = 120
 target-version = ["py313"]
 
-[tool.poetry]
-packages = [{include = "pydantic_agents_playground", from = "src"}]
-
-[tool.poetry.group.dev.dependencies]
-black = "*"
-flake8 = "*"
-pre-commit = "*"
-pytest = "*"
-ruff = "*"
-ty = "*"
-
 [tool.ruff]
 line-length = 120
 target-version = "py313"
