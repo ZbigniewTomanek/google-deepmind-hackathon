@@ -47,5 +47,9 @@ class MCPSettings(BaseSettings):
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
     recall_vector_distance_threshold: float = 0.5
 
+    # Extraction pipeline
+    extraction_enabled: bool = True
+    extraction_model: str = "gemini-2.5-flash"
+
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired

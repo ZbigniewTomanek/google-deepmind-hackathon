@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastmcp import FastMCP
 from starlette.responses import JSONResponse
@@ -16,9 +17,24 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
     async def app_lifespan(server):
         del server
         ctx = await create_services(settings)
+        job_app = ctx.get("job_app")
+
+        # Start Procrastinate worker in MCP server only (ingestion API just enqueues)
+        worker_task = None
+        if job_app is not None:
+            worker_task = asyncio.create_task(
+                job_app.run_worker_async(
+                    queues=["extraction"], install_signal_handlers=False
+                )
+            )
+
         try:
             yield ctx
         finally:
+            if worker_task is not None:
+                worker_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await worker_task
             await shutdown_services(ctx)
 
     mcp = FastMCP(
