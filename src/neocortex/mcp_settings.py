@@ -6,7 +6,12 @@ from pydantic_settings import BaseSettings
 class MCPSettings(BaseSettings):
     """MCP server configuration. Loaded from env vars with NEOCORTEX_ prefix."""
 
-    model_config = {"env_prefix": "NEOCORTEX_", "env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_prefix": "NEOCORTEX_",
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
     # Server
     server_name: str = "NeoCortex"
