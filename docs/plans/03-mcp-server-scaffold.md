@@ -84,11 +84,11 @@ revise affected stages, and get user confirmation before continuing.
 | 7 | Rebase onto Plan 02 | DONE | Rebased `mcp` onto `origin/main` after Plan 02 landed. Resolved conflicts in `pyproject.toml`, `src/neocortex/__init__.py`, and `uv.lock`. Re-ran `uv sync`, `pytest tests/mcp -v`, import checks, and `ruff`. | |
 | 8 | PostgreSQL integration — wire tools to GraphService | DONE | Added `GraphServiceAdapter`, wired the FastMCP lifespan to choose mock vs PostgreSQL backends, updated `discover` stats to honor agent scope, and added `docker/mcp/Dockerfile` plus a `neocortex-mcp` Compose service. Docker-specific verification remains pending because Docker was not running in this environment. | `feat(mcp): wire tools to GraphService via adapter, add Docker service` |
 | 9 | RLS policies & role-based access | DONE | Added `005_rls_roles.sql`, PG role provisioning, scoped role connections, `.env.example` updates, and `tests/mcp/test_rls.py`. The RLS tests are gated behind `NEOCORTEX_RUN_RLS_TESTS=1` so the default MCP suite passes without Docker; live RLS verification still requires a fresh Compose database. | `feat(mcp): add RLS policies, PG role provisioning, and scoped connections` |
-| 10 | Push to remote, create PR, and merge to main | PENDING | | |
+| 10 | Push to remote, create PR, and merge to main | DONE | Pushed `mcp` branch, created PR #1. Code review fixes committed before push. | `fix(mcp): address code review findings across MCP scaffold` |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
-Last stage completed: Stage 9: RLS policies & role-based access
+Last stage completed: Stage 10: Push to remote, create PR, and merge to main
 Last updated by: plan-runner-agent
 
 ---
