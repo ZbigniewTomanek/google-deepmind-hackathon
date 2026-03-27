@@ -217,34 +217,72 @@ class NeoCortexApp(App):
         result_text.update(text)
 
     def _show_recall_results(self, results: list, total: int, query: str) -> None:
-        result_text = self.query_one("#results-text", Static)
-        result_text.display = False
-        table = self.query_one("#results-table", DataTable)
-        table.clear(columns=True)
-        table.add_columns("Score", "Type", "Kind", "Name", "Content", "Source", "Graph")
-        for item in results:
-            score = item.get("score", 0)
-            if score >= 0.7:
-                score_str = f"[green]{score:.3f}[/green]"
-            elif score >= 0.3:
-                score_str = f"[yellow]{score:.3f}[/yellow]"
-            else:
-                score_str = f"[red]{score:.3f}[/red]"
-            content = item.get("content", "")
-            if len(content) > 80:
-                content = content[:77] + "..."
-            table.add_row(
-                score_str,
-                item.get("item_type", ""),
-                item.get("source_kind", ""),
-                item.get("name", ""),
-                content,
-                item.get("source", "") or "",
-                item.get("graph_name", "") or "",
-            )
-        table.display = True
         if not results:
             self._show_text_result(f"No results found for: {query}")
+            return
+
+        lines: list[str] = [f"=== Recall: {total} results for '{query}' ===\n"]
+
+        for item in results:
+            score = item.get("score", 0)
+            kind = item.get("source_kind", "")
+            name = item.get("name", "")
+            item_type = item.get("item_type", "")
+            content = item.get("content", "")
+            graph_ctx = item.get("graph_context")
+
+            if kind == "node" and graph_ctx:
+                # Node result with graph context — show tree
+                center = graph_ctx.get("center_node", {})
+                edges = graph_ctx.get("edges", [])
+                neighbors = graph_ctx.get("neighbor_nodes", [])
+                depth = graph_ctx.get("depth", 0)
+
+                lines.append(
+                    f"+-  Node: {center.get('name', name)} "
+                    f"[{center.get('type', item_type)}] "
+                    f"{'.' * max(1, 50 - len(name) - len(item_type))} "
+                    f"score: {score:.3f}"
+                )
+                if content:
+                    short = content[:100] + "..." if len(content) > 100 else content
+                    lines.append(f"|  {short}")
+
+                # Build a lookup for neighbor names/types
+                neighbor_map = {n.get("id"): n for n in neighbors}
+                center_id = center.get("id")
+
+                for i, edge in enumerate(edges):
+                    is_last = i == len(edges) - 1
+                    branch = "`--" if is_last else "|--"
+                    rel_type = edge.get("type", "?")
+                    src_id = edge.get("source")
+                    tgt_id = edge.get("target")
+                    # Determine the "other" node
+                    if src_id == center_id:
+                        other = neighbor_map.get(tgt_id, {})
+                        arrow = f"--[{rel_type}]--> {other.get('name', '?')} [{other.get('type', '?')}]"
+                    else:
+                        other = neighbor_map.get(src_id, {})
+                        arrow = f"<--[{rel_type}]-- {other.get('name', '?')} [{other.get('type', '?')}]"
+                    weight = edge.get("weight")
+                    weight_str = f" (w={weight:.2f})" if weight is not None else ""
+                    lines.append(f"|  {branch} {arrow}{weight_str}")
+
+                if not edges and neighbors:
+                    lines.append(f"|  (no direct edges, {len(neighbors)} neighbor(s) at depth {depth})")
+
+                lines.append(f"+{'─' * 58}")
+                lines.append("")
+            else:
+                # Episode result or node without graph context — compact line
+                if len(content) > 80:
+                    content = content[:77] + "..."
+                lines.append(
+                    f"  [{score:.3f}] ({kind}) {name} [{item_type}]: {content}"
+                )
+
+        self._show_text_result("\n".join(lines))
 
     def _show_discover_results(self, result: dict) -> None:
         lines = ["=== Ontology ===\n"]
@@ -255,7 +293,12 @@ class NeoCortexApp(App):
             name = nt.get("name", "?") if isinstance(nt, dict) else str(nt)
             count = nt.get("count", 0) if isinstance(nt, dict) else 0
             desc = nt.get("description", "") if isinstance(nt, dict) else ""
-            lines.append(f"  - {name} ({count}){': ' + desc if desc else ''}")
+            dots = "." * max(2, 40 - len(name))
+            count_str = f"{count} entities"
+            line = f"  {name} {dots} {count_str}"
+            if desc:
+                line += f"  ({desc})"
+            lines.append(line)
 
         edge_types = result.get("edge_types", [])
         lines.append(f"\nEdge Types ({len(edge_types)}):")
@@ -263,7 +306,12 @@ class NeoCortexApp(App):
             name = et.get("name", "?") if isinstance(et, dict) else str(et)
             count = et.get("count", 0) if isinstance(et, dict) else 0
             desc = et.get("description", "") if isinstance(et, dict) else ""
-            lines.append(f"  - {name} ({count}){': ' + desc if desc else ''}")
+            dots = "." * max(2, 40 - len(name))
+            count_str = f"{count} relations"
+            line = f"  {name} {dots} {count_str}"
+            if desc:
+                line += f"  ({desc})"
+            lines.append(line)
 
         stats = result.get("stats", {})
         lines.append("\n=== Stats ===")
