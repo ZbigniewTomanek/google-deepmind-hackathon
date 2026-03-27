@@ -278,3 +278,36 @@ async def test_get_stats_includes_nodes_edges(repo: InMemoryRepository) -> None:
     assert stats.total_nodes == 2
     assert stats.total_edges == 1
     assert stats.total_episodes == 1
+
+
+# ── _escape_ilike ──
+
+
+def test_escape_ilike_no_special_chars():
+    from neocortex.db.adapter import _escape_ilike
+
+    assert _escape_ilike("hello world") == "hello world"
+
+
+def test_escape_ilike_percent():
+    from neocortex.db.adapter import _escape_ilike
+
+    assert _escape_ilike("100% done") == "100\\% done"
+
+
+def test_escape_ilike_underscore():
+    from neocortex.db.adapter import _escape_ilike
+
+    assert _escape_ilike("user_name") == "user\\_name"
+
+
+def test_escape_ilike_backslash():
+    from neocortex.db.adapter import _escape_ilike
+
+    assert _escape_ilike("path\\to") == "path\\\\to"
+
+
+def test_escape_ilike_all_special():
+    from neocortex.db.adapter import _escape_ilike
+
+    assert _escape_ilike("100%_discount\\promo") == "100\\%\\_discount\\\\promo"
