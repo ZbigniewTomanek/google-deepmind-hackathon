@@ -56,6 +56,9 @@ uv run python -m neocortex
 
 # Run tests
 uv run pytest tests/ -v
+
+# Run TUI (connect to running MCP server)
+uv run python -m neocortex.tui --url http://localhost:8000 --token dev-token-neocortex
 ```
 
 ## Implementation Status
