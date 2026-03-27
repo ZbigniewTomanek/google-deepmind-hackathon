@@ -11,13 +11,11 @@ _services: ServiceContext | None = None
 
 
 def set_services(ctx: ServiceContext) -> None:
-    global _services  # noqa: PLW0603
+    global _services
     _services = ctx
 
 
 def get_services() -> ServiceContext:
     if _services is None:
-        raise RuntimeError(
-            "Job services not initialized. Was set_services() called in lifespan?"
-        )
+        raise RuntimeError("Job services not initialized. Was set_services() called in lifespan?")
     return _services

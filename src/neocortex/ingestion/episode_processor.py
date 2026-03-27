@@ -44,10 +44,8 @@ class EpisodeProcessor:
     async def _enqueue_extraction(self, agent_id: str, episode_id: int) -> int | None:
         if not self._job_app or not self._extraction_enabled:
             return None
-        from neocortex.jobs.tasks import extract_episode
-
-        job_id = await extract_episode.defer_async(
-            self._job_app, agent_id=agent_id, episode_ids=[episode_id]
+        job_id = await self._job_app.configure_task("extract_episode").defer_async(
+            agent_id=agent_id, episode_ids=[episode_id]
         )
         logger.bind(action_log=True).info(
             "extraction_enqueued",

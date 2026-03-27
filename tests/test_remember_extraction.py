@@ -11,7 +11,6 @@ from neocortex.ingestion.episode_processor import EpisodeProcessor
 from neocortex.mcp_settings import MCPSettings
 from neocortex.schemas.memory import RememberResult
 
-
 # ── Fixtures ──
 
 
@@ -23,6 +22,15 @@ def repo() -> InMemoryRepository:
 @pytest.fixture
 def settings() -> MCPSettings:
     return MCPSettings(mock_db=True, extraction_enabled=True)
+
+
+def _make_mock_job_app(return_value: int = 42) -> MagicMock:
+    """Create a mock job_app whose configure_task(...).defer_async(...) returns return_value."""
+    mock_job_app = MagicMock()
+    mock_deferrer = MagicMock()
+    mock_deferrer.defer_async = AsyncMock(return_value=return_value)
+    mock_job_app.configure_task.return_value = mock_deferrer
+    return mock_job_app
 
 
 # ── Remember tool tests ──
@@ -39,7 +47,6 @@ async def test_remember_skips_extraction_when_no_job_app(repo: InMemoryRepositor
         "job_app": None,
     }
 
-    # Need to mock get_agent_id_from_context
     with patch("neocortex.tools.remember.get_agent_id_from_context", return_value="test-agent"):
         from neocortex.tools.remember import remember
 
@@ -74,7 +81,7 @@ async def test_remember_skips_extraction_when_disabled(repo: InMemoryRepository)
 @pytest.mark.asyncio
 async def test_remember_enqueues_extraction_job(repo: InMemoryRepository, settings: MCPSettings):
     """With job_app and extraction enabled, remember defers an extraction job."""
-    mock_job_app = MagicMock()
+    mock_job_app = _make_mock_job_app(return_value=42)
 
     ctx = MagicMock()
     ctx.lifespan_context = {
@@ -84,11 +91,7 @@ async def test_remember_enqueues_extraction_job(repo: InMemoryRepository, settin
         "job_app": mock_job_app,
     }
 
-    # Mock the defer_async call on the task
-    with (
-        patch("neocortex.tools.remember.get_agent_id_from_context", return_value="test-agent"),
-        patch("neocortex.jobs.tasks.extract_episode.defer_async", new_callable=AsyncMock, return_value=42) as mock_defer,
-    ):
+    with patch("neocortex.tools.remember.get_agent_id_from_context", return_value="test-agent"):
         from neocortex.tools.remember import remember
 
         result = await remember("Test memory about serotonin", ctx=ctx)
@@ -97,9 +100,9 @@ async def test_remember_enqueues_extraction_job(repo: InMemoryRepository, settin
     assert result.episode_id > 0
     assert result.extraction_job_id == 42
 
-    # Verify defer was called with the correct arguments
-    mock_defer.assert_called_once_with(
-        mock_job_app,
+    # Verify configure_task was called correctly
+    mock_job_app.configure_task.assert_called_once_with("extract_episode")
+    mock_job_app.configure_task.return_value.defer_async.assert_called_once_with(
         agent_id="test-agent",
         episode_ids=[result.episode_id],
     )
@@ -132,60 +135,44 @@ async def test_processor_skips_extraction_when_disabled(repo: InMemoryRepository
 @pytest.mark.asyncio
 async def test_processor_enqueues_extraction_on_text(repo: InMemoryRepository):
     """EpisodeProcessor with job_app defers extraction after storing text."""
-    mock_job_app = MagicMock()
+    mock_job_app = _make_mock_job_app(return_value=99)
 
-    with patch(
-        "neocortex.jobs.tasks.extract_episode.defer_async",
-        new_callable=AsyncMock,
-        return_value=99,
-    ) as mock_defer:
-        processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
-        result = await processor.process_text("agent-a", "serotonin modulates mood", {})
+    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
+    result = await processor.process_text("agent-a", "serotonin modulates mood", {})
 
     assert result.status == "stored"
     assert result.episodes_created == 1
-    mock_defer.assert_called_once()
-    call_kwargs = mock_defer.call_args
-    assert call_kwargs[1]["agent_id"] == "agent-a"
-    assert len(call_kwargs[1]["episode_ids"]) == 1
+    mock_job_app.configure_task.assert_called_with("extract_episode")
+    mock_job_app.configure_task.return_value.defer_async.assert_called_once()
+    call_kwargs = mock_job_app.configure_task.return_value.defer_async.call_args[1]
+    assert call_kwargs["agent_id"] == "agent-a"
+    assert len(call_kwargs["episode_ids"]) == 1
 
 
 @pytest.mark.asyncio
 async def test_processor_enqueues_extraction_on_document(repo: InMemoryRepository):
     """EpisodeProcessor defers extraction after storing a document."""
-    mock_job_app = MagicMock()
+    mock_job_app = _make_mock_job_app(return_value=101)
 
-    with patch(
-        "neocortex.jobs.tasks.extract_episode.defer_async",
-        new_callable=AsyncMock,
-        return_value=101,
-    ) as mock_defer:
-        processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
-        result = await processor.process_document(
-            "agent-a", "doc.txt", b"Medical text about SSRIs", "text/plain", {}
-        )
+    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
+    result = await processor.process_document("agent-a", "doc.txt", b"Medical text about SSRIs", "text/plain", {})
 
     assert result.status == "stored"
-    mock_defer.assert_called_once()
+    mock_job_app.configure_task.return_value.defer_async.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_processor_enqueues_extraction_on_events(repo: InMemoryRepository):
     """EpisodeProcessor defers extraction for each event in a batch."""
-    mock_job_app = MagicMock()
+    mock_job_app = _make_mock_job_app(return_value=200)
 
-    with patch(
-        "neocortex.jobs.tasks.extract_episode.defer_async",
-        new_callable=AsyncMock,
-        return_value=200,
-    ) as mock_defer:
-        processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
-        events = [{"type": "note", "text": "fact 1"}, {"type": "note", "text": "fact 2"}]
-        result = await processor.process_events("agent-a", events, {})
+    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
+    events = [{"type": "note", "text": "fact 1"}, {"type": "note", "text": "fact 2"}]
+    result = await processor.process_events("agent-a", events, {})
 
     assert result.status == "stored"
     assert result.episodes_created == 2
-    assert mock_defer.call_count == 2
+    assert mock_job_app.configure_task.return_value.defer_async.call_count == 2
 
 
 @pytest.mark.asyncio

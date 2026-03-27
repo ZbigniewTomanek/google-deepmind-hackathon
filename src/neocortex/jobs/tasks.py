@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import procrastinate
-from procrastinate.testing import InMemoryConnector
-
 from loguru import logger
+from procrastinate.testing import InMemoryConnector
 
 # Placeholder app for task registration — replaced at runtime with real conninfo.
 app = procrastinate.App(

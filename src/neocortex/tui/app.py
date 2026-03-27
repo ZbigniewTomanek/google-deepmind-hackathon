@@ -278,9 +278,7 @@ class NeoCortexApp(App):
                 # Episode result or node without graph context — compact line
                 if len(content) > 80:
                     content = content[:77] + "..."
-                lines.append(
-                    f"  [{score:.3f}] ({kind}) {name} [{item_type}]: {content}"
-                )
+                lines.append(f"  [{score:.3f}] ({kind}) {name} [{item_type}]: {content}")
 
         self._show_text_result("\n".join(lines))
 

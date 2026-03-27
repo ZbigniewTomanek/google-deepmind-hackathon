@@ -39,18 +39,10 @@ async def _build_small_graph(repo: InMemoryRepository) -> dict:
     et_affects = await repo.get_or_create_edge_type(AGENT, "AFFECTS")
     et_causes = await repo.get_or_create_edge_type(AGENT, "CAUSES")
 
-    serotonin = await repo.upsert_node(
-        AGENT, "Serotonin", nt_neuro.id, content="A monoamine neurotransmitter"
-    )
-    mood = await repo.upsert_node(
-        AGENT, "Mood Regulation", nt_process.id, content="Biological process of mood control"
-    )
-    fluoxetine = await repo.upsert_node(
-        AGENT, "Fluoxetine", nt_drug.id, content="An SSRI antidepressant"
-    )
-    depression = await repo.upsert_node(
-        AGENT, "Depression", nt_condition.id, content="Major depressive disorder"
-    )
+    serotonin = await repo.upsert_node(AGENT, "Serotonin", nt_neuro.id, content="A monoamine neurotransmitter")
+    mood = await repo.upsert_node(AGENT, "Mood Regulation", nt_process.id, content="Biological process of mood control")
+    fluoxetine = await repo.upsert_node(AGENT, "Fluoxetine", nt_drug.id, content="An SSRI antidepressant")
+    depression = await repo.upsert_node(AGENT, "Depression", nt_condition.id, content="Major depressive disorder")
     sexual_dysfunction = await repo.upsert_node(
         AGENT, "Sexual Dysfunction", nt_condition.id, content="SSRI-induced sexual side effects"
     )

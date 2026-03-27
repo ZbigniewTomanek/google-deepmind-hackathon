@@ -14,9 +14,9 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
 from neocortex.extraction.schemas import (
-    ExtractionResult,
     ExtractedEntity,
     ExtractedRelation,
+    ExtractionResult,
     LibrarianPayload,
     OntologyProposal,
 )
@@ -48,7 +48,7 @@ def build_ontology_agent(
     model_name: str | None = None, use_test_model: bool = False
 ) -> Agent[OntologyAgentDeps, OntologyProposal]:
     model = _build_model(model_name, use_test_model)
-    agent: Agent[OntologyAgentDeps, OntologyProposal] = Agent(
+    agent = Agent(
         model,
         output_type=OntologyProposal,
         deps_type=OntologyAgentDeps,
@@ -64,12 +64,8 @@ def build_ontology_agent(
 
     @agent.instructions
     async def inject_context(ctx: RunContext[OntologyAgentDeps]) -> str:
-        existing_nt = (
-            "\n".join(f"- {n}" for n in ctx.deps.existing_node_types) or "- none"
-        )
-        existing_et = (
-            "\n".join(f"- {n}" for n in ctx.deps.existing_edge_types) or "- none"
-        )
+        existing_nt = "\n".join(f"- {n}" for n in ctx.deps.existing_node_types) or "- none"
+        existing_et = "\n".join(f"- {n}" for n in ctx.deps.existing_edge_types) or "- none"
         return "\n".join(
             [
                 "Text to analyze:",
@@ -88,7 +84,7 @@ def build_ontology_agent(
             ]
         )
 
-    return agent
+    return agent  # ty: ignore[invalid-return-type]
 
 
 # ── Extractor Agent ──
@@ -105,7 +101,7 @@ def build_extractor_agent(
     model_name: str | None = None, use_test_model: bool = False
 ) -> Agent[ExtractorAgentDeps, ExtractionResult]:
     model = _build_model(model_name, use_test_model)
-    agent: Agent[ExtractorAgentDeps, ExtractionResult] = Agent(
+    agent = Agent(
         model,
         output_type=ExtractionResult,
         deps_type=ExtractorAgentDeps,
@@ -141,7 +137,7 @@ def build_extractor_agent(
             ]
         )
 
-    return agent
+    return agent  # ty: ignore[invalid-return-type]
 
 
 # ── Librarian Agent ──
@@ -161,7 +157,7 @@ def build_librarian_agent(
     model_name: str | None = None, use_test_model: bool = False
 ) -> Agent[LibrarianAgentDeps, LibrarianPayload]:
     model = _build_model(model_name, use_test_model)
-    agent: Agent[LibrarianAgentDeps, LibrarianPayload] = Agent(
+    agent = Agent(
         model,
         output_type=LibrarianPayload,
         deps_type=LibrarianAgentDeps,
@@ -179,21 +175,17 @@ def build_librarian_agent(
     async def inject_context(ctx: RunContext[LibrarianAgentDeps]) -> str:
         entities_str = (
             "\n".join(
-                f"- {e.name} [{e.type_name}]: {e.description or 'no description'}"
-                for e in ctx.deps.extracted_entities
+                f"- {e.name} [{e.type_name}]: {e.description or 'no description'}" for e in ctx.deps.extracted_entities
             )
             or "- none"
         )
         relations_str = (
             "\n".join(
-                f"- {r.source_name} --[{r.relation_type}]--> {r.target_name}"
-                for r in ctx.deps.extracted_relations
+                f"- {r.source_name} --[{r.relation_type}]--> {r.target_name}" for r in ctx.deps.extracted_relations
             )
             or "- none"
         )
-        known_str = (
-            "\n".join(f"- {n}" for n in ctx.deps.known_node_names) or "- none"
-        )
+        known_str = "\n".join(f"- {n}" for n in ctx.deps.known_node_names) or "- none"
         return "\n".join(
             [
                 "Source text:",
@@ -222,4 +214,4 @@ def build_librarian_agent(
             ]
         )
 
-    return agent
+    return agent  # ty: ignore[invalid-return-type]

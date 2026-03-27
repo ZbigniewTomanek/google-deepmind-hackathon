@@ -144,7 +144,7 @@ async def _persist_payload(
         has_text = [bool(t) for t in texts_to_embed]
         if any(has_text):
             batch_results = await embeddings.embed_batch(
-                [t for t, h in zip(texts_to_embed, has_text) if h]
+                [t for t, h in zip(texts_to_embed, has_text, strict=False) if h]
             )
             # Map batch results back to entity indices
             batch_idx = 0
@@ -152,9 +152,9 @@ async def _persist_payload(
                 if h:
                     entity_embeddings[i] = batch_results[batch_idx]
                     batch_idx += 1
-            assert batch_idx == len(batch_results), (
-                f"Embedding batch size mismatch: expected {batch_idx}, got {len(batch_results)}"
-            )
+            assert batch_idx == len(
+                batch_results
+            ), f"Embedding batch size mismatch: expected {batch_idx}, got {len(batch_results)}"
 
     # Persist entities as nodes
     name_to_node_id: dict[str, int] = {}

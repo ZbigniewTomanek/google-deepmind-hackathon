@@ -38,14 +38,10 @@ class MemoryRepository(Protocol):
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(
-        self, agent_id: str, name: str, description: str | None = None
-    ) -> NodeType:
+    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
         """Return existing node type by name or create a new one."""
 
-    async def get_or_create_edge_type(
-        self, agent_id: str, name: str, description: str | None = None
-    ) -> EdgeType:
+    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
         """Return existing edge type by name or create a new one."""
 
     # ── Episode Read ──
@@ -108,9 +104,7 @@ class MemoryRepository(Protocol):
 
     # ── Graph Traversal ──
 
-    async def get_node_neighborhood(
-        self, agent_id: str, node_id: int, depth: int = 2
-    ) -> list[dict]:
+    async def get_node_neighborhood(self, agent_id: str, node_id: int, depth: int = 2) -> list[dict]:
         """BFS traversal up to ``depth`` hops.
 
         Returns list of ``{node: Node, edges: list[Edge], distance: int}``.
