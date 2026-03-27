@@ -39,7 +39,9 @@ class InMemoryRepository:
         )
         return episode_id
 
-    async def recall(self, query: str, agent_id: str, limit: int = 10) -> list[RecallItem]:
+    async def recall(
+        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+    ) -> list[RecallItem]:
         query_lower = query.lower()
         matches: list[RecallItem] = []
 

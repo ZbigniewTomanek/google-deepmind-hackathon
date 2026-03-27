@@ -15,7 +15,9 @@ class MemoryRepository(Protocol):
     ) -> int:
         """Store a raw episode and return the episode ID."""
 
-    async def recall(self, query: str, agent_id: str, limit: int = 10) -> list[RecallItem]:
+    async def recall(
+        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+    ) -> list[RecallItem]:
         """Return ranked recall results for an agent."""
 
     async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
