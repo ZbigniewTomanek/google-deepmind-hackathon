@@ -1464,12 +1464,12 @@ GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
 | 2 | Background Jobs Framework | DONE | Procrastinate app factory, task registration, context holder, settings, service lifecycle, worker in MCP lifespan, 11 tests |
 | 3 | Medical Domain Seed Corpus | DONE | 10 medical passages (neuro/pharma/sexual), CLI ingest command |
 | 4 | Extraction Pipeline Module | DONE | Schemas, 3 agents (ontology/extractor/librarian), pipeline orchestration, _persist_payload, 10 tests |
-| 5 | Wire Extraction into Remember & Ingest | PENDING | |
+| 5 | Wire Extraction into Remember & Ingest | DONE | remember tool enqueues extraction, EpisodeProcessor replaces StubProcessor, backward-compat shim, 9 tests |
 | 6 | Enhanced Recall with Graph Traversal | PENDING | |
 | 7 | TUI, Discover & E2E Validation | PENDING | |
 | 8 | CLI-Reproducible E2E Smoke Tests | PENDING | |
 
-- **Last stage completed**: Stage 4 — Extraction Pipeline Module
+- **Last stage completed**: Stage 5 — Wire Extraction into Remember & Ingest
 - **Last updated by**: plan-runner-agent
 - **Blocked**: —
 
