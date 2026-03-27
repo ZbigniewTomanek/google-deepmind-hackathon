@@ -35,6 +35,24 @@ async def test_route_store_creates_personal_graph_when_missing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_route_store_returns_existing_graph() -> None:
+    schema_manager = AsyncMock()
+    schema_manager.get_graph.return_value = _graph_info(
+        graph_id=1,
+        agent_id="alice",
+        purpose="personal",
+        schema_name="ncx_alice__personal",
+    )
+    router = GraphRouter(schema_manager, pool=cast(asyncpg.Pool, object()))
+
+    schema_name = await router.route_store("alice")
+
+    assert schema_name == "ncx_alice__personal"
+    schema_manager.get_graph.assert_awaited_once_with(agent_id="alice", purpose="personal")
+    schema_manager.create_graph.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_route_recall_returns_agent_graphs_then_shared_graphs() -> None:
     schema_manager = AsyncMock()
     schema_manager.list_graphs.side_effect = [
@@ -79,6 +97,34 @@ async def test_route_recall_returns_agent_graphs_then_shared_graphs() -> None:
         "ncx_shared__knowledge",
         "ncx_shared__team_notes",
     ]
+    assert schema_manager.list_graphs.await_args_list == [call(agent_id="alice"), call(agent_id="shared")]
+
+
+@pytest.mark.asyncio
+async def test_route_recall_without_shared_graphs_returns_only_agent_graphs() -> None:
+    schema_manager = AsyncMock()
+    schema_manager.list_graphs.side_effect = [
+        [
+            _graph_info(
+                graph_id=2,
+                agent_id="alice",
+                purpose="research",
+                schema_name="ncx_alice__research",
+            ),
+            _graph_info(
+                graph_id=1,
+                agent_id="alice",
+                purpose="personal",
+                schema_name="ncx_alice__personal",
+            ),
+        ],
+        [],
+    ]
+    router = GraphRouter(schema_manager, pool=cast(asyncpg.Pool, object()))
+
+    schema_names = await router.route_recall("alice")
+
+    assert schema_names == ["ncx_alice__personal", "ncx_alice__research"]
     assert schema_manager.list_graphs.await_args_list == [call(agent_id="alice"), call(agent_id="shared")]
 
 
