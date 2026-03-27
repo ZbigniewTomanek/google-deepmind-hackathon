@@ -63,6 +63,25 @@ Each agent gets isolated schemas named `ncx_{agent_id}__{purpose}` (double under
 **5. Auth mode determines agent identity.**
 `NEOCORTEX_AUTH_MODE`: `none` -> "anonymous", `dev_token` -> from `dev_tokens.json` mapping, `google_oauth` -> OAuth subject. All resolved by `get_agent_id_from_context(ctx)`.
 
+## Observability
+
+Structured logging is a first-class concern. All services use loguru via the central `neocortex/logging.py` module.
+
+**Setup:** Call `setup_logging(service_name="mcp"|"ingestion")` at the top of each entrypoint, before any other code that uses `logger`. The function is idempotent.
+
+**Sinks:** Each service logs to stderr (terminal / Docker) and to a rotating file in `log/` (`log/mcp.log`, `log/ingestion.log`). An additional `log/agent_actions.log` captures structured JSON audit entries from all services.
+
+**Agent action audit trail:** To write to the audit log, bind the `action_log` extra:
+```python
+from loguru import logger
+logger.bind(action_log=True).info("tool_call", tool="remember", agent_id=agent_id, ...)
+```
+Only messages with `action_log=True` appear in `agent_actions.log`. Use this for every MCP tool invocation and ingestion request.
+
+**Log level:** Controlled by `NEOCORTEX_LOG_LEVEL` env var (default `INFO`). Use `DEBUG` for routing decisions and DB operations; `TRACE` for connection-level detail.
+
+**Pydantic AI agents:** Use lifecycle hooks (`pydantic_ai.capabilities.Hooks`) to log model calls and tool executions to the same `agent_actions.log`. See `docs/plans/05-ingestion-api.md` Stage 9 for the full pattern.
+
 ## Key References
 
 - `docs/development.md` — setup, config, test conventions, adding tools/migrations, SQL safety

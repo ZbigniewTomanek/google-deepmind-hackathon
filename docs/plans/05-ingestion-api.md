@@ -176,6 +176,210 @@ curl -X POST localhost:8001/ingest/text \
 
 ---
 
+### Stage 9: Structured logging with loguru
+
+Add structured logging across the entire NeoCortex stack — MCP server, ingestion API, and agent action audit trail — using loguru. Both services log to stderr on launch (for `docker logs` / terminal visibility) and to dedicated rotating log files in `log/`.
+
+#### 9.1 Central logging module: `src/neocortex/logging.py`
+
+Create a shared logging configuration module (mirrors the pattern in `pydantic_agents_playground/logging.py`):
+
+```python
+"""NeoCortex structured logging configuration (loguru)."""
+import os
+import sys
+from loguru import logger
+
+_CONFIGURED = False
+
+def setup_logging(
+    *,
+    service_name: str,           # "mcp" | "ingestion"
+    log_dir: str = "log",
+    level: str | None = None,    # override from env NEOCORTEX_LOG_LEVEL
+) -> None:
+    global _CONFIGURED
+    if _CONFIGURED:
+        return
+
+    level = (level or os.getenv("NEOCORTEX_LOG_LEVEL", "INFO")).upper()
+    os.makedirs(log_dir, exist_ok=True)
+
+    logger.remove()  # drop default stderr handler
+
+    fmt = (
+        "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+        "<level>{message}</level>"
+    )
+
+    # 1. stderr — always active (visible in terminal / Docker logs)
+    logger.add(sys.stderr, level=level, format=fmt, backtrace=False, diagnose=False)
+
+    # 2. Service-specific log file (rotated daily, kept 7 days)
+    logger.add(
+        os.path.join(log_dir, f"{service_name}.log"),
+        level=level,
+        format=fmt,
+        rotation="10 MB",
+        retention="7 days",
+        compression="gz",
+        backtrace=True,
+        diagnose=True,
+    )
+
+    # 3. Agent action audit log — structured JSON, all services write here
+    logger.add(
+        os.path.join(log_dir, "agent_actions.log"),
+        level="INFO",
+        format="{message}",            # raw JSON lines
+        filter=lambda r: r["extra"].get("action_log"),
+        rotation="10 MB",
+        retention="14 days",
+        compression="gz",
+        serialize=True,
+    )
+
+    _CONFIGURED = True
+```
+
+Key design:
+- `service_name` differentiates file sinks: `log/mcp.log` vs `log/ingestion.log`
+- `agent_actions.log` is a shared JSON-lines file filtered via `extra["action_log"]` — only messages explicitly tagged with `logger.bind(action_log=True).info(...)` appear here
+- `NEOCORTEX_LOG_LEVEL` env var controls verbosity (default `INFO`)
+- Rotation at 10 MB, retention 7 days for service logs, 14 days for audit trail
+
+#### 9.2 Wire logging into MCP server entrypoint
+
+Update `src/neocortex/__main__.py`:
+```python
+from neocortex.logging import setup_logging
+setup_logging(service_name="mcp")
+logger.info("Starting NeoCortex MCP server", transport=settings.transport, port=settings.server_port)
+```
+
+Update `src/neocortex/server.py` lifespan:
+- Log `"Services initialized"` with mock_db flag on startup
+- Log `"Services shut down"` on shutdown
+
+#### 9.3 Wire logging into ingestion API entrypoint
+
+Update `src/neocortex/ingestion/__main__.py`:
+```python
+from neocortex.logging import setup_logging
+setup_logging(service_name="ingestion")
+logger.info("Starting NeoCortex Ingestion API", port=8001)
+```
+
+Update `src/neocortex/ingestion/app.py` lifespan:
+- Log `"Ingestion services initialized"` on startup
+- Log `"Ingestion services shut down"` on shutdown
+
+#### 9.4 Instrument key code paths
+
+Place log statements at these critical points (use `from loguru import logger`):
+
+| Module | What to log | Level |
+|--------|------------|-------|
+| `services.py` | `create_services` start/end, mock vs real mode, PG connected | `INFO` |
+| `services.py` | `shutdown_services` | `INFO` |
+| `tools/remember.py` | Tool called: agent_id, content length, node/edge counts stored | `INFO` + `action_log` |
+| `tools/recall.py` | Tool called: agent_id, query, result count | `INFO` + `action_log` |
+| `tools/discover.py` | Tool called: agent_id, result count | `INFO` + `action_log` |
+| `ingestion/routes.py` | Each endpoint: agent_id, payload size, result status | `INFO` + `action_log` |
+| `ingestion/auth.py` | Auth success (agent_id), auth failure (masked token) | `INFO` / `WARNING` |
+| `auth/dependencies.py` | MCP auth resolved agent_id | `DEBUG` |
+| `db/adapter.py` | Schema fan-out targets, query timing | `DEBUG` |
+| `graph_router.py` | Routing decision: operation → schemas | `DEBUG` |
+| `schema_manager.py` | Schema created/dropped | `INFO` |
+| `db/scoped.py` | Connection acquire/release | `TRACE` |
+
+For agent action audit entries, use structured binding:
+```python
+logger.bind(action_log=True).info(
+    "tool_call",
+    tool="remember",
+    agent_id=agent_id,
+    content_length=len(content),
+    nodes_created=result.nodes_created,
+)
+```
+
+#### 9.5 Pydantic AI agent observability (pydantic_agents_playground)
+
+Based on Pydantic AI docs, three mechanisms exist for local agent observability:
+
+**Option A — Lifecycle hooks (recommended for this project):**
+Pydantic AI provides a `Hooks` capability with event callbacks:
+- `before_model_request` / `after_model_request` — fires around every LLM call
+- `before_tool_execute` / `after_tool_execute` — fires around every tool call
+- `wrap_model_request` / `wrap_tool_execute` — middleware-style wrappers
+
+```python
+from pydantic_ai import Agent
+from pydantic_ai.capabilities import Hooks
+
+hooks = Hooks()
+
+@hooks.on.after_model_request
+async def log_model_call(ctx, response):
+    logger.bind(action_log=True).info(
+        "agent_model_call",
+        agent=ctx.agent_name,
+        model=str(ctx.model),
+        usage=response.usage.dict() if response.usage else None,
+    )
+
+@hooks.on.after_tool_execute
+async def log_tool_call(ctx, *, call, tool_def, args, result):
+    logger.bind(action_log=True).info(
+        "agent_tool_call",
+        agent=ctx.agent_name,
+        tool=tool_def.name,
+        args_keys=list(args.keys()),
+    )
+
+agent = Agent('google-gla:gemini-2.0-flash', capabilities=[hooks])
+```
+
+**Option B — OTel with local file exporter:**
+Use `Agent.instrument_all()` with a custom `FileSpanExporter` writing to `log/agent_traces.jsonl`. Requires `opentelemetry-sdk` dep but gives structured traces following GenAI semantic conventions. Wire via `InstrumentationSettings(tracer_provider=..., include_content=True)`.
+
+**Option C — Post-run message dump:**
+After each `agent.run()`, call `result.all_messages_json()` and append to a JSONL file. Simplest approach, zero extra deps, gives full conversation record including tool calls and responses.
+
+**Decision:** Use **Option A (hooks)** for real-time structured logging into `agent_actions.log`, and **Option C (message dump)** for full conversation archival into `log/agent_conversations.jsonl`. Update `pydantic_agents_playground/logging.py` to add the agent action file sink and create a `hooks.py` module with reusable hook factories.
+
+#### 9.6 Add `log/` to `.gitignore`
+
+Append `log/` to `.gitignore` to prevent log files from being committed.
+
+#### 9.7 Update CLAUDE.md
+
+Add an **Observability** section to `CLAUDE.md` documenting:
+- `setup_logging(service_name=...)` must be called before any other imports that use `logger`
+- Log levels and env var override
+- `action_log=True` binding convention for agent audit trail
+- `log/` directory structure: `mcp.log`, `ingestion.log`, `agent_actions.log`
+
+**Verification**:
+```bash
+NEOCORTEX_MOCK_DB=true NEOCORTEX_LOG_LEVEL=DEBUG uv run python -m neocortex &
+# stderr should show startup logs
+# log/mcp.log should exist
+kill %1
+NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion &
+# log/ingestion.log should exist
+curl -X POST localhost:8001/ingest/text -H "Content-Type: application/json" -d '{"text":"test"}'
+# log/agent_actions.log should contain the ingestion action entry
+kill %1
+```
+
+**Commit**: `feat: add structured loguru logging with stderr, file sinks, and agent action audit trail`
+
+---
+
 ## Execution Protocol
 
 Stages are executed sequentially. Each stage:
@@ -196,6 +400,7 @@ Stages are executed sequentially. Each stage:
 | 6 | Tests | DONE | 32 tests: models (12), stub_processor (5), API integration (15) — all passing |
 | 7 | Validation | DONE | Full test suite passes (PG-dependent integration tests expected to error without Docker), ruff lint clean, mock-mode startup verified |
 | 8 | Post-review fixes | DONE | Cached token map at startup, capped file read to 10MB+1, added min_length validators, added logging for partial failures, documented metadata drop |
+| 9 | Structured logging with loguru | TODO | Central logging module, stderr+file sinks, agent action audit trail, Pydantic AI hooks, CLAUDE.md observability section |
 
 Last stage completed: Stage 8 — Post-review fixes
 Last updated by: code-review
