@@ -19,8 +19,9 @@ from app.models import CallbackPayload, ContextMessage
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-BUILD_DIR = PROJECT_ROOT / "build"
+# In Docker, build/ is mounted at /app. Locally, it's at test_agents/build.
+_APP_DIR = Path("/app")
+BUILD_DIR = _APP_DIR if _APP_DIR.exists() and (_APP_DIR / "opencode.json").exists() else Path(__file__).resolve().parent.parent / "build"
 
 # In-memory session store
 _sessions: dict[str, SessionState] = {}
