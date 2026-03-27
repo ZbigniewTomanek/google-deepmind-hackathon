@@ -107,6 +107,24 @@ All planned components are implemented and tested. The system is functional end-
 | Row-Level Security | Done | RLS policies on shared graph schemas only |
 | PG role mapping | Done | OAuth subject → PostgreSQL role with scoped connections |
 
+### Embedding Service & Hybrid Recall — Complete
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| `EmbeddingService` | Done | Gemini embedding wrapper (768-dim MRL, normalized), graceful `None` fallback when `GOOGLE_API_KEY` is unset |
+| Hybrid recall scoring | Done | Weighted combination of vector similarity + text rank + recency decay with automatic weight redistribution |
+| `scoring.py` | Done | Configurable weights (`recall_weight_vector`, `recall_weight_text`, `recall_weight_recency`) and recency half-life |
+| Wired into `remember` | Done | Embeddings generated and stored on every `remember` call |
+| Wired into `recall` | Done | Query embedding computed and passed to hybrid recall path |
+
+### Developer TUI — Complete
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Textual app | Done | Three modes: Remember, Recall, Discover with keyboard shortcuts |
+| MCP client | Done | `fastmcp.Client` with streamable-HTTP transport |
+| CLI entry point | Done | `python -m neocortex.tui --url URL --token TOKEN` |
+
 ### Testing — Complete
 
 | Area | Description |
@@ -115,7 +133,9 @@ All planned components are implemented and tested. The system is functional end-
 | Storage | Graph CRUD, search, connection pooling, health checks |
 | Multi-graph | Schema manager, router, adapter fan-out, isolation |
 | Auth | Dev tokens, role mapping, RLS enforcement |
-| E2E | MCP multi-agent smoke test (`scripts/e2e_mcp_test.py`), ingestion API smoke test (`scripts/e2e_ingestion_test.py`) |
+| Embeddings | Normalization, graceful fallback, mocked API, batch operations |
+| Scoring | Recency decay, hybrid scoring, weight redistribution |
+| E2E | MCP multi-agent (`scripts/e2e_mcp_test.py`), ingestion (`scripts/e2e_ingestion_test.py`), hybrid recall (`scripts/e2e_hybrid_recall_test.py`), embeddings (`scripts/e2e_embedding_test.py`) |
 
 ### POC: Pydantic AI Agent Pipeline — Complete
 
@@ -142,8 +162,6 @@ Items not yet integrated into the MCP server hot path:
 | Item | Status | Description |
 |------|--------|-------------|
 | Async fact extraction | Planned | Run Ontology → Extraction → Librarian pipeline behind `remember` |
-| Embedding generation | Planned | Generate pgvector embeddings for nodes and episodes on ingest |
-| Ingestion API | Planned | REST endpoints for bulk loading (text, documents, git, Obsidian) |
 | Advanced heuristics | Planned | Spreading activation, episodic consolidation, forgetting curve |
 | Cross-agent knowledge transfer | Planned | Promote private nodes to shared graph with approval flow |
 
@@ -158,6 +176,7 @@ Items not yet integrated into the MCP server hot path:
 | Agent Framework | Pydantic AI |
 | Data Access | asyncpg |
 | Auth | FastMCP OAuthProxy + dev tokens |
+| TUI | Textual + Click |
 | Language | Python 3.13 |
 
 ## Documentation
@@ -171,6 +190,7 @@ Items not yet integrated into the MCP server hot path:
 | [PostgreSQL Storage](docs/plans/02-postgres-storage-layer.md) | Storage layer implementation plan (all stages done) |
 | [MCP Server Scaffold](docs/plans/03-mcp-server-scaffold.md) | Server, tools, auth implementation plan (all stages done) |
 | [Multi-Graph Schemas](docs/plans/04-multi-graph-schemas.md) | Schema isolation architecture plan (all stages done) |
+| [Embeddings, Hybrid Recall, TUI](docs/plans/06-embeddings-hybrid-recall-tui.md) | Embedding service, hybrid scoring, developer TUI (all stages done) |
 | [Pydantic AI POC](docs/plans/00-pydantic-ai-bmw-ontology-demo.md) | Agent pipeline proof-of-concept plan (all stages done) |
 | **Research** | |
 | [Agent Memory Research](docs/research/01-agent-memory-research.md) | Survey of agent memory approaches |

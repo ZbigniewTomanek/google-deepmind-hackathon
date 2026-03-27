@@ -8,6 +8,8 @@ Hackathon project (Google DeepMind x AI Tinkerers, Warsaw 2026). MCP server prov
 src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
   server.py              # Server factory + async lifespan
   services.py            # Shared service factory (create_services / shutdown_services)
+  embedding_service.py   # Gemini embedding wrapper (768-dim MRL, normalized), None fallback
+  scoring.py             # Hybrid recall scoring: vector + text + recency with weight redistribution
   db/protocol.py         # MemoryRepository protocol — THE contract for all storage
   db/adapter.py          # GraphServiceAdapter — production impl (multi-schema fan-out)
   db/mock.py             # InMemoryRepository — test impl (no Docker needed)
@@ -21,6 +23,10 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     routes.py            # POST /ingest/text, /ingest/document, /ingest/events
     protocol.py          # IngestionProcessor protocol
     stub_processor.py    # Stores raw episodes via MemoryRepository
+  tui/                   # Developer TUI for interactive MCP server testing
+    app.py               # Textual App with remember/recall/discover modes
+    client.py            # MCP client using streamable-HTTP transport
+    __main__.py          # CLI entry point (python -m neocortex.tui)
 
 src/pydantic_agents_playground/  # Standalone POC: 3-agent extraction pipeline (SQLite)
 migrations/init/         # Auto-applied on first Docker start (001-006)

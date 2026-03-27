@@ -35,10 +35,10 @@ class MCPSettings(BaseSettings):
     google_client_secret: str = ""
     oauth_base_url: str = "http://localhost:8000"
 
-    # Embedding model (experimental names may rotate; fallback: "text-embedding-004")
-    embedding_model: str = "gemini-embedding-exp-03-07"
+    # Embedding model (experimental names may rotate)
+    embedding_model: str = "gemini-embedding-001"
 
-    # Hybrid recall weights (must sum to 1.0)
+    # Hybrid recall weights (normalized at scoring time, so any ratio works)
     recall_weight_vector: float = 0.4
     recall_weight_text: float = 0.35
     recall_weight_recency: float = 0.25

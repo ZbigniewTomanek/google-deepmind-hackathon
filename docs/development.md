@@ -51,6 +51,17 @@ uv run python -m neocortex.ingestion
 
 Endpoints: `POST /ingest/text`, `POST /ingest/document` (file upload), `POST /ingest/events`.
 
+### 3c. Run the Developer TUI
+
+The TUI connects to a running MCP server via streamable-HTTP transport. Start the server first, then launch the TUI.
+
+```bash
+# Connect to running MCP server
+uv run python -m neocortex.tui --url http://localhost:8000 --token dev-token-neocortex
+```
+
+Key bindings: `r` = remember, `q` = recall, `d` = discover, `Ctrl+Q` = quit.
+
 ### 4. Run Tests
 
 ```bash
@@ -99,6 +110,18 @@ All configuration via environment variables (Pydantic BaseSettings):
 | `NEOCORTEX_MOCK_DB` | `false` | Use in-memory mock instead of PostgreSQL |
 | `NEOCORTEX_DEV_TOKENS_FILE` | `` | Path to JSON file mapping tokens → agent IDs |
 | `NEOCORTEX_DEV_TOKEN` | `dev-token-neocortex` | Single dev token (legacy fallback) |
+
+### Embeddings & Hybrid Recall (`mcp_settings.py`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOOGLE_API_KEY` | _(unset)_ | Google AI API key for Gemini embeddings. When unset, embedding calls return `None` and recall falls back to text-only |
+| `NEOCORTEX_EMBEDDING_MODEL` | `gemini-embedding-001` | Gemini embedding model name |
+| `NEOCORTEX_RECALL_WEIGHT_VECTOR` | `0.4` | Hybrid recall weight for vector cosine similarity |
+| `NEOCORTEX_RECALL_WEIGHT_TEXT` | `0.35` | Hybrid recall weight for text rank |
+| `NEOCORTEX_RECALL_WEIGHT_RECENCY` | `0.25` | Hybrid recall weight for recency decay |
+| `NEOCORTEX_RECALL_RECENCY_HALF_LIFE_HOURS` | `168.0` | Recency half-life in hours (7 days) |
+| `NEOCORTEX_RECALL_VECTOR_DISTANCE_THRESHOLD` | `0.5` | Cosine distance threshold for vector match |
 
 ### Dev Tokens
 
@@ -206,9 +229,15 @@ src/
 │   ├── schema_manager.py   # Graph schema lifecycle
 │   ├── postgres_service.py # Connection pool & health checks
 │   ├── auth/               # Authentication (dev tokens, Google OAuth)
+│   ├── embedding_service.py # Gemini embedding wrapper (768-dim MRL, normalized)
+│   ├── scoring.py          # Hybrid recall scoring (vector + text + recency)
 │   ├── db/                 # Database adapters, protocols, RLS
 │   ├── ingestion/          # FastAPI ingestion API (text, document, events)
 │   ├── tools/              # MCP tools (remember, recall, discover)
+│   ├── tui/                # Developer TUI (Textual + Click)
+│   │   ├── app.py          # Textual App with remember/recall/discover modes
+│   │   ├── client.py       # MCP client (streamable-HTTP transport)
+│   │   └── __main__.py     # CLI entry point
 │   └── schemas/            # Pydantic I/O schemas
 │
 └── pydantic_agents_playground/  # POC: 3-agent pipeline
