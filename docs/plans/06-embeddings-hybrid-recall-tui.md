@@ -21,14 +21,17 @@ Three tightly coupled deliverables that turn NeoCortex from "episode storage wit
   truncation to 768 which cuts storage 75% vs default 3072 with minimal quality loss.
 - **Normalize after truncation** — per Gemini best practices, we normalize vectors after MRL
   truncation to keep cosine similarity accurate.
-- **`google-genai` SDK** — already installed (`google-genai>=1.68.0`) via `pydantic-ai-slim[google]`.
+- **`google-genai` SDK** — transitive dependency via `pydantic-ai-slim[google]>=1.72.0`.
+  Import as `from google import genai` and `from google.genai import types`.
   Async support via `client.aio.models.embed_content()`.
 - **HNSW index** — the graph schema template already creates HNSW indexes on both `node.embedding`
   and `episode.embedding` (`vector_cosine_ops`, m=16, ef_construction=64). No migration needed.
-- **Mock fallback** — when `NEOCORTEX_MOCK_DB=true` or `GOOGLE_API_KEY` is unset, the embedding
-  service returns `None` and recall falls back to text-only (current behavior). No breaking changes.
+- **Mock fallback** — when `NEOCORTEX_MOCK_DB=true`, `EmbeddingService` is not instantiated (set to
+  `None` in `ServiceContext`). When `GOOGLE_API_KEY` is unset, the service is still instantiated
+  but `embed()` returns `None` internally, and recall falls back to text-only. No breaking changes.
 - **Textual TUI** — `textual` is the standard Python TUI framework (built on `rich`, already
-  installed). We add it as a dependency. The TUI connects via HTTP to the running MCP server.
+  installed). We add it as a dependency. The TUI connects to the running MCP server using
+  `fastmcp.Client` with streamable-HTTP transport (the same protocol MCP clients use).
 
 ### References
 
@@ -49,15 +52,21 @@ normalized embeddings via Gemini, with graceful fallback when API key is unavail
 
 1. **Create `src/neocortex/embedding_service.py`**
    - Class `EmbeddingService` with:
-     - `__init__(self, model: str = "gemini-embedding-exp-03-07", dimensions: int = 768)`
-     - Lazy-init `google.genai.Client` from `GOOGLE_API_KEY` env var
+     - `__init__(self, model: str | None = None, dimensions: int = 768)` — reads model from
+       `settings.embedding_model` (see below), defaults to `"gemini-embedding-exp-03-07"`
+     - Lazy-init `google.genai.Client` from `GOOGLE_API_KEY` env var. If the env var is unset,
+       `self._client` stays `None` and all `embed*` calls return `None` gracefully.
      - `async def embed(self, text: str) -> list[float] | None` — returns normalized 768-dim
-       vector or `None` if API unavailable
+       vector or `None` if client unavailable / API errors
      - `async def embed_batch(self, texts: list[str]) -> list[list[float] | None]` — batch embed
        (Gemini supports list of contents in a single call)
      - Private `_normalize(vector: list[float]) -> list[float]` — L2 normalization
+   - Imports: `from google import genai` and `from google.genai import types`
    - The `embed_content` call:
      ```python
+     from google import genai
+     from google.genai import types
+
      response = await self._client.aio.models.embed_content(
          model=self._model,
          contents=text,
@@ -68,14 +77,17 @@ normalized embeddings via Gemini, with graceful fallback when API key is unavail
      ```
    - Wrap API call in `try/except` to gracefully return `None` on failure (log warning via loguru)
 
-2. **Create `src/neocortex/embedding_protocol.py`**
-   - Protocol class `EmbeddingProvider` with `async def embed(text: str) -> list[float] | None`
-   - This lets us swap implementations (mock, cached, different model) without touching tools
+2. **Add embedding settings to `mcp_settings.py`**
+   ```python
+   # Embedding model (experimental names may rotate; fallback: "text-embedding-004")
+   embedding_model: str = "gemini-embedding-exp-03-07"
+   ```
 
 3. **Wire into `ServiceContext`**
-   - In `services.py`: add `embeddings: EmbeddingService | None` to `ServiceContext`
-   - In `create_services()`: instantiate `EmbeddingService()` when not mock_db and
-     `GOOGLE_API_KEY` is set, else `None`
+   - In `services.py`: add `embeddings: EmbeddingService | None` to `ServiceContext` TypedDict
+   - In `create_services()`: **always** instantiate `EmbeddingService(model=settings.embedding_model)`
+     when `mock_db=False`, set to `None` when `mock_db=True`. The service itself handles missing
+     `GOOGLE_API_KEY` by returning `None` from `embed()` — no double-gating.
    - Tools access via `ctx.lifespan_context["embeddings"]`
 
 4. **Wire into `remember` tool**
@@ -88,13 +100,48 @@ normalized embeddings via Gemini, with graceful fallback when API key is unavail
          if vector:
              await repo.update_episode_embedding(episode_id, vector, agent_id)
      ```
-   - Add `update_episode_embedding` to `MemoryRepository` protocol and both implementations
 
-5. **Wire into ingestion `StubProcessor`**
+5. **Add `update_episode_embedding` to `MemoryRepository` protocol and both implementations**
+   - Protocol signature in `db/protocol.py`:
+     ```python
+     async def update_episode_embedding(
+         self, episode_id: int, embedding: list[float], agent_id: str
+     ) -> None:
+         """Attach a vector embedding to an existing episode."""
+     ```
+   - `InMemoryRepository` (`db/mock.py`): find the episode in `_episodes` by id and set its
+     `embedding` field (or store as a dict attribute — the mock doesn't persist to SQL)
+   - `GraphServiceAdapter` (`db/adapter.py`):
+     ```python
+     async def update_episode_embedding(
+         self, episode_id: int, embedding: list[float], agent_id: str
+     ) -> None:
+         if self._pool is None or self._router is None:
+             # Public schema fallback — use GraphService directly
+             emb_str = str(embedding)
+             await self._pg.execute(
+                 "UPDATE episode SET embedding = $1::vector WHERE id = $2",
+                 emb_str, episode_id,
+             )
+             return
+         # Route to the agent's personal schema (same schema where store_episode writes)
+         schema_name = await self._router.route_store(agent_id)
+         async with schema_scoped_connection(self._pool, schema_name) as conn:
+             emb_str = str(embedding)
+             await conn.execute(
+                 "UPDATE episode SET embedding = $1::vector WHERE id = $2",
+                 emb_str, episode_id,
+             )
+     ```
+     Note: `route_store()` returns the same schema used by `store_episode()`, so the episode
+     ID is guaranteed to exist there. Uses `schema_scoped_connection` (not `graph_scoped_connection`)
+     because per-agent schemas don't use RLS.
+
+6. **Wire into ingestion `StubProcessor`**
    - In `ingestion/stub_processor.py`: accept optional `EmbeddingService`, generate embedding
      before storing episode
 
-6. **Unit tests**
+7. **Unit tests**
    - `tests/test_embedding_service.py`:
      - Test `_normalize` produces unit vectors
      - Test `embed` returns `None` when no API key
@@ -140,6 +187,9 @@ The weights are configurable constants designed for easy tuning.
    recall_weight_text: float = 0.35
    recall_weight_recency: float = 0.25
    recall_recency_half_life_hours: float = 168.0  # 7 days
+   # Vector distance threshold: cosine distance below this counts as a match.
+   # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
+   recall_vector_distance_threshold: float = 0.5
    ```
 
 2. **Create `src/neocortex/scoring.py`**
@@ -154,9 +204,20 @@ The weights are configurable constants designed for easy tuning.
        exist, but improves as embeddings are added
 
 3. **Extend `_recall_in_schema` in `adapter.py`**
-   - Accept `query_embedding: list[float] | None` parameter
-   - When `query_embedding` is provided, run a **single combined SQL query** instead of two
-     separate ones:
+
+   **Important context**: this method uses `graph_scoped_connection(pool, schema, agent_id)`,
+   which sets both `search_path` AND `SET LOCAL ROLE` for RLS enforcement on shared schemas.
+   All SQL modifications must work correctly under RLS.
+
+   - Accept `query_embedding: list[float] | None` and `settings: MCPSettings` parameters
+   - **Branch on whether `query_embedding` is available**:
+
+   **When `query_embedding` is `None`** — keep the existing text-only queries unchanged (current
+   behavior, no regression).
+
+   **When `query_embedding` is provided** — replace the two separate queries with combined ones:
+
+   **Node query** (nodes have `tsv` column):
      ```sql
      SELECT id, name, content, source, type_id,
             ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
@@ -167,16 +228,73 @@ The weights are configurable constants designed for easy tuning.
             created_at
      FROM node
      WHERE tsv @@ plainto_tsquery('english', $1)
-        OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < 0.5)
+        OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
      ORDER BY text_rank DESC NULLS LAST
-     LIMIT $3
+     LIMIT $4
      ```
-   - For episodes, similar combined query using `embedding <=> $2::vector` similarity
-   - Compute `hybrid_score` for each result using `compute_hybrid_score()`
+     Pass `settings.recall_vector_distance_threshold` as `$3`.
+
+   **Episode query** (episodes do NOT have a `tsv` column — only `content TEXT`):
+     ```sql
+     SELECT id, content, source_type, created_at,
+            CASE WHEN embedding IS NOT NULL
+                 THEN 1 - (embedding <=> $2::vector)
+                 ELSE NULL
+            END AS vector_sim
+     FROM episode
+     WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
+        OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
+     ORDER BY created_at DESC
+     LIMIT $4
+     ```
+     For episodes, `text_rank` is `None` (no tsvector available). The hybrid scorer
+     will redistribute the text weight to vector + recency automatically.
+
+   - Compute `hybrid_score` for each result using `compute_hybrid_score()`:
+     - Nodes: `text_rank` from `ts_rank`, `vector_sim` from cosine, `recency` from `created_at`
+     - Episodes: `text_rank=None`, `vector_sim` from cosine, `recency` from `created_at`
 
 4. **Extend `_recall_via_graph` in `adapter.py`**
-   - Same approach for the non-schema-routed path (public schema fallback)
-   - Use `GraphService.search_by_vector()` alongside `search_by_text()` and merge
+
+   This is the fallback path used when `self._router is None` (no multi-schema routing — e.g.
+   simpler setups or when pool is unavailable). Currently searches public schema only.
+
+   **Merge strategy** when `query_embedding` is provided:
+   ```python
+   async def _recall_via_graph(self, query, agent_id, limit, query_embedding=None):
+       # 1. Text search (existing) — returns nodes with ts_rank
+       text_hits = await self._graph.search_by_text(query, limit=limit)
+
+       # 2. Vector search (new) — returns nodes with cosine similarity
+       vector_hits = []
+       if query_embedding:
+           vector_hits = await self._graph.search_by_vector(query_embedding, limit=limit)
+
+       # 3. Episode search — text (ILIKE, existing) + vector (new)
+       episodes = await self._graph.list_episodes(agent_id=agent_id, limit=max(limit * 5, 20))
+       vector_episodes = []
+       if query_embedding:
+           vector_episodes = await self._graph.search_episodes_by_vector(
+               query_embedding, agent_id=agent_id, limit=limit
+           )
+
+       # 4. Merge into a single dict keyed by (source_kind, id)
+       #    For nodes seen in both text_hits and vector_hits, combine signals.
+       #    For nodes seen in only one, the missing signal is None.
+       merged = {}  # key: ("node", id) or ("episode", id) -> {text_rank, vector_sim, created_at}
+       for hit in text_hits:
+           merged[("node", hit["id"])] = {"text_rank": hit["rank"], "vector_sim": None, ...}
+       for hit in vector_hits:
+           key = ("node", hit["id"])
+           if key in merged:
+               merged[key]["vector_sim"] = hit["similarity"]
+           else:
+               merged[key] = {"text_rank": None, "vector_sim": hit["similarity"], ...}
+       # ... same pattern for episodes (ILIKE matches + vector_episodes)
+
+       # 5. Score each merged result via compute_hybrid_score(), sort, return top `limit`
+   ```
+   The key insight: a result may appear in both text and vector hits. Merge first, then score once.
 
 5. **Update `recall` in `MemoryRepository` protocol**
    - Add optional `query_embedding: list[float] | None = None` parameter
@@ -221,32 +339,46 @@ feat(recall): implement hybrid scoring with vector + text + recency signals
 
 ## Stage 3: Developer TUI
 
-**Goal**: Textual-based TUI for interacting with a running NeoCortex MCP server over HTTP.
+**Goal**: Textual-based TUI for interacting with a running NeoCortex MCP server via MCP protocol.
 Supports remember, recall, discover, and episode browsing.
 
 ### Steps
 
-1. **Add `textual` dependency**
-   - In `pyproject.toml`: add `"textual>=3.0"` to dependencies
+1. **Add dependencies**
+   - In `pyproject.toml`: add `"textual>=3.0"` and `"click>=8.0"` to dependencies
+   - `textual` — TUI framework; `click` — CLI argument parsing for the entry point
    - Run `uv sync`
 
 2. **Create `src/neocortex/tui/` package**
    - `__init__.py`
    - `__main__.py` — entry point (`python -m neocortex.tui`)
    - `app.py` — main Textual `App` subclass
-   - `client.py` — async HTTP client that talks to MCP server endpoints
+   - `client.py` — async MCP client that talks to the server via streamable-HTTP transport
 
 3. **Implement `client.py`**
    - Class `NeoCortexClient`:
      - `__init__(self, base_url: str, token: str | None = None)`
-     - Uses `httpx.AsyncClient` (already available via fastmcp deps)
-     - Methods mapping to MCP tools:
+     - Uses `fastmcp.Client` with streamable-HTTP transport to talk MCP protocol.
+       The MCP server does NOT expose REST endpoints for tools — it uses the MCP
+       protocol exclusively. The client invokes tools via `client.call_tool()`.
+     - Example connection:
+       ```python
+       from fastmcp import Client
+       from fastmcp.client.transports import StreamableHttpTransport
+
+       transport = StreamableHttpTransport(
+           url=f"{base_url}/mcp",
+           headers={"Authorization": f"Bearer {token}"} if token else {},
+       )
+       client = Client(transport=transport)
+       async with client:
+           result = await client.call_tool("remember", {"text": "hello"})
+       ```
+     - Wrapper methods mapping to MCP tools:
        - `async def remember(self, text: str, context: str | None = None) -> dict`
        - `async def recall(self, query: str, limit: int = 10) -> dict`
        - `async def discover(self) -> dict`
-       - `async def health(self) -> dict`
-     - Sends requests to the MCP server's HTTP transport
-     - Handles auth header if token provided
+     - Each method calls `self._client.call_tool(tool_name, args)` and parses the result
 
 4. **Implement `app.py` — main TUI**
    - Layout with three panels:
@@ -314,10 +446,25 @@ feat(tui): add Textual-based developer TUI for MCP server interaction
 
 1. **Create `scripts/e2e_hybrid_recall_test.py`**
    - Requires running PostgreSQL + MCP server with real Gemini API key
+   - **Client approach**: use `fastmcp.Client` with streamable-HTTP transport (same as the TUI
+     client) to call MCP tools on the running server. This tests the full stack including auth,
+     transport, and tool dispatch — not just the repository layer.
+     ```python
+     from fastmcp import Client
+     from fastmcp.client.transports import StreamableHttpTransport
+
+     transport = StreamableHttpTransport(
+         url="http://localhost:8000/mcp",
+         headers={"Authorization": "Bearer dev-token-neocortex"},
+     )
+     async with Client(transport=transport) as client:
+         await client.call_tool("remember", {"text": "PostgreSQL supports JSONB..."})
+         results = await client.call_tool("recall", {"query": "flexible data storage"})
+     ```
    - Flow:
      1. `remember` 5-10 diverse facts (e.g., "PostgreSQL supports JSONB for flexible schemas",
         "The team decided to use React for the frontend", "Authentication uses OAuth2 with PKCE")
-     2. Wait briefly for embeddings to be generated
+     2. Embeddings are generated synchronously within the `remember` tool call — no wait needed
      3. `recall` with semantically similar but lexically different queries:
         - "flexible data storage formats" → should find the JSONB fact
         - "frontend technology choice" → should find the React fact
