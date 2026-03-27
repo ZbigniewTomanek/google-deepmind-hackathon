@@ -12,6 +12,15 @@ class RememberResult(BaseModel):
     extraction_job_id: int | None = None
 
 
+class GraphContext(BaseModel):
+    """Subgraph around a matched node."""
+
+    center_node: dict  # {id, name, type, properties}
+    edges: list[dict]  # [{source, target, type, weight, properties}]
+    neighbor_nodes: list[dict]  # [{id, name, type}]
+    depth: int
+
+
 class RecallItem(BaseModel):
     item_id: int
     name: str
@@ -21,6 +30,7 @@ class RecallItem(BaseModel):
     source: str | None = None
     source_kind: Literal["node", "episode"]
     graph_name: str | None = None
+    graph_context: GraphContext | None = None
 
 
 class RecallResult(BaseModel):

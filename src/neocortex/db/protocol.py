@@ -91,6 +91,21 @@ class MemoryRepository(Protocol):
         If an edge with the same triple exists, merge properties and update weight.
         """
 
+    # ── Node Search ──
+
+    async def search_nodes(
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 5,
+        query_embedding: list[float] | None = None,
+    ) -> list[Node]:
+        """Search nodes by text and/or vector similarity.
+
+        Combines text search on node names/content with vector similarity
+        on node embeddings. Returns top-N matching nodes.
+        """
+
     # ── Graph Traversal ──
 
     async def get_node_neighborhood(

@@ -381,6 +381,108 @@ class GraphServiceAdapter:
                 d["properties"] = json.loads(d["properties"])
             return Edge(**d)
 
+    # ── Node Search ──
+
+    async def search_nodes(
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 5,
+        query_embedding: list[float] | None = None,
+    ) -> list[Node]:
+        if self._pool is None or self._router is None:
+            # Fallback: simple text matching via GraphService
+            nodes = await self._graph.list_nodes(limit=10000)
+            query_lower = query.lower()
+            matches = [
+                n for n in nodes
+                if query_lower in n.name.lower()
+                or (n.content and query_lower in n.content.lower())
+            ]
+            return matches[:limit]
+
+        schemas = await self._router.route_recall(agent_id)
+        all_results: list[Node] = []
+        for schema_name in schemas:
+            nodes = await self._search_nodes_in_schema(
+                schema_name, query, agent_id, limit, query_embedding
+            )
+            all_results.extend(nodes)
+        # Deduplicate by (name, type_id) keeping first occurrence
+        seen: set[tuple[str, int]] = set()
+        deduped: list[Node] = []
+        for node in all_results:
+            key = (node.name.lower(), node.type_id)
+            if key not in seen:
+                seen.add(key)
+                deduped.append(node)
+        return deduped[:limit]
+
+    async def _search_nodes_in_schema(
+        self,
+        schema_name: str,
+        query: str,
+        agent_id: str,
+        limit: int,
+        query_embedding: list[float] | None = None,
+    ) -> list[Node]:
+        if self._pool is None:
+            raise RuntimeError("Connection pool required")
+
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
+            if query_embedding is not None:
+                emb_str = str(query_embedding)
+                rows = await conn.fetch(
+                    """SELECT id, type_id, name, content, properties, source,
+                              created_at, updated_at,
+                              ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
+                              CASE WHEN embedding IS NOT NULL
+                                   THEN 1 - (embedding <=> $2::vector)
+                                   ELSE 0
+                              END AS vector_sim
+                       FROM node
+                       WHERE tsv @@ plainto_tsquery('english', $1)
+                          OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
+                          OR lower(name) ILIKE '%' || $4 || '%' ESCAPE '\\'
+                       ORDER BY GREATEST(
+                           COALESCE(ts_rank(tsv, plainto_tsquery('english', $1)), 0),
+                           CASE WHEN embedding IS NOT NULL
+                                THEN 1 - (embedding <=> $2::vector)
+                                ELSE 0
+                           END
+                       ) DESC
+                       LIMIT $5""",
+                    query,
+                    emb_str,
+                    self._settings.recall_vector_distance_threshold,
+                    _escape_ilike(query).lower(),
+                    limit,
+                )
+            else:
+                rows = await conn.fetch(
+                    """SELECT id, type_id, name, content, properties, source,
+                              created_at, updated_at
+                       FROM node
+                       WHERE tsv @@ plainto_tsquery('english', $1)
+                          OR lower(name) ILIKE '%' || $2 || '%' ESCAPE '\\'
+                       ORDER BY ts_rank(tsv, plainto_tsquery('english', $1)) DESC
+                       LIMIT $3""",
+                    query,
+                    _escape_ilike(query).lower(),
+                    limit,
+                )
+
+        results: list[Node] = []
+        for row in rows:
+            d = dict(row)
+            # Remove scoring columns not part of Node model
+            d.pop("text_rank", None)
+            d.pop("vector_sim", None)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append(Node(**d))
+        return results
+
     # ── Graph Traversal ──
 
     async def get_node_neighborhood(

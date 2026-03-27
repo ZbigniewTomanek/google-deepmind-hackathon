@@ -1465,11 +1465,11 @@ GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
 | 3 | Medical Domain Seed Corpus | DONE | 10 medical passages (neuro/pharma/sexual), CLI ingest command |
 | 4 | Extraction Pipeline Module | DONE | Schemas, 3 agents (ontology/extractor/librarian), pipeline orchestration, _persist_payload, 10 tests |
 | 5 | Wire Extraction into Remember & Ingest | DONE | remember tool enqueues extraction, EpisodeProcessor replaces StubProcessor, backward-compat shim, 9 tests |
-| 6 | Enhanced Recall with Graph Traversal | PENDING | |
+| 6 | Enhanced Recall with Graph Traversal | DONE | search_nodes on protocol/adapter/mock, GraphContext model, recall tool with traversal, recall_traversal_depth setting, 15 tests |
 | 7 | TUI, Discover & E2E Validation | PENDING | |
 | 8 | CLI-Reproducible E2E Smoke Tests | PENDING | |
 
-- **Last stage completed**: Stage 5 — Wire Extraction into Remember & Ingest
+- **Last stage completed**: Stage 6 — Enhanced Recall with Graph Traversal
 - **Last updated by**: plan-runner-agent
 - **Blocked**: —
 

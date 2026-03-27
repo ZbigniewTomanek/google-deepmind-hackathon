@@ -250,6 +250,24 @@ class InMemoryRepository:
         self._edges[edge.id] = edge
         return edge
 
+    # ── Node Search ──
+
+    async def search_nodes(
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 5,
+        query_embedding: list[float] | None = None,
+    ) -> list[Node]:
+        query_lower = query.lower()
+        matches: list[Node] = []
+        for node in self._nodes.values():
+            name_match = query_lower in node.name.lower()
+            content_match = node.content and query_lower in node.content.lower()
+            if name_match or content_match:
+                matches.append(node)
+        return matches[:limit]
+
     # ── Graph Traversal ──
 
     async def get_node_neighborhood(
