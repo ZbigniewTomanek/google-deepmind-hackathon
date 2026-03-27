@@ -142,9 +142,7 @@ class GraphServiceAdapter:
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(
-        self, agent_id: str, name: str, description: str | None = None
-    ) -> NodeType:
+    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
         if self._pool is None or self._router is None:
             existing = await self._graph.get_node_type_by_name(name)
             if existing is not None:
@@ -163,16 +161,12 @@ class GraphServiceAdapter:
             if row is not None:
                 return NodeType(**dict(row))
             # Concurrent insert won — fetch the existing row
-            row = await conn.fetchrow(
-                "SELECT * FROM node_type WHERE name = $1", name
-            )
+            row = await conn.fetchrow("SELECT * FROM node_type WHERE name = $1", name)
             if row is None:
                 raise RuntimeError(f"Failed to create node type: {name}")
             return NodeType(**dict(row))
 
-    async def get_or_create_edge_type(
-        self, agent_id: str, name: str, description: str | None = None
-    ) -> EdgeType:
+    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
         if self._pool is None or self._router is None:
             existing = await self._graph.get_edge_type_by_name(name)
             if existing is not None:
@@ -191,9 +185,7 @@ class GraphServiceAdapter:
             if row is not None:
                 return EdgeType(**dict(row))
             # Concurrent insert won — fetch the existing row
-            row = await conn.fetchrow(
-                "SELECT * FROM edge_type WHERE name = $1", name
-            )
+            row = await conn.fetchrow("SELECT * FROM edge_type WHERE name = $1", name)
             if row is None:
                 raise RuntimeError(f"Failed to create edge type: {name}")
             return EdgeType(**dict(row))
@@ -207,8 +199,7 @@ class GraphServiceAdapter:
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
-                "SELECT id, agent_id, content, source_type, metadata, created_at "
-                "FROM episode WHERE id = $1",
+                "SELECT id, agent_id, content, source_type, metadata, created_at " "FROM episode WHERE id = $1",
                 episode_id,
             )
         if row is None:
@@ -401,18 +392,14 @@ class GraphServiceAdapter:
             nodes = await self._graph.list_nodes(limit=10000)
             query_lower = query.lower()
             matches = [
-                n for n in nodes
-                if query_lower in n.name.lower()
-                or (n.content and query_lower in n.content.lower())
+                n for n in nodes if query_lower in n.name.lower() or (n.content and query_lower in n.content.lower())
             ]
             return matches[:limit]
 
         schemas = await self._router.route_recall(agent_id)
         all_results: list[Node] = []
         for schema_name in schemas:
-            nodes = await self._search_nodes_in_schema(
-                schema_name, query, agent_id, limit, query_embedding
-            )
+            nodes = await self._search_nodes_in_schema(schema_name, query, agent_id, limit, query_embedding)
             all_results.extend(nodes)
         # Deduplicate by (name, type_id) keeping first occurrence
         seen: set[tuple[str, int]] = set()
@@ -491,9 +478,7 @@ class GraphServiceAdapter:
 
     # ── Graph Traversal ──
 
-    async def get_node_neighborhood(
-        self, agent_id: str, node_id: int, depth: int = 2
-    ) -> list[dict]:
+    async def get_node_neighborhood(self, agent_id: str, node_id: int, depth: int = 2) -> list[dict]:
         if self._pool is None or self._router is None:
             return await self._bfs_via_graph_service(node_id, depth)
 
@@ -518,20 +503,20 @@ class GraphServiceAdapter:
                         if neighbor_node is not None:
                             edge_id = int(neighbor["edge_id"])
                             edge = await self._graph.get_edge(edge_id)
-                            results.append({
-                                "node": neighbor_node,
-                                "edges": [edge] if edge else [],
-                                "distance": dist,
-                            })
+                            results.append(
+                                {
+                                    "node": neighbor_node,
+                                    "edges": [edge] if edge else [],
+                                    "distance": dist,
+                                }
+                            )
             current_frontier = next_frontier
             if not current_frontier:
                 break
 
         return results
 
-    async def _bfs_in_schema(
-        self, schema_name: str, node_id: int, depth: int
-    ) -> list[dict]:
+    async def _bfs_in_schema(self, schema_name: str, node_id: int, depth: int) -> list[dict]:
         if self._pool is None:
             raise RuntimeError("Connection pool required")
 
@@ -577,11 +562,13 @@ class GraphServiceAdapter:
                             if isinstance(nd.get("properties"), str):
                                 nd["properties"] = json.loads(nd["properties"])
                             node_obj = Node(**nd)
-                            results.append({
-                                "node": node_obj,
-                                "edges": [edge_obj],
-                                "distance": dist,
-                            })
+                            results.append(
+                                {
+                                    "node": node_obj,
+                                    "edges": [edge_obj],
+                                    "distance": dist,
+                                }
+                            )
             current_frontier = next_frontier
 
         return results
@@ -604,14 +591,12 @@ class GraphServiceAdapter:
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
-            rows = await conn.fetch(
-                """SELECT src.name AS source, et.name AS rel, tgt.name AS target
+            rows = await conn.fetch("""SELECT src.name AS source, et.name AS rel, tgt.name AS target
                    FROM edge e
                    JOIN node src ON src.id = e.source_id
                    JOIN node tgt ON tgt.id = e.target_id
                    JOIN edge_type et ON et.id = e.type_id
-                   ORDER BY src.name, et.name, tgt.name"""
-            )
+                   ORDER BY src.name, et.name, tgt.name""")
         return [f"{row['source']}→{row['rel']}→{row['target']}" for row in rows]
 
     async def _recall_via_graph(

@@ -6,7 +6,7 @@ Uses InMemoryConnector — no Docker or PostgreSQL needed.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import procrastinate
 import pytest
@@ -14,7 +14,6 @@ from procrastinate.testing import InMemoryConnector
 
 from neocortex.jobs import create_job_app
 from neocortex.jobs.context import get_services, set_services
-
 
 # ── Job app factory ──
 
@@ -45,7 +44,7 @@ def test_set_and_get_services():
     ctx_mod._services = None
 
     sentinel = {"repo": "fake", "settings": "fake"}
-    set_services(sentinel)  # type: ignore[arg-type]
+    set_services(sentinel)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     assert get_services() is sentinel
 
     # Cleanup
@@ -71,7 +70,7 @@ async def test_extract_episode_task_has_retry():
 
     task = placeholder_app.tasks["extract_episode"]
     assert task.retry_strategy is not None
-    assert task.retry_strategy.max_attempts == 3
+    assert task.retry_strategy.max_attempts == 3  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -117,8 +116,8 @@ async def test_defer_extract_episode():
 @pytest.mark.asyncio
 async def test_extract_episode_calls_run_extraction():
     """When the task executes, it calls run_extraction with correct args."""
-    import types
     import sys
+    import types
 
     import neocortex.jobs.context as ctx_mod
 
@@ -132,13 +131,13 @@ async def test_extract_episode_calls_run_extraction():
         "embeddings": mock_embeddings,
         "settings": mock_settings,
     }
-    ctx_mod._services = fake_ctx
+    ctx_mod._services = fake_ctx  # ty: ignore[invalid-assignment]
 
     # The extraction.pipeline module doesn't exist yet (Stage 4).
     # Create a temporary mock module so the lazy import in the task succeeds.
     mock_run = AsyncMock()
     fake_pipeline = types.ModuleType("neocortex.extraction.pipeline")
-    fake_pipeline.run_extraction = mock_run  # type: ignore[attr-defined]
+    fake_pipeline.run_extraction = mock_run  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
     # Also need the parent package
     fake_extraction = types.ModuleType("neocortex.extraction")
@@ -179,11 +178,7 @@ async def test_worker_starts_and_stops():
 
     await app.open_async()
     try:
-        worker_task = asyncio.create_task(
-            app.run_worker_async(
-                queues=["extraction"], install_signal_handlers=False
-            )
-        )
+        worker_task = asyncio.create_task(app.run_worker_async(queues=["extraction"], install_signal_handlers=False))
 
         # Give the worker a moment to start
         await asyncio.sleep(0.05)

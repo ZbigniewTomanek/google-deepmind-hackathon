@@ -32,10 +32,8 @@ async def remember(text: str, context: str | None = None, ctx: Context | None = 
     settings = ctx.lifespan_context["settings"]
     job_app = ctx.lifespan_context.get("job_app")
     if job_app and settings.extraction_enabled:
-        from neocortex.jobs.tasks import extract_episode
-
-        extraction_job_id = await extract_episode.defer_async(
-            job_app, agent_id=agent_id, episode_ids=[episode_id]
+        extraction_job_id = await job_app.configure_task("extract_episode").defer_async(
+            agent_id=agent_id, episode_ids=[episode_id]
         )
         logger.bind(action_log=True).info(
             "extraction_enqueued",

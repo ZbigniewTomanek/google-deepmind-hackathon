@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-
 # ── LLM Output Schemas (what agents produce) ──
 
 
@@ -36,9 +35,7 @@ class ExtractedEntity(BaseModel):
     name: str = Field(description="Canonical entity name")
     type_name: str = Field(description="Must match an existing node type name")
     description: str | None = None
-    properties: dict = Field(
-        default_factory=dict, description="Scalar facts as key-value pairs"
-    )
+    properties: dict = Field(default_factory=dict, description="Scalar facts as key-value pairs")
 
 
 class ExtractedRelation(BaseModel):
@@ -46,9 +43,7 @@ class ExtractedRelation(BaseModel):
     target_name: str
     relation_type: str = Field(description="Must match an existing edge type name")
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
-    properties: dict = Field(
-        default_factory=dict, description="Evidence text, confidence, etc."
-    )
+    properties: dict = Field(default_factory=dict, description="Evidence text, confidence, etc.")
 
 
 class ExtractionResult(BaseModel):

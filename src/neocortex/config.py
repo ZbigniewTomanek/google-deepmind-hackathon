@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class PostgresConfig(BaseSettings):
     """PostgreSQL connection configuration."""
 
-    model_config = {"env_prefix": "POSTGRES_", "env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_prefix": "POSTGRES_", "env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     host: str = "localhost"
     port: int = 5432

@@ -122,9 +122,7 @@ class InMemoryRepository:
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(
-        self, agent_id: str, name: str, description: str | None = None
-    ) -> NodeType:
+    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
         if name in self._node_types:
             return self._node_types[name]
         now = datetime.now(UTC)
@@ -133,9 +131,7 @@ class InMemoryRepository:
         self._node_types[name] = nt
         return nt
 
-    async def get_or_create_edge_type(
-        self, agent_id: str, name: str, description: str | None = None
-    ) -> EdgeType:
+    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
         if name in self._edge_types:
             return self._edge_types[name]
         now = datetime.now(UTC)
@@ -270,9 +266,7 @@ class InMemoryRepository:
 
     # ── Graph Traversal ──
 
-    async def get_node_neighborhood(
-        self, agent_id: str, node_id: int, depth: int = 2
-    ) -> list[dict]:
+    async def get_node_neighborhood(self, agent_id: str, node_id: int, depth: int = 2) -> list[dict]:
         visited: set[int] = {node_id}
         results: list[dict] = []
         current_frontier = [node_id]
@@ -290,11 +284,13 @@ class InMemoryRepository:
                     if neighbor_id is not None and neighbor_id in self._nodes:
                         visited.add(neighbor_id)
                         next_frontier.append(neighbor_id)
-                        results.append({
-                            "node": self._nodes[neighbor_id],
-                            "edges": [edge],
-                            "distance": dist,
-                        })
+                        results.append(
+                            {
+                                "node": self._nodes[neighbor_id],
+                                "edges": [edge],
+                                "distance": dist,
+                            }
+                        )
             current_frontier = next_frontier
             if not current_frontier:
                 break

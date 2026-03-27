@@ -20,7 +20,7 @@ from neocortex.extraction.schemas import (
     ProposedEdgeType,
     ProposedNodeType,
 )
-from neocortex.schemas.memory import GraphContext, GraphStats, RecallItem
+from neocortex.schemas.memory import GraphContext, GraphStats
 
 AGENT = "e2e-test-agent"
 
@@ -197,7 +197,8 @@ async def test_e2e_ingest_and_extract(repo: InMemoryRepository) -> None:
 
     # Verify total counts
     all_node_names = await repo.list_all_node_names(AGENT)
-    assert len(all_node_names) >= 6  # Serotonin, Mood Regulation, Raphe Nuclei, Fluoxetine, Depression, Sexual Dysfunction
+    # Serotonin, Mood Regulation, Raphe Nuclei, Fluoxetine, Depression, Sexual Dysfunction
+    assert len(all_node_names) >= 6
 
     all_edge_sigs = await repo.list_all_edge_signatures(AGENT)
     assert len(all_edge_sigs) >= 5  # REGULATES, PRODUCED_IN, INHIBITS, TREATS, CAUSES

@@ -1,6 +1,5 @@
-from loguru import logger
-
 from fastmcp import Context
+from loguru import logger
 
 from neocortex.auth.dependencies import get_agent_id_from_context
 from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
@@ -31,9 +30,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     results = await repo.recall(query=query, agent_id=agent_id, limit=limit, query_embedding=query_embedding)
 
     # Node search with graph traversal
-    matched_nodes = await repo.search_nodes(
-        agent_id=agent_id, query=query, limit=5, query_embedding=query_embedding
-    )
+    matched_nodes = await repo.search_nodes(agent_id=agent_id, query=query, limit=5, query_embedding=query_embedding)
 
     traversal_depth = settings.recall_traversal_depth
 
@@ -48,9 +45,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     node_results: list[RecallItem] = []
 
     for node in matched_nodes:
-        neighborhood = await repo.get_node_neighborhood(
-            agent_id=agent_id, node_id=node.id, depth=traversal_depth
-        )
+        neighborhood = await repo.get_node_neighborhood(agent_id=agent_id, node_id=node.id, depth=traversal_depth)
 
         node_type_name = type_name_map.get(node.type_id, "Unknown")
 

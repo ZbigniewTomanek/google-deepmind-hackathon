@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TypedDict
 
 import procrastinate
+import procrastinate.exceptions
 
 from neocortex.config import PostgresConfig
 from neocortex.db.adapter import GraphServiceAdapter
@@ -62,7 +64,8 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
 
         job_app = create_job_app(pg_config.dsn)
         await job_app.open_async()
-        await job_app.schema_manager.apply_schema_async()
+        with contextlib.suppress(procrastinate.exceptions.ConnectorException):
+            await job_app.schema_manager.apply_schema_async()
 
     ctx = ServiceContext(
         repo=repo,
@@ -78,6 +81,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     # Make services available to Procrastinate task handlers
     if job_app is not None:
         from neocortex.jobs.context import set_services
+
         set_services(ctx)
 
     return ctx

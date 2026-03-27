@@ -137,9 +137,34 @@ All planned components are implemented and tested. The system is functional end-
 | Scoring | Recency decay, hybrid scoring, weight redistribution |
 | E2E | MCP multi-agent (`scripts/e2e_mcp_test.py`), ingestion (`scripts/e2e_ingestion_test.py`), hybrid recall (`scripts/e2e_hybrid_recall_test.py`), embeddings (`scripts/e2e_embedding_test.py`) |
 
-### POC: Pydantic AI Agent Pipeline — Complete
+### Extraction Pipeline Integration — Complete
 
-Standalone proof-of-concept in `src/pydantic_agents_playground/` demonstrating the 3-agent extraction pipeline that will power the `remember` tool's background processing:
+The 3-agent extraction pipeline is fully integrated into the MCP server hot path. Ingested text is automatically enriched into the knowledge graph via async background jobs.
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Procrastinate job queue | Done | PostgreSQL-native async job queue for background extraction |
+| Extraction pipeline | Done | Ontology → Extractor → Librarian agents (Gemini 2.5 Flash) |
+| `remember` integration | Done | `remember` stores episode + enqueues extraction job |
+| Ingestion API integration | Done | `POST /ingest/text` stores episode + enqueues extraction job |
+| Graph persistence | Done | Nodes with embeddings + edges upserted into agent's schema |
+| Graph-aware recall | Done | Node search + configurable-depth edge traversal in `recall` results |
+| Structured logging | Done | `setup_logging()` with rotating service logs + JSON audit trail (`log/agent_actions.log`) |
+| E2E validation | Done | [Validation report](docs/reports/00-extraction-pipeline-e2e-validation.md) — 258 nodes, 268 edges from 10-episode medical corpus |
+
+### Ingestion API — Complete
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| FastAPI app | Done | Bulk-ingestion REST API on port 8001 |
+| `POST /ingest/text` | Done | Store text episodes with automatic extraction |
+| `POST /ingest/document` | Done | Document ingestion endpoint |
+| `POST /ingest/events` | Done | Event batch ingestion endpoint |
+| Seed corpus CLI | Done | `python -m neocortex.extraction.cli --ingest-corpus` for medical domain data |
+
+### POC: Pydantic AI Agent Pipeline — Complete (Integrated)
+
+Standalone proof-of-concept in `src/pydantic_agents_playground/`. The pipeline has been ported and integrated into the MCP server (see Extraction Pipeline Integration above).
 
 | Agent | Role |
 |-------|------|
@@ -157,11 +182,8 @@ GOOGLE_API_KEY=your_key uv run python -m pydantic_agents_playground --reset-db -
 
 ## Roadmap
 
-Items not yet integrated into the MCP server hot path:
-
 | Item | Status | Description |
 |------|--------|-------------|
-| Async fact extraction | Planned | Run Ontology → Extraction → Librarian pipeline behind `remember` |
 | Advanced heuristics | Planned | Spreading activation, episodic consolidation, forgetting curve |
 | Cross-agent knowledge transfer | Planned | Promote private nodes to shared graph with approval flow |
 
@@ -191,7 +213,12 @@ Items not yet integrated into the MCP server hot path:
 | [MCP Server Scaffold](docs/plans/03-mcp-server-scaffold.md) | Server, tools, auth implementation plan (all stages done) |
 | [Multi-Graph Schemas](docs/plans/04-multi-graph-schemas.md) | Schema isolation architecture plan (all stages done) |
 | [Embeddings, Hybrid Recall, TUI](docs/plans/06-embeddings-hybrid-recall-tui.md) | Embedding service, hybrid scoring, developer TUI (all stages done) |
+| [Extraction Pipeline Integration](docs/plans/07-extraction-pipeline-integration.md) | 3-agent pipeline wired into MCP server (all stages done) |
 | [Pydantic AI POC](docs/plans/00-pydantic-ai-bmw-ontology-demo.md) | Agent pipeline proof-of-concept plan (all stages done) |
+| **Guides** | |
+| [E2E Reproduction Guide](docs/e2e-reproduction.md) | Step-by-step instructions to reproduce full pipeline validation |
+| **Validation Reports** | |
+| [00 — Extraction Pipeline E2E](docs/reports/00-extraction-pipeline-e2e-validation.md) | Plan 07 validation: 258 nodes, 268 edges, 28 node types, 45 edge types (2026-03-27) |
 | **Research** | |
 | [Agent Memory Research](docs/research/01-agent-memory-research.md) | Survey of agent memory approaches |
 | [Memory Systems Research](docs/research/02-memory-systems-research.md) | Deeper analysis of memory architectures |

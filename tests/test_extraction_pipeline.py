@@ -185,9 +185,7 @@ async def test_persist_payload_resolves_existing_nodes_for_edges(
     # First payload creates Serotonin node
     payload1 = LibrarianPayload(
         entities=[
-            NormalizedEntity(
-                name="Serotonin", type_name="Neurotransmitter", description="5-HT"
-            ),
+            NormalizedEntity(name="Serotonin", type_name="Neurotransmitter", description="5-HT"),
         ],
     )
     await _persist_payload(repo, None, AGENT, eid, payload1)
@@ -195,9 +193,7 @@ async def test_persist_payload_resolves_existing_nodes_for_edges(
     # Second payload creates Dopamine and links to existing Serotonin
     payload2 = LibrarianPayload(
         entities=[
-            NormalizedEntity(
-                name="Dopamine", type_name="Neurotransmitter", description="DA"
-            ),
+            NormalizedEntity(name="Dopamine", type_name="Neurotransmitter", description="DA"),
         ],
         relations=[
             NormalizedRelation(
