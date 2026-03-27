@@ -69,5 +69,5 @@ class InMemoryRepository:
         return []
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
-        del agent_id
-        return GraphStats(total_nodes=0, total_edges=0, total_episodes=len(self._episodes))
+        count = sum(1 for e in self._episodes if agent_id is None or e["agent_id"] == agent_id)
+        return GraphStats(total_nodes=0, total_edges=0, total_episodes=count)

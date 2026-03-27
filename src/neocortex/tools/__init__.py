@@ -1,9 +1,11 @@
+from fastmcp import FastMCP
+
 from neocortex.tools.discover import discover
 from neocortex.tools.recall import recall
 from neocortex.tools.remember import remember
 
 
-def register_tools(mcp):
+def register_tools(mcp: FastMCP) -> None:
     mcp.tool(remember)
     mcp.tool(recall)
     mcp.tool(discover)

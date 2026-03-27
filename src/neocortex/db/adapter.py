@@ -4,15 +4,17 @@ import asyncpg
 
 from neocortex.db.scoped import scoped_connection
 from neocortex.graph_service import GraphService
+from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
 
 
 class GraphServiceAdapter:
     """Adapt GraphService to the MemoryRepository protocol."""
 
-    def __init__(self, graph: GraphService, pool: asyncpg.Pool | None = None):
+    def __init__(self, graph: GraphService, pool: asyncpg.Pool | None = None, pg: PostgresService | None = None):
         self._graph = graph
         self._pool = pool
+        self._pg = pg
 
     async def store_episode(
         self,
@@ -65,13 +67,14 @@ class GraphServiceAdapter:
                 query,
                 limit,
             )
+            escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             episode_rows = await conn.fetch(
                 """SELECT id, content, source_type, created_at
                    FROM episode
-                   WHERE content ILIKE '%' || $1 || '%'
+                   WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
                    ORDER BY created_at DESC
                    LIMIT $2""",
-                query,
+                escaped_query,
                 limit,
             )
             type_rows = await conn.fetch("SELECT id, name FROM node_type")
@@ -173,7 +176,7 @@ class GraphServiceAdapter:
         return names
 
     async def _get_types(self, table_name: str) -> list[TypeInfo]:
-        if self._pool is None:
+        if self._pg is None:
             stats = await self._graph.get_ontology_stats()
             key = "node_types" if table_name == "node_type" else "edge_types"
             return [
@@ -185,10 +188,10 @@ class GraphServiceAdapter:
                 for index, item in enumerate(stats[key], start=1)
             ]
 
-        rows = await self._graph._pg.fetch(f"SELECT id, name, description FROM {table_name} ORDER BY name")
+        rows = await self._pg.fetch(f"SELECT id, name, description FROM {table_name} ORDER BY name")
         count_table = "node" if table_name == "node_type" else "edge"
         foreign_key = "type_id"
-        counts = await self._graph._pg.fetch(
+        counts = await self._pg.fetch(
             f"SELECT {foreign_key} AS id, count(*) AS count FROM {count_table} GROUP BY {foreign_key}"
         )
         count_map = {int(row["id"]): int(row["count"]) for row in counts}
