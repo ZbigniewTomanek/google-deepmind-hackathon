@@ -734,7 +734,7 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 |---|-------|--------|-------|---------|
 | 1 | Graph Registry & Schema Template SQL | DONE | Added `graph_registry`, created `migrations/templates/graph_schema.sql`, verified registry in Postgres, and ran `poetry run pytest`. | 2026-03-27 |
 | 2 | SchemaManager | DONE | Added `SchemaManager`, `GraphInfo`, schema template loading/provisioning, registry-backed create/list/drop/default helpers, and Stage 2 tests; `poetry run pytest` passed. | 2026-03-27 |
-| 3 | Schema-Scoped Connections | PENDING | | 2026-03-27 |
+| 3 | Schema-Scoped Connections | DONE | Added role/schema/graph scoped connection helpers, schema validation, `execute_in_schema`, and Stage 3 integration tests; `poetry run pytest` passed. | 2026-03-27 |
 | 4 | GraphRouter (Heuristic Routing) | PENDING | | 2026-03-27 |
 | 5 | Multi-Graph Adapter | PENDING | | 2026-03-27 |
 | 6 | Multi-Token Dev Auth | PENDING | | 2026-03-27 |
@@ -743,5 +743,5 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 | 9 | Tests | PENDING | | 2026-03-27 |
 | 10 | E2E Validation & Smoke Test | PENDING | | 2026-03-27 |
 
-**Last stage completed**: SchemaManager
+**Last stage completed**: Schema-Scoped Connections
 **Last updated by**: plan-runner-agent

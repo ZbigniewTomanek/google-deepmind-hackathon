@@ -61,6 +61,13 @@ class PostgresService:
         async with self.pool.acquire() as conn:
             return await conn.execute(query, *args)
 
+    async def execute_in_schema(self, schema_name: str, query: str, *args) -> str:
+        """Execute a write query against a specific graph schema."""
+        from neocortex.db.scoped import schema_scoped_connection
+
+        async with schema_scoped_connection(self.pool, schema_name) as conn:
+            return await conn.execute(query, *args)
+
     async def fetch(self, query: str, *args) -> list[asyncpg.Record]:
         """Execute a query and return all rows."""
         async with self.pool.acquire() as conn:
