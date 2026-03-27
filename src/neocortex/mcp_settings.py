@@ -26,8 +26,9 @@ class MCPSettings(BaseSettings):
     auth_mode: Literal["none", "dev_token", "google_oauth"] = "none"
 
     # Dev-token auth (used when auth_mode = "dev_token")
-    dev_token: str = "dev-token-neocortex"  # Bearer token to accept
-    dev_user_id: str = "dev-user"  # Identity returned for the dev token
+    dev_token: str = "dev-token-neocortex"  # Deprecated single-token fallback
+    dev_user_id: str = "dev-user"  # Deprecated single-user fallback
+    dev_tokens_file: str = ""  # Optional JSON mapping {token: agent_id}
 
     # Google OAuth (used when auth_mode = "google_oauth")
     google_client_id: str = ""

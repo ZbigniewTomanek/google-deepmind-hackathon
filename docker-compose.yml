@@ -27,12 +27,15 @@ services:
       NEOCORTEX_TRANSPORT: http
       NEOCORTEX_SERVER_HOST: "0.0.0.0"
       NEOCORTEX_MOCK_DB: "false"
-      NEOCORTEX_AUTH_MODE: "none"
+      NEOCORTEX_AUTH_MODE: "dev_token"
+      NEOCORTEX_DEV_TOKENS_FILE: "/app/dev_tokens.json"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: neocortex
       POSTGRES_PASSWORD: neocortex
       POSTGRES_DATABASE: neocortex
+    volumes:
+      - ./dev_tokens.json:/app/dev_tokens.json:ro
     depends_on:
       postgres:
         condition: service_healthy
