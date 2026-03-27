@@ -192,9 +192,9 @@ Stages are executed sequentially. Each stage:
 | 2 | Package skeleton, protocol, models | DONE | Created ingestion package: protocol.py (IngestionProcessor), models.py (request/response), stub_processor.py (StubProcessor) |
 | 3 | FastAPI app with auth and lifespan | DONE | Created auth.py (get_agent_id dependency), app.py (create_app with lifespan), __main__.py (uvicorn entrypoint). Added fastapi, uvicorn, python-multipart deps. |
 | 4 | Wire ingestion endpoints | DONE | Created routes.py with POST /ingest/text, /ingest/document (10MB limit, content-type validation), /ingest/events. Registered router in app.py. |
-| 5 | Docker Compose service | PENDING | |
+| 5 | Docker Compose service | DONE | Created docker/ingestion/Dockerfile, added x-common-env YAML anchor and neocortex-ingestion service to docker-compose.yml |
 | 6 | Tests | PENDING | |
 | 7 | Validation | PENDING | |
 
-Last stage completed: Stage 4 — Wire ingestion endpoints
+Last stage completed: Stage 5 — Docker Compose service
 Last updated by: plan-runner-agent
