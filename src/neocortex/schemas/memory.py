@@ -9,6 +9,7 @@ class RememberResult(BaseModel):
     status: str
     episode_id: int
     message: str
+    extraction_job_id: int | None = None
 
 
 class RecallItem(BaseModel):
