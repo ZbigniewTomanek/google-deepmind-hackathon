@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Context
 
 from neocortex.db.adapter import GraphServiceAdapter
-from neocortex.db.scoped import schema_scoped_connection
+from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connection
 from neocortex.graph_router import GraphRouter
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
@@ -21,10 +21,37 @@ class _FakeContext:
     lifespan_context: dict[str, object]
 
 
-async def _insert_concept_node(pg_service, schema_name: str, name: str, content: str, source: str) -> None:
-    async with schema_scoped_connection(pg_service.pool, schema_name) as conn:
+async def _insert_concept_node(
+    pg_service,
+    schema_name: str,
+    name: str,
+    content: str,
+    source: str,
+    *,
+    agent_id: str | None = None,
+    shared: bool = False,
+) -> None:
+    context_manager = (
+        graph_scoped_connection(pg_service.pool, schema_name, agent_id=agent_id)
+        if agent_id is not None
+        else schema_scoped_connection(pg_service.pool, schema_name)
+    )
+    async with context_manager as conn:
         type_id = await conn.fetchval("SELECT id FROM node_type WHERE name = 'Concept'")
         assert type_id is not None
+        if shared:
+            await conn.execute(
+                """
+                INSERT INTO node (type_id, name, content, source, owner_role)
+                VALUES ($1, $2, $3, $4, NULL)
+                """,
+                int(type_id),
+                name,
+                content,
+                source,
+            )
+            return
+
         await conn.execute(
             """
             INSERT INTO node (type_id, name, content, source)
@@ -56,6 +83,8 @@ async def test_recall_merges_results_across_agent_and_shared_graphs(pg_service) 
             name=f"Pizza Fact {suffix}",
             content=f"Pizza research note {suffix}",
             source=f"test_multi_graph_{suffix}",
+            agent_id=agent_id,
+            shared=True,
         )
 
         results = await adapter.recall(query="pizza", agent_id=agent_id, limit=10)
@@ -125,6 +154,8 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
             name=f"Shared concept {suffix}",
             content=f"Shared note {suffix}",
             source=f"test_multi_graph_{suffix}",
+            agent_id=agent_id,
+            shared=True,
         )
 
         result = await discover(

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import asyncpg
 
-from neocortex.db.scoped import schema_scoped_connection
+from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connection
 from neocortex.graph_service import GraphService
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
@@ -69,7 +69,7 @@ class GraphServiceAdapter:
 
         schemas = await self._router.route_recall(agent_id)
         results_per_schema = await asyncio.gather(
-            *(self._recall_in_schema(schema_name, query, limit) for schema_name in schemas)
+            *(self._recall_in_schema(schema_name, query, agent_id, limit) for schema_name in schemas)
         )
         merged_results = [item for batch in results_per_schema for item in batch]
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
@@ -93,7 +93,7 @@ class GraphServiceAdapter:
         schemas = await self._router.route_discover(agent_id)
         totals = GraphStats(total_nodes=0, total_edges=0, total_episodes=0)
         for schema_name in schemas:
-            schema_stats = await self._get_stats_in_schema(schema_name)
+            schema_stats = await self._get_stats_in_schema(schema_name, agent_id)
             totals.total_nodes += schema_stats.total_nodes
             totals.total_edges += schema_stats.total_edges
             totals.total_episodes += schema_stats.total_episodes
@@ -139,11 +139,11 @@ class GraphServiceAdapter:
         ]
         return (node_results + episode_results)[:limit]
 
-    async def _recall_in_schema(self, schema_name: str, query: str, limit: int) -> list[RecallItem]:
+    async def _recall_in_schema(self, schema_name: str, query: str, agent_id: str, limit: int) -> list[RecallItem]:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped recall.")
 
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             node_rows = await conn.fetch(
                 """SELECT
                        id,
@@ -219,8 +219,8 @@ class GraphServiceAdapter:
         aggregated: dict[str, TypeInfo] = {}
 
         for schema_name in schemas:
-            rows = await self._fetch_types_in_schema(schema_name, table_name)
-            counts = await self._fetch_type_counts_in_schema(schema_name, count_table)
+            rows = await self._fetch_types_in_schema(schema_name, table_name, agent_id)
+            counts = await self._fetch_type_counts_in_schema(schema_name, count_table, agent_id)
             for row in rows:
                 type_name = str(row["name"])
                 current = aggregated.get(type_name)
@@ -276,26 +276,26 @@ class GraphServiceAdapter:
             for row in rows
         ]
 
-    async def _fetch_types_in_schema(self, schema_name: str, table_name: str) -> list[asyncpg.Record]:
+    async def _fetch_types_in_schema(self, schema_name: str, table_name: str, agent_id: str) -> list[asyncpg.Record]:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped type lookups.")
 
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             return await conn.fetch(f"SELECT id, name, description FROM {table_name} ORDER BY name")
 
-    async def _fetch_type_counts_in_schema(self, schema_name: str, count_table: str) -> dict[int, int]:
+    async def _fetch_type_counts_in_schema(self, schema_name: str, count_table: str, agent_id: str) -> dict[int, int]:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped type counts.")
 
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             rows = await conn.fetch(f"SELECT type_id AS id, count(*) AS count FROM {count_table} GROUP BY type_id")
         return {int(row["id"]): int(row["count"]) for row in rows}
 
-    async def _get_stats_in_schema(self, schema_name: str) -> GraphStats:
+    async def _get_stats_in_schema(self, schema_name: str, agent_id: str) -> GraphStats:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped stats.")
 
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             row = await conn.fetchrow("""SELECT
                        (SELECT count(*) FROM node) AS total_nodes,
                        (SELECT count(*) FROM edge) AS total_edges,
