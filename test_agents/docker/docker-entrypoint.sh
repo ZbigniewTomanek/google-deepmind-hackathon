@@ -2,14 +2,12 @@
 set -e
 
 if [ "$(id -u)" = "0" ]; then
-    PROJECT_ROOT="/home/dw/programing/google-deepmind-hackathon"
-    VENV_DIR="${PROJECT_ROOT}/.venv"
-    OPENCODE_DATA="${PROJECT_ROOT}/test_agents/.opencode/data"
+    # Fix ownership on docker-managed volumes
+    chown -R "${HOST_UID:-1000}:${HOST_GID:-1000}" /workspace/.docker-venv 2>/dev/null || true
+    mkdir -p /workspace/test_agents/.opencode/data
+    chown -R "${HOST_UID:-1000}:${HOST_GID:-1000}" /workspace/test_agents/.opencode/data 2>/dev/null || true
 
-    chown -R 1000:1000 "$VENV_DIR" 2>/dev/null || true
-    mkdir -p "$OPENCODE_DATA" && chown -R 1000:1000 "$OPENCODE_DATA" 2>/dev/null || true
-
-    exec gosu appuser "$@"
+    exec gosu "${HOST_UID:-1000}:${HOST_GID:-1000}" "$@"
 fi
 
 exec "$@"

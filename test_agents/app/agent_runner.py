@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -163,8 +164,10 @@ async def run_agent(
     else:
         agent_ref = agent_name
 
-    # Launch opencode CLI as subprocess
-    cmd = ["opencode", "run", "--agent", agent_ref, full_prompt]
+    # Launch opencode CLI via the running opencode-web server
+    # Using --attach makes sessions visible in the web UI
+    opencode_url = f"http://localhost:{os.environ.get('OPENCODE_PORT', '4098')}"
+    cmd = ["opencode", "run", "--attach", opencode_url, "--agent", agent_ref, full_prompt]
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -175,7 +178,7 @@ async def run_agent(
         )
         session.process = proc
 
-        stdout_bytes, stderr_bytes = await proc.communicate()
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=300)
         stdout_text = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
         stderr_text = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
 
@@ -186,6 +189,12 @@ async def run_agent(
             session.status = "failed"
             session.output = stdout_text
             session.error = stderr_text or f"Process exited with code {proc.returncode}"
+
+    except TimeoutError:
+        session.status = "failed"
+        session.error = "Agent execution timed out (300s limit)"
+        if proc:
+            proc.kill()
 
     except FileNotFoundError:
         session.status = "failed"
