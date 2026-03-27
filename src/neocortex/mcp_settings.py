@@ -47,6 +47,9 @@ class MCPSettings(BaseSettings):
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
     recall_vector_distance_threshold: float = 0.5
 
+    # Graph traversal
+    recall_traversal_depth: int = 2  # hops from matched node
+
     # Extraction pipeline
     extraction_enabled: bool = True
     extraction_model: str = "gemini-2.5-flash"
