@@ -1,3 +1,4 @@
+from neocortex.schemas.graph import GraphInfo as GraphInfo
 from neocortex.schemas.memory import (
     DiscoverResult as DiscoverResult,
 )
