@@ -35,5 +35,8 @@ class MCPSettings(BaseSettings):
     google_client_secret: str = ""
     oauth_base_url: str = "http://localhost:8000"
 
+    # Embedding model (experimental names may rotate; fallback: "text-embedding-004")
+    embedding_model: str = "gemini-embedding-exp-03-07"
+
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired

@@ -5,6 +5,7 @@ from typing import TypedDict
 from neocortex.config import PostgresConfig
 from neocortex.db.adapter import GraphServiceAdapter
 from neocortex.db.mock import InMemoryRepository
+from neocortex.embedding_service import EmbeddingService
 from neocortex.graph_router import GraphRouter
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
@@ -19,6 +20,7 @@ class ServiceContext(TypedDict):
     schema_mgr: SchemaManager | None
     router: GraphRouter | None
     settings: MCPSettings
+    embeddings: EmbeddingService | None
 
 
 async def create_services(settings: MCPSettings) -> ServiceContext:
@@ -35,6 +37,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             schema_mgr=None,
             router=None,
             settings=settings,
+            embeddings=None,
         )
 
     pg = PostgresService(PostgresConfig())
@@ -45,6 +48,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
     router = GraphRouter(schema_mgr, pg.pool)
     repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg)
+    embeddings = EmbeddingService(model=settings.embedding_model)
 
     return ServiceContext(
         repo=repo,
@@ -53,6 +57,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         schema_mgr=schema_mgr,
         router=router,
         settings=settings,
+        embeddings=embeddings,
     )
 
 
