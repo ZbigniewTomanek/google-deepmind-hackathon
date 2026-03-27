@@ -15,6 +15,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     if ctx is None:
         raise RuntimeError("FastMCP context is required for recall().")
 
+    limit = max(1, min(limit, 100))
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
     results = await repo.recall(query=query, agent_id=agent_id, limit=limit)

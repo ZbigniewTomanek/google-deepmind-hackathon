@@ -61,6 +61,7 @@ CREATE POLICY edge_update_policy ON edge FOR UPDATE
 CREATE POLICY edge_delete_policy ON edge FOR DELETE
     USING (owner_role = current_user);
 
+-- Episodes are append-only: no UPDATE policy is defined intentionally.
 DROP POLICY IF EXISTS episode_select_policy ON episode;
 DROP POLICY IF EXISTS episode_insert_policy ON episode;
 DROP POLICY IF EXISTS episode_delete_policy ON episode;

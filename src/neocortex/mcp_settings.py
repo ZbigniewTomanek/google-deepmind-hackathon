@@ -18,7 +18,7 @@ class MCPSettings(BaseSettings):
     #  - none: no auth, all requests are anonymous
     #  - dev_token: static bearer token for testing (no browser flow needed)
     #  - google_oauth: full Google OAuth via FastMCP OAuthProxy
-    auth_mode: str = "none"
+    auth_mode: Literal["none", "dev_token", "google_oauth"] = "none"
 
     # Dev-token auth (used when auth_mode = "dev_token")
     dev_token: str = "dev-token-neocortex"  # Bearer token to accept

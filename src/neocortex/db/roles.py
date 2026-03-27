@@ -5,6 +5,13 @@ from loguru import logger
 
 _MAX_SUB_LENGTH = 46
 _SAFE_CHARS = re.compile(r"[^a-z0-9_]")
+_VALID_ROLE = re.compile(r"^[a-z0-9_]+$")
+
+
+def _validate_role_name(role_name: str) -> None:
+    """Raise ValueError if role_name contains characters unsafe for SQL interpolation."""
+    if not _VALID_ROLE.match(role_name):
+        raise ValueError(f"Invalid PG role name: {role_name!r}")
 
 
 def oauth_sub_to_pg_role(oauth_sub: str) -> str:
@@ -15,6 +22,7 @@ def oauth_sub_to_pg_role(oauth_sub: str) -> str:
 
 async def ensure_pg_role(pool: asyncpg.Pool, role_name: str) -> None:
     """Create an agent PG role if it does not already exist."""
+    _validate_role_name(role_name)
     async with pool.acquire() as conn:
         exists = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", role_name)
         if exists:

@@ -28,7 +28,7 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
         await pg.connect()
         try:
             graph = GraphService(pg)
-            repo = GraphServiceAdapter(graph, pool=pg.pool)
+            repo = GraphServiceAdapter(graph, pool=pg.pool, pg=pg)
             yield {"repo": repo, "pg": pg, "graph": graph, "settings": settings}
         finally:
             await pg.disconnect()

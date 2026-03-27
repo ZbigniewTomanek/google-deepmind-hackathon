@@ -4,14 +4,10 @@ from neocortex.auth.dependencies import get_agent_id_from_context
 from neocortex.schemas.memory import DiscoverResult, GraphStats
 
 
-async def discover(query: str | None = None, ctx: Context | None = None) -> DiscoverResult:
+async def discover(ctx: Context | None = None) -> DiscoverResult:
     """Discover what types of knowledge are stored. Returns the ontology —
-    entity types, relationship types, and statistics. Optionally filtered.
-
-    Args:
-        query: Optional filter to narrow the ontology exploration.
+    entity types, relationship types, and statistics.
     """
-    del query
     if ctx is None:
         raise RuntimeError("FastMCP context is required for discover().")
 
