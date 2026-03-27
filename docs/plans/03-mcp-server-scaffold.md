@@ -79,7 +79,7 @@ revise affected stages, and get user confirmation before continuing.
 | 2 | FastMCP server with 3 tool stubs | DONE | Created server.py with FastMCP factory, health endpoint. Added remember/recall/discover tool stubs. All verifications pass. | `feat(mcp): add FastMCP server with remember/recall/discover tool stubs` |
 | 3 | Tool I/O schemas | DONE | Created Pydantic schemas in schemas/memory.py (RememberResult, RecallItem, RecallResult, TypeInfo, GraphStats, DiscoverResult). Updated tool stubs to return typed models. | `feat(mcp): add Pydantic schemas for MCP tool inputs and outputs` |
 | 4 | Auth layer (dev-token + Google OAuth) | DONE | Added pluggable auth factory, dev-token `AuthProvider`, and auth-aware agent ID dependency. Used FastMCP `GoogleProvider` because current version's `OAuthProxy` constructor differs from the plan. Verified with smoke test, ruff, and pytest. | `feat(mcp): add pluggable auth layer with dev-token and Google OAuth modes` |
-| 5 | In-memory mock repository & role mapping | PENDING | | |
+| 5 | In-memory mock repository & role mapping | DONE | Added MemoryRepository protocol, in-memory repo, OAuth-sub to PG-role mapping, FastMCP lifespan repo wiring, and tools now use shared repo state via Context. | `feat(mcp): add MemoryRepository protocol, InMemoryRepository, role mapping, and wire tools via lifespan` |
 | 6 | MCP-layer tests | PENDING | | |
 | 7 | Rebase onto Plan 02 | PENDING | | |
 | 8 | PostgreSQL integration — wire tools to GraphService | PENDING | | |
@@ -88,7 +88,7 @@ revise affected stages, and get user confirmation before continuing.
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
-Last stage completed: Stage 4: Auth layer (dev-token + Google OAuth)
+Last stage completed: Stage 5: In-memory mock repository & role mapping
 Last updated by: plan-runner-agent
 
 ---

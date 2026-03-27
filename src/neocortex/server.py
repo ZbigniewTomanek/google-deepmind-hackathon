@@ -1,13 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
 from neocortex.auth import create_auth
+from neocortex.db.mock import InMemoryRepository
 from neocortex.mcp_settings import MCPSettings
 
 
 def create_server(settings: MCPSettings | None = None) -> FastMCP:
     settings = settings or MCPSettings()
     auth = create_auth(settings)
+
+    @asynccontextmanager
+    async def app_lifespan(server):
+        del server
+        repo = InMemoryRepository()
+        yield {"repo": repo, "settings": settings}
 
     mcp = FastMCP(
         name=settings.server_name,
@@ -16,6 +25,7 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
             "NeoCortex is an agent memory system. Use 'remember' to store knowledge, "
             "'recall' to retrieve it, and 'discover' to explore what types of knowledge exist."
         ),
+        lifespan=app_lifespan,
     )
 
     # Register tools
