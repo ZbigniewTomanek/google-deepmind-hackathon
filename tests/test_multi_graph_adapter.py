@@ -65,6 +65,36 @@ async def _insert_concept_node(
 
 
 @pytest.mark.asyncio
+async def test_store_episode_writes_to_agent_personal_schema(pg_service) -> None:
+    manager = SchemaManager(pg_service)
+    router = GraphRouter(manager, pg_service.pool)
+    adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
+    suffix = uuid4().hex[:8]
+    agent_id = f"store-{suffix}"
+
+    personal_schema = await manager.ensure_default_graphs(agent_id)
+    try:
+        episode_id = await adapter.store_episode(
+            agent_id=agent_id,
+            content=f"Stored in personal graph {suffix}",
+            source_type="mcp",
+        )
+
+        async with schema_scoped_connection(pg_service.pool, personal_schema) as conn:
+            row = await conn.fetchrow(
+                "SELECT id, agent_id, content FROM episode WHERE id = $1",
+                episode_id,
+            )
+
+        assert row is not None
+        assert int(row["id"]) == episode_id
+        assert str(row["agent_id"]) == agent_id
+        assert str(row["content"]) == f"Stored in personal graph {suffix}"
+    finally:
+        await manager.drop_graph(personal_schema)
+
+
+@pytest.mark.asyncio
 async def test_recall_merges_results_across_agent_and_shared_graphs(pg_service) -> None:
     manager = SchemaManager(pg_service)
     router = GraphRouter(manager, pg_service.pool)
@@ -179,3 +209,30 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
     finally:
         await manager.drop_graph(personal_schema)
         await manager.drop_graph(shared_schema)
+
+
+@pytest.mark.asyncio
+async def test_schema_isolation_keeps_agent_data_separate(pg_service) -> None:
+    manager = SchemaManager(pg_service)
+    router = GraphRouter(manager, pg_service.pool)
+    adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
+    suffix = uuid4().hex[:8]
+    agent_a = f"isolation-a-{suffix}"
+    agent_b = f"isolation-b-{suffix}"
+
+    schema_a = await manager.ensure_default_graphs(agent_a)
+    schema_b = await manager.ensure_default_graphs(agent_b)
+    try:
+        await adapter.store_episode(agent_id=agent_a, content=f"Alpha memory {suffix}", source_type="mcp")
+        await adapter.store_episode(agent_id=agent_b, content=f"Beta memory {suffix}", source_type="mcp")
+
+        results_a = await adapter.recall(query="Alpha", agent_id=agent_a, limit=10)
+        results_b = await adapter.recall(query="Beta", agent_id=agent_b, limit=10)
+
+        assert any(item.content == f"Alpha memory {suffix}" and item.graph_name == schema_a for item in results_a)
+        assert all(item.content != f"Beta memory {suffix}" for item in results_a)
+        assert any(item.content == f"Beta memory {suffix}" and item.graph_name == schema_b for item in results_b)
+        assert all(item.content != f"Alpha memory {suffix}" for item in results_b)
+    finally:
+        await manager.drop_graph(schema_a)
+        await manager.drop_graph(schema_b)
