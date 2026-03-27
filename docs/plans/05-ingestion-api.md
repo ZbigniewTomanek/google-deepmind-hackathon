@@ -188,7 +188,7 @@ Stages are executed sequentially. Each stage:
 
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 1 | Extract shared service factory | PENDING | |
+| 1 | Extract shared service factory | DONE | Created services.py (ServiceContext, create_services, shutdown_services), auth/tokens.py (load_token_map), updated server.py and dev.py |
 | 2 | Package skeleton, protocol, models | PENDING | |
 | 3 | FastAPI app with auth and lifespan | PENDING | |
 | 4 | Wire ingestion endpoints | PENDING | |
@@ -196,5 +196,5 @@ Stages are executed sequentially. Each stage:
 | 6 | Tests | PENDING | |
 | 7 | Validation | PENDING | |
 
-Last stage completed: —
-Last updated by: —
+Last stage completed: Stage 1 — Extract shared service factory
+Last updated by: plan-runner-agent

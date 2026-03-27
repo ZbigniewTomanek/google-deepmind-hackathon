@@ -4,14 +4,8 @@ from fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
 from neocortex.auth import create_auth
-from neocortex.config import PostgresConfig
-from neocortex.db.adapter import GraphServiceAdapter
-from neocortex.db.mock import InMemoryRepository
-from neocortex.graph_router import GraphRouter
-from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
-from neocortex.postgres_service import PostgresService
-from neocortex.schema_manager import SchemaManager
+from neocortex.services import create_services, shutdown_services
 
 
 def create_server(settings: MCPSettings | None = None) -> FastMCP:
@@ -21,29 +15,11 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
     @asynccontextmanager
     async def app_lifespan(server):
         del server
-        if settings.mock_db:
-            repo = InMemoryRepository()
-            yield {"repo": repo, "settings": settings}
-            return
-
-        pg = PostgresService(PostgresConfig())
-        await pg.connect()
+        ctx = await create_services(settings)
         try:
-            graph = GraphService(pg)
-            schema_mgr = SchemaManager(pg)
-            await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
-            router = GraphRouter(schema_mgr, pg.pool)
-            repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg)
-            yield {
-                "repo": repo,
-                "pg": pg,
-                "graph": graph,
-                "schema_mgr": schema_mgr,
-                "router": router,
-                "settings": settings,
-            }
+            yield ctx
         finally:
-            await pg.disconnect()
+            await shutdown_services(ctx)
 
     mcp = FastMCP(
         name=settings.server_name,
