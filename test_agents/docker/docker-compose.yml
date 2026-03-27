@@ -1,0 +1,74 @@
+# Docker Compose for NeoCortex Test Agents
+# Separate from the main project's docker-compose.yml
+#
+# Services:
+#   - opencode-web: OpenCode web UI (port 4098)
+#   - fastapi: Test agents API (port 8003)
+#
+# No postgres — agents use the NeoCortex MCP server on localhost:8000
+# Start the main project's services first: docker compose up -d postgres neocortex-mcp
+
+x-common-volumes: &common-volumes
+  - /home/dw/programing/google-deepmind-hackathon:/home/dw/programing/google-deepmind-hackathon
+  - /home/dw/programing/OpenAgentCompiler:/home/dw/programing/OpenAgentCompiler
+  - /home/dw/.opencode/bin/opencode:/usr/local/bin/opencode:ro
+  - /home/dw/.config/opencode:/home/dw/.config/opencode:ro
+  - /home/dw/.local/share/opencode:/home/dw/.local/share/opencode:ro
+  - testagents_venv:/home/dw/programing/google-deepmind-hackathon/.venv
+
+x-common-env: &common-env
+  HOME: /home/dw
+  XDG_DATA_HOME: /home/dw/programing/google-deepmind-hackathon/test_agents/.opencode/data
+  XDG_CONFIG_HOME: /home/dw/.config
+  GIT_SSH_COMMAND: "ssh -i /home/dw/.ssh/id_ed25519 -o UserKnownHostsFile=/home/dw/.ssh/known_hosts -o StrictHostKeyChecking=no"
+
+services:
+  opencode-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: 1000
+        GID: 1000
+    network_mode: host
+    volumes: *common-volumes
+    environment:
+      <<: *common-env
+    env_file:
+      - /home/dw/programing/google-deepmind-hackathon/test_agents/.env
+    working_dir: /home/dw/programing/google-deepmind-hackathon/test_agents/build
+    command: >
+      sh -c "cd /home/dw/programing/google-deepmind-hackathon &&
+             uv sync --frozen &&
+             cd test_agents &&
+             uv run python build_agents.py &&
+             cd build &&
+             opencode web --hostname 0.0.0.0 --port 4098"
+    restart: unless-stopped
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: 1000
+        GID: 1000
+    network_mode: host
+    volumes: *common-volumes
+    environment:
+      <<: *common-env
+    env_file:
+      - /home/dw/programing/google-deepmind-hackathon/test_agents/.env
+    working_dir: /home/dw/programing/google-deepmind-hackathon/test_agents
+    command: >
+      sh -c "cd /home/dw/programing/google-deepmind-hackathon &&
+             uv sync --frozen &&
+             cd test_agents &&
+             uv run python run.py"
+    depends_on:
+      opencode-web:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  testagents_venv:
