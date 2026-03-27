@@ -117,10 +117,13 @@ protocol abstraction.
    May return multiple results if the same name exists under different types."""
 
    # ── Edge CRUD ──
-   async def create_edge(
+   async def upsert_edge(
        self, agent_id: str, source_id: int, target_id: int,
        type_id: int, weight: float = 1.0, properties: dict | None = None,
    ) -> Edge: ...
+   """Upsert by (source_id, target_id, type_id) within the agent's schema.
+   If an edge with the same triple exists, merge properties and update weight.
+   This makes extraction retries safe — no duplicate edges on re-processing."""
 
    # ── Graph Traversal ──
    async def get_node_neighborhood(
@@ -141,11 +144,25 @@ protocol abstraction.
    - `get_or_create_node_type`: use `graph.get_node_type_by_name()`, fallback to `graph.create_node_type()`
    - `upsert_node`: query `SELECT id FROM node WHERE name = $1 AND type_id = $2`, then create or update
    - `find_nodes_by_name`: `SELECT * FROM node WHERE lower(name) = lower($1)` — returns list, caller decides
+   - `upsert_edge`: `INSERT ... ON CONFLICT (source_id, target_id, type_id) DO UPDATE SET weight = $5, properties = node.properties || $6::jsonb`
    - `get_node_neighborhood`: iterative BFS using `graph.get_neighbors()` up to depth
    - Schema routing: use `self._router.route_store(agent_id)` for writes, fan-out for reads
    - All SQL via `schema_scoped_connection(self._pool, schema_name)`
 
 3. **Implement in `InMemoryRepository`** (`src/neocortex/db/mock.py`)
+
+   First, add `created_at` to `EpisodeRecord` TypedDict so `get_episode` can return
+   a proper `Episode` model:
+   ```python
+   class EpisodeRecord(TypedDict, total=False):
+       id: int
+       agent_id: str
+       content: str
+       context: str | None
+       source_type: str
+       embedding: list[float] | None
+       created_at: datetime  # NEW — set to datetime.now(UTC) in store_episode
+   ```
 
    Add in-memory dicts:
    ```python
@@ -157,9 +174,10 @@ protocol abstraction.
    self._next_edge_id = 1
    self._next_type_id = 1
    ```
-   - `get_episode`: lookup in `self._episodes` by id, filter by agent_id
+   - `get_episode`: lookup in `self._episodes` by id, filter by agent_id, convert to `Episode` model
    - `get_node_neighborhood`: simple BFS over `self._edges`
    - `upsert_node`: lookup by `(name, type_id)` tuple
+   - `upsert_edge`: lookup by `(source_id, target_id, type_id)` tuple, update if exists
    - `find_nodes_by_name`: filter `self._nodes` by case-insensitive name match, return list
 
 4. **Unit tests** (`tests/test_protocol_graph_mutations.py`)
@@ -169,7 +187,7 @@ protocol abstraction.
    - Test get_or_create_node_type idempotency
    - Test find_nodes_by_name returns list (empty, single, multiple types)
    - Test get_node_neighborhood at depth 1, 2, 3
-   - Test create_edge and verify traversal
+   - Test upsert_edge creates new edge, and upsert with same (source, target, type) updates instead of duplicating
    - Run against `InMemoryRepository`
 
 ### Verification
@@ -202,10 +220,11 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
 
 1. **Add dependency** (`pyproject.toml`)
    ```bash
-   uv add "procrastinate[aiopg]"
+   uv add "procrastinate[psycopg]"
    ```
-   Note: Procrastinate uses psycopg (v3) or aiopg for async. Since we already use asyncpg
-   for the main pool, Procrastinate manages its own connection pool internally — no conflict.
+   Note: Procrastinate uses psycopg (v3) for async via `PsycopgConnector`. Since we already
+   use asyncpg for the main pool, Procrastinate manages its own connection pool internally —
+   no conflict.
 
 2. **Create Procrastinate app** (`src/neocortex/jobs/__init__.py`, `tasks.py`)
 
@@ -236,7 +255,6 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
    async def extract_episode(
        agent_id: str,
        episode_ids: list[int],
-       schema_name: str,
    ) -> None:
        """Run extraction pipeline for a batch of episodes."""
        from neocortex.jobs.context import get_services
@@ -247,6 +265,7 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
            embeddings=services["embeddings"],
            agent_id=agent_id,
            episode_ids=episode_ids,
+           model_name=services["settings"].extraction_model,
        )
    ```
 
@@ -274,6 +293,7 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
 3. **Add settings** (`src/neocortex/mcp_settings.py`)
    ```python
    extraction_enabled: bool = True        # feature flag
+   extraction_model: str = "gemini-2.5-flash"  # LLM model for extraction agents
    ```
    No `job_poll_interval` needed — Procrastinate uses LISTEN/NOTIFY for instant pickup.
 
@@ -287,7 +307,8 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
 
    # In create_services():
    if not settings.mock_db and settings.extraction_enabled:
-       job_app = create_job_app(pg.conninfo)
+       conninfo = PostgresConfig().dsn  # "postgresql://user:pass@host:port/db"
+       job_app = create_job_app(conninfo)
        await job_app.open_async()
        # Apply Procrastinate schema (idempotent)
        await job_app.admin.apply_schema_async()
@@ -301,9 +322,14 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
        await job_app.close_async()
    ```
 
-5. **Start worker in lifespan** (`src/neocortex/server.py`, `src/neocortex/ingestion/app.py`)
+5. **Start worker in MCP server lifespan only** (`src/neocortex/server.py`)
+
+   The extraction worker runs exclusively in the MCP server process. The ingestion API
+   only enqueues jobs — it does NOT start a worker. This avoids two workers competing
+   for the same jobs when both services run simultaneously.
+
    ```python
-   # In the async lifespan, after create_services():
+   # In server.py async lifespan, after create_services():
    job_app = ctx["job_app"]
    if job_app is not None:
        worker_task = asyncio.create_task(
@@ -316,6 +342,9 @@ queue primitives and gives us a clean path to job chaining / dependencies later.
    else:
        yield
    ```
+
+   The ingestion API (`ingestion/app.py`) only needs `job_app` for `defer_async()` calls —
+   no `run_worker_async` needed there.
 
 6. **Unit tests** (`tests/test_jobs.py`)
    - Use `procrastinate.InMemoryConnector()` for testing (no Docker needed)
@@ -479,8 +508,16 @@ PostgreSQL-backed, and domain-agnostic.
    ```python
    from pydantic_ai import Agent
    from pydantic_ai.models.google import GoogleModel
+   from pydantic_ai.models.test import TestModel
 
-   MODEL_NAME = "gemini-2.5-flash"
+   DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+
+   def _build_model(model_name: str | None = None, use_test_model: bool = False):
+       """Build the LLM model. Reads from settings if model_name not provided."""
+       if use_test_model:
+           return TestModel()
+       name = model_name or DEFAULT_MODEL_NAME
+       return GoogleModel(name)
 
    # ── Ontology Agent ──
    @dataclass
@@ -543,9 +580,16 @@ PostgreSQL-backed, and domain-agnostic.
        embeddings: EmbeddingService | None,
        agent_id: str,
        episode_ids: list[int],
+       model_name: str | None = None,
        use_test_model: bool = False,
    ) -> None:
-       """Process episodes through the 3-agent pipeline and persist results."""
+       """Process episodes through the 3-agent pipeline and persist results.
+
+       Args:
+           model_name: LLM model name (from settings.extraction_model). Falls back
+                       to DEFAULT_MODEL_NAME if None.
+           use_test_model: If True, use pydantic_ai TestModel (for unit tests).
+       """
 
        for episode_id in episode_ids:
            episode = await repo.get_episode(agent_id, episode_id)
@@ -672,7 +716,7 @@ PostgreSQL-backed, and domain-agnostic.
                    source=rel.source_name, target=rel.target_name)
                continue
            edge_type = await repo.get_or_create_edge_type(agent_id, rel.relation_type)
-           await repo.create_edge(
+           await repo.upsert_edge(
                agent_id=agent_id,
                source_id=src_id,
                target_id=tgt_id,
@@ -689,10 +733,11 @@ PostgreSQL-backed, and domain-agnostic.
    - Run against `InMemoryRepository`
 
    **Known limitation (PoC-acceptable):** `_persist_payload` does not wrap all operations
-   in a single transaction. Each `repo.upsert_node` / `repo.create_edge` call acquires its
+   in a single transaction. Each `repo.upsert_node` / `repo.upsert_edge` call acquires its
    own schema-scoped connection. If a failure occurs mid-persist, partial graph state remains.
-   For production, the adapter would need a `transaction()` context manager that holds a single
-   connection across multiple operations.
+   Both `upsert_node` and `upsert_edge` are idempotent, so Procrastinate retries are safe —
+   no duplicate nodes or edges. For production, the adapter would need a `transaction()` context
+   manager that holds a single connection across multiple operations.
 
 ### Verification
 ```bash
@@ -720,15 +765,16 @@ or ingests text, an extraction job is enqueued and processed in the background.
    settings = ctx.lifespan_context["settings"]
    job_app = ctx.lifespan_context.get("job_app")
    if job_app and settings.extraction_enabled:
-       router = ctx.lifespan_context["router"]
-       schema = await router.route_store(agent_id)  # returns str, not list
        from neocortex.jobs.tasks import extract_episode
        job_id = await extract_episode.defer_async(
-           job_app, agent_id=agent_id, episode_ids=[episode_id], schema_name=schema
+           job_app, agent_id=agent_id, episode_ids=[episode_id]
        )
        logger.bind(action_log=True).info("extraction_enqueued",
            job_id=job_id, episode_id=episode_id, agent_id=agent_id)
    ```
+   The extraction pipeline resolves the target schema internally via the repo's
+   `GraphRouter` — no need to pass `schema_name` through the job args.
+
    Update `RememberResult` to include `extraction_job_id: int | None`.
 
 3. **Update ingestion processor** (`src/neocortex/ingestion/stub_processor.py`)
@@ -736,8 +782,8 @@ or ingests text, an extraction job is enqueued and processed in the background.
    - After storing episode, defer extraction task via Procrastinate
    - Same pattern as remember tool: `extract_episode.defer_async(job_app, ...)`
 
-4. **Expose `job_app` and `router` in lifespan context** (`src/neocortex/server.py`, `services.py`)
-   - Ensure `job_app` and `router` are in lifespan context dict
+4. **Expose `job_app` in lifespan context** (`src/neocortex/server.py`, `services.py`)
+   - Ensure `job_app` is in lifespan context dict (added to `ServiceContext` in Stage 2)
    - Worker is already started in lifespan (Stage 2 Step 5)
 
 5. **Integration test** (`tests/test_remember_extraction.py`)
@@ -1405,6 +1451,7 @@ GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
 | `NEOCORTEX_MOCK_DB` | Use in-memory mock (no Docker) | `false` |
 | `NEOCORTEX_AUTH_MODE` | Auth mode | `none` |
 | `NEOCORTEX_EXTRACTION_ENABLED` | Enable extraction worker | `true` |
+| `NEOCORTEX_EXTRACTION_MODEL` | LLM model for extraction agents | `gemini-2.5-flash` |
 | `NEOCORTEX_RECALL_TRAVERSAL_DEPTH` | Hops in graph traversal | `2` |
 
 ---
