@@ -5,9 +5,12 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
 RUN pip install --no-cache-dir uv \
-    && uv sync --frozen
+    && uv sync --frozen --no-install-project
 
 COPY src/ src/
+COPY migrations/ migrations/
+
+RUN uv sync --frozen
 
 EXPOSE 8000
 
