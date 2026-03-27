@@ -133,19 +133,26 @@ sqlite3 data/pydantic_agents_playground.sqlite "SELECT count(*) FROM processing_
 
 ## E2E Smoke Test
 
-Validates multi-agent isolation end-to-end against a running server:
+Validates multi-agent isolation end-to-end against a running server.
+Use the unified runner — it starts PostgreSQL + both servers, runs the test,
+and tears everything down on exit:
 
 ```bash
-# Start services
-docker compose down -v && docker compose up -d
+# MCP server tests
+./scripts/run_e2e.sh scripts/e2e_mcp_test.py
 
-# Run smoke test
-uv run python scripts/e2e_mcp_test.py
-# or
-bash scripts/run_e2e_mcp.sh
+# Ingestion API tests
+./scripts/run_e2e.sh scripts/e2e_ingestion_test.py
 
-# Ingestion API E2E
-bash scripts/run_e2e_ingestion.sh
+# Embedding / hybrid recall (requires GOOGLE_API_KEY)
+GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_embedding_test.py
+GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_hybrid_recall_test.py
+
+# Docker mode (builds images, runs everything in containers)
+./scripts/run_e2e.sh --docker scripts/e2e_mcp_test.py
+
+# Keep services up after the test for debugging
+KEEP_RUNNING=1 ./scripts/run_e2e.sh scripts/e2e_mcp_test.py
 ```
 
 ## Linting
