@@ -727,3 +727,21 @@ This plan is designed for sequential, stage-by-stage execution. Each stage is in
 
 **Last stage completed**: N/A
 **Last updated by**: Plan revision (2026-03-27) -- review fixes applied
+
+## Automation Progress Tracker
+
+| # | Stage | Status | Notes | Updated |
+|---|-------|--------|-------|---------|
+| 1 | Graph Registry & Schema Template SQL | DONE | Added `graph_registry`, created `migrations/templates/graph_schema.sql`, verified registry in Postgres, and ran `poetry run pytest`. | 2026-03-27 |
+| 2 | SchemaManager | PENDING | | 2026-03-27 |
+| 3 | Schema-Scoped Connections | PENDING | | 2026-03-27 |
+| 4 | GraphRouter (Heuristic Routing) | PENDING | | 2026-03-27 |
+| 5 | Multi-Graph Adapter | PENDING | | 2026-03-27 |
+| 6 | Multi-Token Dev Auth | PENDING | | 2026-03-27 |
+| 7 | Server Wiring & Auto-Provisioning | PENDING | | 2026-03-27 |
+| 8 | RLS Cleanup | PENDING | | 2026-03-27 |
+| 9 | Tests | PENDING | | 2026-03-27 |
+| 10 | E2E Validation & Smoke Test | PENDING | | 2026-03-27 |
+
+**Last stage completed**: Graph Registry & Schema Template SQL
+**Last updated by**: plan-runner-agent
