@@ -193,8 +193,8 @@ Stages are executed sequentially. Each stage:
 | 3 | FastAPI app with auth and lifespan | DONE | Created auth.py (get_agent_id dependency), app.py (create_app with lifespan), __main__.py (uvicorn entrypoint). Added fastapi, uvicorn, python-multipart deps. |
 | 4 | Wire ingestion endpoints | DONE | Created routes.py with POST /ingest/text, /ingest/document (10MB limit, content-type validation), /ingest/events. Registered router in app.py. |
 | 5 | Docker Compose service | DONE | Created docker/ingestion/Dockerfile, added x-common-env YAML anchor and neocortex-ingestion service to docker-compose.yml |
-| 6 | Tests | PENDING | |
+| 6 | Tests | DONE | 28 tests: models (10), stub_processor (5), API integration (13) — all passing |
 | 7 | Validation | PENDING | |
 
-Last stage completed: Stage 5 — Docker Compose service
+Last stage completed: Stage 6 — Tests
 Last updated by: plan-runner-agent
