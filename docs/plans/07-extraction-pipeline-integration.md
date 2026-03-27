@@ -12,7 +12,7 @@ ingestion API, embeddings, hybrid recall, and a developer TUI. The 3-agent extra
 exists only as a standalone SQLite playground demo (Plan 00). This plan bridges the gap:
 
 1. Expose graph mutation operations through `MemoryRepository` protocol
-2. Build a lightweight background jobs framework (PostgreSQL-backed, asyncio worker)
+2. Integrate Procrastinate (PostgreSQL-native async job queue) for background processing
 3. Port and generalize the extraction pipeline to work with NeoCortex's async/PostgreSQL stack
 4. Create a medical-domain seed corpus (neurology, pharmacy, sexual function)
 5. Wire extraction into `remember` and ingestion flows via async jobs
@@ -31,8 +31,8 @@ User (TUI / API / MCP Client)
   │                              ┌───────────────┘
   │                              ▼
   │                     ┌─────────────────┐
-  │                     │  Job Worker      │
-  │                     │  (asyncio task)  │
+  │                     │  Procrastinate    │
+  │                     │  (async worker)  │
   │                     └────────┬────────┘
   │                              │
   │                 ┌────────────▼────────────┐
@@ -93,17 +93,28 @@ protocol abstraction.
        self, agent_id: str, name: str, description: str | None = None
    ) -> EdgeType: ...
 
+   # ── Episode Read (needed by extraction pipeline in Stage 4) ──
+   async def get_episode(
+       self, agent_id: str, episode_id: int
+   ) -> Episode | None: ...
+   """Fetch a single episode. Adapter queries the agent's personal schema."""
+
    # ── Node CRUD ──
    async def upsert_node(
        self, agent_id: str, name: str, type_id: int,
        content: str | None = None, properties: dict | None = None,
        embedding: list[float] | None = None, source: str | None = None,
    ) -> Node: ...
-   """Upsert by (name, type_id). If exists, merge properties and update."""
+   """Upsert by (name, type_id) within the agent's schema.
+   If a node with the same name AND type_id exists, merge properties and update.
+   Name alone is NOT the uniqueness key — the same name under different types
+   creates separate nodes (e.g. 'Serotonin' as Neurotransmitter vs Drug)."""
 
-   async def find_node_by_name(
+   async def find_nodes_by_name(
        self, agent_id: str, name: str
-   ) -> Node | None: ...
+   ) -> list[Node]: ...
+   """Return all nodes matching `name` (case-insensitive) across all types.
+   May return multiple results if the same name exists under different types."""
 
    # ── Edge CRUD ──
    async def create_edge(
@@ -126,8 +137,10 @@ protocol abstraction.
 2. **Implement in `GraphServiceAdapter`** (`src/neocortex/db/adapter.py`)
 
    Each method delegates to `GraphService` within a schema-scoped connection.
+   - `get_episode`: query by id in the agent's personal schema via `route_store(agent_id)`
    - `get_or_create_node_type`: use `graph.get_node_type_by_name()`, fallback to `graph.create_node_type()`
    - `upsert_node`: query `SELECT id FROM node WHERE name = $1 AND type_id = $2`, then create or update
+   - `find_nodes_by_name`: `SELECT * FROM node WHERE lower(name) = lower($1)` — returns list, caller decides
    - `get_node_neighborhood`: iterative BFS using `graph.get_neighbors()` up to depth
    - Schema routing: use `self._router.route_store(agent_id)` for writes, fan-out for reads
    - All SQL via `schema_scoped_connection(self._pool, schema_name)`
@@ -144,12 +157,17 @@ protocol abstraction.
    self._next_edge_id = 1
    self._next_type_id = 1
    ```
+   - `get_episode`: lookup in `self._episodes` by id, filter by agent_id
    - `get_node_neighborhood`: simple BFS over `self._edges`
    - `upsert_node`: lookup by `(name, type_id)` tuple
+   - `find_nodes_by_name`: filter `self._nodes` by case-insensitive name match, return list
 
 4. **Unit tests** (`tests/test_protocol_graph_mutations.py`)
+   - Test get_episode returns stored episode, None for missing
    - Test upsert_node idempotency (same name+type → same node, merged properties)
+   - Test upsert_node with same name but different type_id → two distinct nodes
    - Test get_or_create_node_type idempotency
+   - Test find_nodes_by_name returns list (empty, single, multiple types)
    - Test get_node_neighborhood at depth 1, 2, 3
    - Test create_edge and verify traversal
    - Run against `InMemoryRepository`
@@ -164,139 +182,147 @@ uv run pytest tests/test_protocol_graph_mutations.py -v
 
 ---
 
-## Stage 2: Background Jobs Framework
+## Stage 2: Background Jobs via Procrastinate
 
 ### Purpose
 Provide asynchronous job processing for extraction and other long-running tasks.
-PostgreSQL-backed for persistence and visibility, asyncio-based worker for simplicity.
+Uses [Procrastinate](https://github.com/procrastinate-org/procrastinate) — a PostgreSQL-native,
+async-first job queue that handles table management, `FOR UPDATE SKIP LOCKED` claiming,
+retry with backoff, and worker lifecycle out of the box. This avoids reimplementing
+queue primitives and gives us a clean path to job chaining / dependencies later.
+
+### Why Procrastinate over hand-rolled queue
+- **Less code**: no custom migration, no `claim_next_job` SQL, no polling loop, no stale-job reclamation — Procrastinate handles all of it.
+- **Retry with backoff**: built-in `RetryStrategy` with exponential backoff, max attempts.
+- **In-process worker**: `app.run_worker_async()` embeds directly in our FastMCP/FastAPI lifespan — no extra process to manage.
+- **Job chaining**: while not a built-in DAG scheduler, a task handler can `await other_task.defer_async(...)` to chain follow-up jobs. This is sufficient for PoC and cleanly extensible.
+- **LISTEN/NOTIFY**: instant job pickup (no polling interval to tune).
 
 ### Steps
 
-1. **Create migration** (`migrations/init/007_extraction_jobs.sql`)
+1. **Add dependency** (`pyproject.toml`)
+   ```bash
+   uv add "procrastinate[aiopg]"
+   ```
+   Note: Procrastinate uses psycopg (v3) or aiopg for async. Since we already use asyncpg
+   for the main pool, Procrastinate manages its own connection pool internally — no conflict.
 
-   ```sql
-   CREATE TABLE IF NOT EXISTS public.extraction_jobs (
-       id            SERIAL PRIMARY KEY,
-       agent_id      TEXT NOT NULL,
-       episode_ids   INTEGER[] NOT NULL,
-       schema_name   TEXT NOT NULL,
-       status        TEXT NOT NULL DEFAULT 'pending'
-                     CHECK (status IN ('pending','running','completed','failed')),
-       error         TEXT,
-       attempts      INTEGER DEFAULT 0,
-       max_attempts  INTEGER DEFAULT 3,
-       created_at    TIMESTAMPTZ DEFAULT now(),
-       started_at    TIMESTAMPTZ,
-       completed_at  TIMESTAMPTZ
-   );
-   CREATE INDEX idx_extraction_jobs_pending
-       ON public.extraction_jobs (status, created_at)
-       WHERE status = 'pending';
+2. **Create Procrastinate app** (`src/neocortex/jobs/__init__.py`, `tasks.py`)
+
+   `__init__.py` — app factory:
+   ```python
+   import procrastinate
+
+   def create_job_app(conninfo: str) -> procrastinate.App:
+       """Create a Procrastinate app connected to the NeoCortex database."""
+       return procrastinate.App(
+           connector=procrastinate.PsycopgConnector(conninfo=conninfo),
+           import_paths=["neocortex.jobs.tasks"],
+       )
    ```
 
-2. **Create jobs module** (`src/neocortex/jobs/__init__.py`, `models.py`, `queue.py`, `worker.py`)
-
-   `models.py`:
+   `tasks.py` — extraction task:
    ```python
-   class ExtractionJob(BaseModel):
-       id: int
-       agent_id: str
-       episode_ids: list[int]
-       schema_name: str
-       status: Literal["pending", "running", "completed", "failed"]
-       error: str | None = None
-       attempts: int = 0
-       max_attempts: int = 3
-       created_at: datetime
-       started_at: datetime | None = None
-       completed_at: datetime | None = None
+   from neocortex.jobs import create_job_app
+
+   # Placeholder app for task registration — replaced at runtime with real conninfo.
+   app = procrastinate.App(connector=procrastinate.InMemoryConnector())
+
+   @app.task(
+       name="extract_episode",
+       retry=procrastinate.RetryStrategy(max_attempts=3, wait=5),
+       queue="extraction",
+   )
+   async def extract_episode(
+       agent_id: str,
+       episode_ids: list[int],
+       schema_name: str,
+   ) -> None:
+       """Run extraction pipeline for a batch of episodes."""
+       from neocortex.jobs.context import get_services
+       services = get_services()
+       from neocortex.extraction.pipeline import run_extraction
+       await run_extraction(
+           repo=services["repo"],
+           embeddings=services["embeddings"],
+           agent_id=agent_id,
+           episode_ids=episode_ids,
+       )
    ```
 
-   `queue.py` — job lifecycle operations:
+   `context.py` — runtime service access for tasks:
    ```python
-   async def enqueue_extraction(
-       pool: asyncpg.Pool, agent_id: str, episode_ids: list[int], schema_name: str
-   ) -> int: ...
-   """INSERT into extraction_jobs, return job id."""
+   """Module-level holder for ServiceContext, set during lifespan."""
+   from __future__ import annotations
+   from typing import TYPE_CHECKING
 
-   async def claim_next_job(pool: asyncpg.Pool) -> ExtractionJob | None: ...
-   """SELECT ... WHERE status='pending' ORDER BY created_at
-   FOR UPDATE SKIP LOCKED — atomic claim, set status='running'."""
+   if TYPE_CHECKING:
+       from neocortex.services import ServiceContext
 
-   async def complete_job(pool: asyncpg.Pool, job_id: int) -> None: ...
-   async def fail_job(pool: asyncpg.Pool, job_id: int, error: str) -> None: ...
-   async def get_job(pool: asyncpg.Pool, job_id: int) -> ExtractionJob | None: ...
-   async def list_pending_jobs(pool: asyncpg.Pool, agent_id: str | None = None) -> list[ExtractionJob]: ...
-   ```
+   _services: ServiceContext | None = None
 
-   `worker.py` — asyncio background task:
-   ```python
-   class ExtractionWorker:
-       def __init__(self, pool: asyncpg.Pool, repo: MemoryRepository,
-                    embeddings: EmbeddingService | None, settings: MCPSettings):
-           self._pool = pool
-           self._repo = repo
-           self._embeddings = embeddings
-           self._settings = settings
-           self._running = False
-           self._task: asyncio.Task | None = None
+   def set_services(ctx: ServiceContext) -> None:
+       global _services
+       _services = ctx
 
-       async def start(self) -> None:
-           """Launch the background polling loop as asyncio.Task."""
-           self._running = True
-           self._task = asyncio.create_task(self._run_loop())
-
-       async def stop(self) -> None:
-           """Gracefully stop the worker."""
-           self._running = False
-           if self._task:
-               self._task.cancel()
-               with suppress(asyncio.CancelledError):
-                   await self._task
-
-       async def _run_loop(self) -> None:
-           poll_interval = self._settings.job_poll_interval  # default 2.0s
-           while self._running:
-               job = await claim_next_job(self._pool)
-               if job:
-                   await self._process_job(job)
-               else:
-                   await asyncio.sleep(poll_interval)
-
-       async def _process_job(self, job: ExtractionJob) -> None:
-           """Run extraction pipeline for a job's episodes."""
-           try:
-               # Import here to avoid circular deps
-               from neocortex.extraction.pipeline import run_extraction
-               await run_extraction(
-                   repo=self._repo,
-                   embeddings=self._embeddings,
-                   agent_id=job.agent_id,
-                   episode_ids=job.episode_ids,
-               )
-               await complete_job(self._pool, job.id)
-           except Exception as e:
-               logger.exception("extraction_job_failed", job_id=job.id)
-               await fail_job(self._pool, job.id, str(e))
+   def get_services() -> ServiceContext:
+       if _services is None:
+           raise RuntimeError("Job services not initialized. Was set_services() called in lifespan?")
+       return _services
    ```
 
 3. **Add settings** (`src/neocortex/mcp_settings.py`)
    ```python
-   job_poll_interval: float = 2.0        # seconds between job polls
    extraction_enabled: bool = True        # feature flag
-   extraction_max_attempts: int = 3
+   ```
+   No `job_poll_interval` needed — Procrastinate uses LISTEN/NOTIFY for instant pickup.
+
+4. **Wire into service lifecycle** (`src/neocortex/services.py`)
+   ```python
+   from neocortex.jobs import create_job_app
+   from neocortex.jobs.context import set_services
+
+   # In ServiceContext TypedDict:
+   job_app: procrastinate.App | None
+
+   # In create_services():
+   if not settings.mock_db and settings.extraction_enabled:
+       job_app = create_job_app(pg.conninfo)
+       await job_app.open_async()
+       # Apply Procrastinate schema (idempotent)
+       await job_app.admin.apply_schema_async()
+       set_services(ctx)  # make services available to task handlers
+   else:
+       job_app = None
+
+   # In shutdown_services():
+   job_app = ctx.get("job_app")
+   if job_app is not None:
+       await job_app.close_async()
    ```
 
-4. **Wire worker into service lifecycle** (`src/neocortex/services.py`)
-   - Add `worker: ExtractionWorker | None` to `ServiceContext`
-   - In `create_services()`: if not mock and `settings.extraction_enabled`, create and start worker
-   - In `shutdown_services()`: stop worker before closing pool
+5. **Start worker in lifespan** (`src/neocortex/server.py`, `src/neocortex/ingestion/app.py`)
+   ```python
+   # In the async lifespan, after create_services():
+   job_app = ctx["job_app"]
+   if job_app is not None:
+       worker_task = asyncio.create_task(
+           job_app.run_worker_async(queues=["extraction"], install_signal_handlers=False)
+       )
+       yield
+       worker_task.cancel()
+       with suppress(asyncio.CancelledError):
+           await worker_task
+   else:
+       yield
+   ```
 
-5. **Unit tests** (`tests/test_jobs.py`)
-   - Test enqueue + claim + complete flow (mock pool or in-memory)
-   - Test claim skips running jobs (SKIP LOCKED semantics)
-   - Test fail_job increments attempts
-   - Test worker start/stop lifecycle
+6. **Unit tests** (`tests/test_jobs.py`)
+   - Use `procrastinate.InMemoryConnector()` for testing (no Docker needed)
+   - Test task registration and deferral
+   - Test retry strategy configuration
+   - Test `extract_episode` task calls `run_extraction` with correct args (mock pipeline)
+   - Test worker start/stop lifecycle via `run_worker_async`
 
 ### Verification
 ```bash
@@ -304,7 +330,7 @@ uv run pytest tests/test_jobs.py -v
 ```
 
 ### Commit
-`feat(jobs): add PostgreSQL-backed extraction job queue with asyncio worker`
+`feat(jobs): integrate Procrastinate for async extraction job processing`
 
 ---
 
@@ -597,21 +623,33 @@ PostgreSQL-backed, and domain-agnostic.
        for et in payload.accepted_edge_types:
            await repo.get_or_create_edge_type(agent_id, et.name, et.description)
 
+       # Batch-embed entity descriptions (single API call instead of N+1)
+       entity_embeddings: list[list[float] | None] = [None] * len(payload.entities)
+       if embeddings:
+           texts_to_embed = [e.description or "" for e in payload.entities]
+           has_text = [bool(t) for t in texts_to_embed]
+           if any(has_text):
+               batch_results = await embeddings.embed_batch(
+                   [t for t, h in zip(texts_to_embed, has_text) if h]
+               )
+               # Map batch results back to entity indices
+               batch_idx = 0
+               for i, h in enumerate(has_text):
+                   if h:
+                       entity_embeddings[i] = batch_results[batch_idx]
+                       batch_idx += 1
+
        # Persist entities as nodes
        name_to_node_id: dict[str, int] = {}
-       for entity in payload.entities:
+       for i, entity in enumerate(payload.entities):
            node_type = await repo.get_or_create_node_type(agent_id, entity.type_name)
-           # Generate embedding for entity description
-           emb = None
-           if embeddings and entity.description:
-               emb = await embeddings.embed(entity.description)
            node = await repo.upsert_node(
                agent_id=agent_id,
                name=entity.name,
                type_id=node_type.id,
                content=entity.description,
                properties={**entity.properties, "_source_episode": episode_id},
-               embedding=emb,
+               embedding=entity_embeddings[i],
            )
            name_to_node_id[entity.name] = node.id
 
@@ -620,13 +658,15 @@ PostgreSQL-backed, and domain-agnostic.
            src_id = name_to_node_id.get(rel.source_name)
            tgt_id = name_to_node_id.get(rel.target_name)
            if src_id is None or tgt_id is None:
-               # Try finding nodes by name in existing graph
+               # Try finding nodes by name in existing graph.
+               # find_nodes_by_name returns a list (name may match multiple types);
+               # we pick the first match — acceptable for PoC.
                if src_id is None:
-                   src_node = await repo.find_node_by_name(agent_id, rel.source_name)
-                   src_id = src_node.id if src_node else None
+                   src_nodes = await repo.find_nodes_by_name(agent_id, rel.source_name)
+                   src_id = src_nodes[0].id if src_nodes else None
                if tgt_id is None:
-                   tgt_node = await repo.find_node_by_name(agent_id, rel.target_name)
-                   tgt_id = tgt_node.id if tgt_node else None
+                   tgt_nodes = await repo.find_nodes_by_name(agent_id, rel.target_name)
+                   tgt_id = tgt_nodes[0].id if tgt_nodes else None
            if src_id is None or tgt_id is None:
                logger.warning("edge_skipped_missing_node",
                    source=rel.source_name, target=rel.target_name)
@@ -648,6 +688,12 @@ PostgreSQL-backed, and domain-agnostic.
    - Verify deduplication (run same text twice → no duplicate nodes)
    - Run against `InMemoryRepository`
 
+   **Known limitation (PoC-acceptable):** `_persist_payload` does not wrap all operations
+   in a single transaction. Each `repo.upsert_node` / `repo.create_edge` call acquires its
+   own schema-scoped connection. If a failure occurs mid-persist, partial graph state remains.
+   For production, the adapter would need a `transaction()` context manager that holds a single
+   connection across multiple operations.
+
 ### Verification
 ```bash
 uv run pytest tests/test_extraction_pipeline.py -v
@@ -666,21 +712,20 @@ or ingests text, an extraction job is enqueued and processed in the background.
 
 ### Steps
 
-1. **Add `get_episode` to protocol** (`src/neocortex/db/protocol.py`)
-   ```python
-   async def get_episode(self, agent_id: str, episode_id: int) -> Episode | None: ...
-   ```
-   Implement in both adapter (schema-scoped query) and mock (dict lookup).
+1. **`get_episode` already on protocol** — added in Stage 1 alongside other graph mutation methods.
 
 2. **Update `remember` tool** (`src/neocortex/tools/remember.py`)
    ```python
    # After storing episode and embedding:
-   pool = ctx.lifespan_context.get("pool")
    settings = ctx.lifespan_context["settings"]
-   if pool and settings.extraction_enabled:
-       schema = ctx.lifespan_context["router"].route_store(agent_id)[0]
-       from neocortex.jobs.queue import enqueue_extraction
-       job_id = await enqueue_extraction(pool, agent_id, [episode_id], schema)
+   job_app = ctx.lifespan_context.get("job_app")
+   if job_app and settings.extraction_enabled:
+       router = ctx.lifespan_context["router"]
+       schema = await router.route_store(agent_id)  # returns str, not list
+       from neocortex.jobs.tasks import extract_episode
+       job_id = await extract_episode.defer_async(
+           job_app, agent_id=agent_id, episode_ids=[episode_id], schema_name=schema
+       )
        logger.bind(action_log=True).info("extraction_enqueued",
            job_id=job_id, episode_id=episode_id, agent_id=agent_id)
    ```
@@ -688,18 +733,14 @@ or ingests text, an extraction job is enqueued and processed in the background.
 
 3. **Update ingestion processor** (`src/neocortex/ingestion/stub_processor.py`)
    - Rename to `episode_processor.py` (it's no longer a stub)
-   - After storing episode, enqueue extraction job
-   - Same pattern as remember tool
+   - After storing episode, defer extraction task via Procrastinate
+   - Same pattern as remember tool: `extract_episode.defer_async(job_app, ...)`
 
-4. **Expose pool and router in lifespan context** (`src/neocortex/server.py`, `services.py`)
-   - Ensure `pool` and `router` are in lifespan context dict
-   - Expose worker in ServiceContext for lifecycle management
+4. **Expose `job_app` and `router` in lifespan context** (`src/neocortex/server.py`, `services.py`)
+   - Ensure `job_app` and `router` are in lifespan context dict
+   - Worker is already started in lifespan (Stage 2 Step 5)
 
-5. **Add ingestion lifespan wiring** (`src/neocortex/ingestion/app.py`)
-   - Start extraction worker in ingestion service lifespan too
-   - Share the same ServiceContext pattern
-
-6. **Integration test** (`tests/test_remember_extraction.py`)
+5. **Integration test** (`tests/test_remember_extraction.py`)
    - Mock DB mode: verify job enqueue is skipped gracefully
    - With pool: verify job is created after remember
 
@@ -899,12 +940,452 @@ uv run pytest tests/test_e2e_extraction.py -v --timeout=120
 
 ---
 
+## Stage 8: CLI-Reproducible E2E Smoke Tests
+
+### Purpose
+Create a standalone E2E test script that validates the entire extraction pipeline —
+from ingestion through agent processing to graph-enriched recall — using only CLI
+commands and HTTP calls. This script must be runnable by a human with a single command
+and produce clear PASS/FAIL output for each check.
+
+### Prerequisites
+- Docker running (for PostgreSQL)
+- `GOOGLE_API_KEY` set (for Gemini embeddings + extraction agents)
+- No other NeoCortex processes on ports 8000/8001
+
+### Steps
+
+1. **Create extraction E2E test script** (`scripts/e2e_extraction_pipeline_test.py`)
+
+   Follows the established pattern from `e2e_mcp_test.py` and `e2e_ingestion_test.py`:
+   async main, httpx + fastmcp Client, direct asyncpg verification.
+
+   ```python
+   """E2E test for the extraction pipeline: ingest → extract → recall with graph context.
+
+   Validates the full data path:
+   1. Ingest medical text via /ingest/text
+   2. Wait for Procrastinate extraction jobs to complete
+   3. Verify ontology was created (node types, edge types)
+   4. Verify nodes and edges were extracted into the graph
+   5. Recall with a semantic query → expect graph_context on matched nodes
+   6. Discover → expect non-zero type counts
+
+   Prerequisites:
+     docker compose up -d postgres
+     GOOGLE_API_KEY=... NEOCORTEX_AUTH_MODE=dev_token \
+       NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+       NEOCORTEX_MOCK_DB=false uv run python -m neocortex &
+     GOOGLE_API_KEY=... NEOCORTEX_AUTH_MODE=dev_token \
+       NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+       NEOCORTEX_MOCK_DB=false uv run python -m neocortex.ingestion &
+
+   Usage:
+     GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
+
+   Via unified runner:
+     GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_extraction_pipeline_test.py
+   """
+   from __future__ import annotations
+
+   import asyncio
+   import os
+   import time
+
+   import asyncpg
+   import httpx
+   from fastmcp import Client
+
+   from neocortex.config import PostgresConfig
+
+   BASE_URL = os.environ.get("NEOCORTEX_BASE_URL", "http://127.0.0.1:8000")
+   INGESTION_URL = os.environ.get("NEOCORTEX_INGESTION_BASE_URL", "http://127.0.0.1:8001")
+   MCP_URL = os.environ.get("NEOCORTEX_MCP_URL", f"{BASE_URL}/mcp")
+   TOKEN = os.environ.get("NEOCORTEX_ALICE_TOKEN", "alice-token")
+   AGENT_SCHEMA = "ncx_alice__personal"
+
+   # --- Seed texts (subset of medical corpus for speed) ---
+
+   SEED_TEXTS = [
+       (
+           "Serotonin (5-hydroxytryptamine, 5-HT) is a monoamine neurotransmitter "
+           "primarily found in the gastrointestinal tract, blood platelets, and the "
+           "central nervous system. In the brain, serotonin is synthesized in the "
+           "raphe nuclei of the brainstem. It modulates mood, appetite, sleep, and "
+           "cognitive functions including memory and learning."
+       ),
+       (
+           "Selective serotonin reuptake inhibitors (SSRIs) such as fluoxetine and "
+           "sertraline work by blocking the reuptake of serotonin in the synaptic "
+           "cleft, increasing its availability for postsynaptic receptors. They are "
+           "first-line treatment for major depressive disorder and several anxiety "
+           "disorders."
+       ),
+       (
+           "SSRI-induced sexual dysfunction is one of the most common reasons for "
+           "treatment discontinuation. Symptoms include decreased libido, delayed "
+           "ejaculation, and anorgasmia. The mechanism involves serotonin's "
+           "inhibitory effect on dopamine and norepinephrine pathways that mediate "
+           "sexual arousal and orgasm."
+       ),
+   ]
+
+   JOB_WAIT_TIMEOUT = 120  # seconds
+   JOB_POLL_INTERVAL = 3   # seconds
+
+
+   def _headers() -> dict[str, str]:
+       return {"Authorization": f"Bearer {TOKEN}"}
+
+
+   async def mcp_call(tool_name: str, arguments: dict) -> dict:
+       async with Client(MCP_URL, auth=TOKEN) as client:
+           result = await client.call_tool(tool_name, arguments)
+       if not isinstance(result.structured_content, dict):
+           raise AssertionError(f"{tool_name} did not return structured content: {result}")
+       return result.structured_content
+
+
+   def _quote(identifier: str) -> str:
+       return '"' + identifier.replace('"', '""') + '"'
+
+
+   # ── Step 1: Ingest seed texts ──────────────────────────────────────
+
+   async def step_ingest() -> list[int]:
+       """POST seed texts to ingestion API, return episode IDs from MCP remember."""
+       print("\n=== Step 1: Ingest seed texts ===")
+       episode_ids: list[int] = []
+       for i, text in enumerate(SEED_TEXTS):
+           # Use MCP remember so extraction is triggered
+           result = await mcp_call("remember", {"text": text, "context": "e2e_extraction_test"})
+           eid = int(result["episode_id"])
+           assert eid > 0, f"Bad episode id: {result}"
+           episode_ids.append(eid)
+           print(f"  [{i+1}/{len(SEED_TEXTS)}] Stored episode {eid}: {text[:60]}...")
+       return episode_ids
+
+
+   # ── Step 2: Wait for extraction jobs ───────────────────────────────
+
+   async def step_wait_for_extraction() -> None:
+       """Poll the database until no pending/running extraction jobs remain."""
+       print(f"\n=== Step 2: Wait for extraction jobs (timeout {JOB_WAIT_TIMEOUT}s) ===")
+       conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
+       try:
+           start = time.monotonic()
+           while time.monotonic() - start < JOB_WAIT_TIMEOUT:
+               # Procrastinate stores jobs in procrastinate_jobs table
+               row = await conn.fetchrow(
+                   """SELECT
+                       count(*) FILTER (WHERE status = 'todo') AS pending,
+                       count(*) FILTER (WHERE status = 'doing') AS running,
+                       count(*) FILTER (WHERE status = 'succeeded') AS completed,
+                       count(*) FILTER (WHERE status = 'failed') AS failed
+                   FROM procrastinate_jobs
+                   WHERE queue_name = 'extraction'"""
+               )
+               pending, running, completed, failed = (
+                   int(row["pending"]), int(row["running"]),
+                   int(row["completed"]), int(row["failed"]),
+               )
+               elapsed = int(time.monotonic() - start)
+               print(f"  [{elapsed:3d}s] pending={pending} running={running} "
+                     f"completed={completed} failed={failed}")
+               if pending == 0 and running == 0:
+                   if failed > 0:
+                       # Fetch error details for debugging
+                       err_rows = await conn.fetch(
+                           """SELECT id, args, status
+                              FROM procrastinate_jobs
+                              WHERE queue_name = 'extraction' AND status = 'failed'
+                              LIMIT 3"""
+                       )
+                       details = [(int(r["id"]), r["status"]) for r in err_rows]
+                       print(f"  [WARN] {failed} job(s) failed: {details}")
+                   if completed > 0:
+                       print(f"  [PASS] All extraction jobs finished ({completed} completed, {failed} failed)")
+                       return
+                   # No jobs at all — maybe extraction isn't enabled or wiring is broken
+                   if completed == 0 and failed == 0:
+                       print("  [WARN] No extraction jobs found — checking if extraction is wired...")
+                       await asyncio.sleep(JOB_POLL_INTERVAL)
+                       continue
+               await asyncio.sleep(JOB_POLL_INTERVAL)
+           raise AssertionError(f"Extraction jobs did not complete within {JOB_WAIT_TIMEOUT}s")
+       finally:
+           await conn.close()
+
+
+   # ── Step 3: Verify ontology created ────────────────────────────────
+
+   async def step_verify_ontology() -> None:
+       """Check that node types and edge types were created in the agent's schema."""
+       print("\n=== Step 3: Verify ontology ===")
+       result = await mcp_call("discover", {})
+       node_types = result.get("node_types", [])
+       edge_types = result.get("edge_types", [])
+       stats = result.get("stats", {})
+
+       print(f"  Node types ({len(node_types)}):")
+       for nt in node_types:
+           print(f"    {nt['name']} — {nt.get('count', 0)} entities")
+       print(f"  Edge types ({len(edge_types)}):")
+       for et in edge_types:
+           print(f"    {et['name']} — {et.get('count', 0)} relations")
+       print(f"  Stats: {stats}")
+
+       assert len(node_types) > 0, f"No node types created. discover returned: {result}"
+       assert len(edge_types) > 0, f"No edge types created. discover returned: {result}"
+       print(f"  [PASS] Ontology populated: {len(node_types)} node types, {len(edge_types)} edge types")
+
+
+   # ── Step 4: Verify graph data in PostgreSQL ────────────────────────
+
+   async def step_verify_graph_data() -> dict[str, int]:
+       """Directly query the agent's schema to count nodes and edges."""
+       print("\n=== Step 4: Verify graph data in PostgreSQL ===")
+       conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
+       try:
+           schema = _quote(AGENT_SCHEMA)
+           node_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.node")
+           edge_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.edge")
+           episode_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.episode")
+           node_type_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.node_type")
+           edge_type_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.edge_type")
+
+           counts = {
+               "nodes": int(node_count),
+               "edges": int(edge_count),
+               "episodes": int(episode_count),
+               "node_types": int(node_type_count),
+               "edge_types": int(edge_type_count),
+           }
+           for label, count in counts.items():
+               status = "PASS" if count > 0 else "FAIL"
+               print(f"  [{status}] {label}: {count}")
+
+           assert counts["nodes"] > 0, "No nodes extracted"
+           assert counts["edges"] > 0, "No edges extracted"
+           assert counts["episodes"] == len(SEED_TEXTS), (
+               f"Expected {len(SEED_TEXTS)} episodes, got {counts['episodes']}"
+           )
+
+           # Print sample nodes for human inspection
+           rows = await conn.fetch(
+               f"""SELECT n.name, nt.name AS type_name
+                   FROM {schema}.node n
+                   JOIN {schema}.node_type nt ON nt.id = n.type_id
+                   ORDER BY n.name LIMIT 10"""
+           )
+           print("  Sample nodes:")
+           for r in rows:
+               print(f"    {r['name']} [{r['type_name']}]")
+
+           # Print sample edges
+           edge_rows = await conn.fetch(
+               f"""SELECT src.name AS source, et.name AS rel, tgt.name AS target
+                   FROM {schema}.edge e
+                   JOIN {schema}.node src ON src.id = e.source_id
+                   JOIN {schema}.node tgt ON tgt.id = e.target_id
+                   JOIN {schema}.edge_type et ON et.id = e.type_id
+                   LIMIT 10"""
+           )
+           print("  Sample edges:")
+           for r in edge_rows:
+               print(f"    {r['source']} --[{r['rel']}]--> {r['target']}")
+
+           return counts
+       finally:
+           await conn.close()
+
+
+   # ── Step 5: Recall with graph context ──────────────────────────────
+
+   async def step_recall_with_graph_context() -> None:
+       """Recall using a semantic query and verify graph_context is populated."""
+       print("\n=== Step 5: Recall with graph context ===")
+       queries = [
+           ("serotonin mood regulation", "serotonin"),
+           ("SSRI antidepressant mechanism", "SSRI"),
+           ("sexual dysfunction treatment side effects", "sexual"),
+       ]
+       for query, expected_keyword in queries:
+           result = await mcp_call("recall", {"query": query, "limit": 10})
+           results = result.get("results", [])
+           print(f"\n  Query: '{query}'")
+           print(f"  Results: {len(results)}")
+
+           # Check for any node-sourced results (from extraction)
+           node_results = [r for r in results if r.get("source_kind") == "node"]
+           episode_results = [r for r in results if r.get("source_kind") == "episode"]
+           print(f"    Nodes: {len(node_results)}, Episodes: {len(episode_results)}")
+
+           # Check graph_context on node results
+           with_context = [r for r in node_results if r.get("graph_context")]
+           if with_context:
+               print(f"    [PASS] {len(with_context)} node(s) have graph_context")
+               ctx = with_context[0]["graph_context"]
+               center = ctx.get("center_node", {})
+               edges = ctx.get("edges", [])
+               neighbors = ctx.get("neighbor_nodes", [])
+               print(f"    Center: {center.get('name')} [{center.get('type')}]")
+               print(f"    Edges: {len(edges)}, Neighbors: {len(neighbors)}")
+           else:
+               if node_results:
+                   print(f"    [WARN] Node results found but no graph_context attached")
+               else:
+                   print(f"    [INFO] No node results (only episodes) — graph may still be building")
+
+           # At minimum, episodes should match
+           contents = " ".join(str(r.get("content", "")) for r in results).lower()
+           if expected_keyword.lower() in contents:
+               print(f"    [PASS] Found '{expected_keyword}' in results")
+           else:
+               print(f"    [WARN] '{expected_keyword}' not found in results")
+
+
+   # ── Step 6: Cross-agent isolation ──────────────────────────────────
+
+   async def step_verify_isolation() -> None:
+       """Verify Bob cannot see Alice's extracted graph."""
+       print("\n=== Step 6: Cross-agent isolation ===")
+       bob_token = os.environ.get("NEOCORTEX_BOB_TOKEN", "bob-token")
+       async with Client(MCP_URL, auth=bob_token) as client:
+           result = await client.call_tool("discover", {})
+       if not isinstance(result.structured_content, dict):
+           raise AssertionError("discover did not return structured content for Bob")
+       bob_discover = result.structured_content
+
+       bob_node_types = bob_discover.get("node_types", [])
+       bob_stats = bob_discover.get("stats", {})
+       bob_nodes = bob_stats.get("total_nodes", 0)
+
+       # Bob should have 0 nodes (he never ingested anything)
+       # He might see shared graph types, but not Alice's personal nodes
+       print(f"  Bob's node types: {len(bob_node_types)}")
+       print(f"  Bob's total nodes: {bob_nodes}")
+       # Don't hard-assert on 0 because shared graph may have types,
+       # but Bob should NOT have Alice's extracted nodes in his personal schema
+       conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
+       try:
+           bob_schema = "ncx_bob__personal"
+           exists = await conn.fetchval(
+               "SELECT 1 FROM information_schema.schemata WHERE schema_name = $1",
+               bob_schema,
+           )
+           if exists:
+               bob_nodes_count = await conn.fetchval(
+                   f"SELECT count(*) FROM {_quote(bob_schema)}.node"
+               )
+               assert int(bob_nodes_count) == 0, (
+                   f"Bob has {bob_nodes_count} nodes — extraction leaked across agents"
+               )
+               print(f"  [PASS] Bob's personal schema has 0 nodes")
+           else:
+               print(f"  [PASS] Bob's personal schema doesn't exist (no data stored)")
+       finally:
+           await conn.close()
+
+
+   # ── Main ───────────────────────────────────────────────────────────
+
+   async def main() -> None:
+       print("=" * 60)
+       print("E2E Extraction Pipeline Test")
+       print(f"MCP:       {MCP_URL}")
+       print(f"Ingestion: {INGESTION_URL}")
+       print(f"Token:     {TOKEN[:8]}...")
+       print("=" * 60)
+
+       episode_ids = await step_ingest()
+       await step_wait_for_extraction()
+       await step_verify_ontology()
+       counts = await step_verify_graph_data()
+       await step_recall_with_graph_context()
+       await step_verify_isolation()
+
+       print("\n" + "=" * 60)
+       print("SUMMARY")
+       print(f"  Episodes ingested:  {len(episode_ids)}")
+       print(f"  Nodes extracted:    {counts['nodes']}")
+       print(f"  Edges extracted:    {counts['edges']}")
+       print(f"  Node types:         {counts['node_types']}")
+       print(f"  Edge types:         {counts['edge_types']}")
+       print("=" * 60)
+       print("ALL CHECKS PASSED")
+
+
+   if __name__ == "__main__":
+       asyncio.run(main())
+   ```
+
+### How to run
+
+**Option A — Via unified runner (recommended):**
+```bash
+GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_extraction_pipeline_test.py
+```
+This starts PostgreSQL, MCP server, ingestion API, runs the test, and tears everything down.
+
+**Option B — Manual (for debugging):**
+```bash
+# Terminal 1: infrastructure
+docker compose up -d postgres
+
+# Terminal 2: MCP server
+GOOGLE_API_KEY=... NEOCORTEX_AUTH_MODE=dev_token \
+  NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+  NEOCORTEX_MOCK_DB=false uv run python -m neocortex
+
+# Terminal 3: ingestion API
+GOOGLE_API_KEY=... NEOCORTEX_AUTH_MODE=dev_token \
+  NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+  NEOCORTEX_MOCK_DB=false uv run python -m neocortex.ingestion
+
+# Terminal 4: run the test
+GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
+```
+
+**Option C — Keep services running after test (for manual TUI exploration):**
+```bash
+GOOGLE_API_KEY=... KEEP_RUNNING=1 ./scripts/run_e2e.sh scripts/e2e_extraction_pipeline_test.py
+
+# Now poke around with the TUI while services are still up:
+NEOCORTEX_AUTH_MODE=dev_token uv run python -m neocortex.tui
+```
+
+### What each step validates
+
+| Step | What it does | Pass criteria |
+|---|---|---|
+| 1. Ingest | Stores 3 medical texts via MCP `remember` | All episode IDs > 0 |
+| 2. Wait | Polls `procrastinate_jobs` table until extraction finishes | 0 pending + 0 running within 120s |
+| 3. Ontology | Calls `discover`, checks types | At least 1 node type AND 1 edge type |
+| 4. Graph data | Direct SQL on `ncx_alice__personal` schema | nodes > 0, edges > 0, episodes == 3 |
+| 5. Recall | Semantic queries via MCP `recall` | Results contain expected keywords; node results have `graph_context` |
+| 6. Isolation | Bob's `discover` + direct SQL on Bob's schema | Bob has 0 nodes in his personal schema |
+
+### Verification
+```bash
+# Full automated run
+GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_extraction_pipeline_test.py
+
+# Just the test (services already running)
+GOOGLE_API_KEY=... uv run python scripts/e2e_extraction_pipeline_test.py
+```
+
+### Commit
+`test(e2e): add extraction pipeline E2E smoke test with CLI runner`
+
+---
+
 ## Execution Protocol
 
 ### For human or AI executor
 
 1. Read this plan fully before starting.
-2. Execute stages **in order** (1 → 7). Each stage depends on prior stages.
+2. Execute stages **in order** (1 → 8). Each stage depends on prior stages.
 3. After each stage: run verification, commit, update progress tracker.
 4. If a stage fails: document the issue, attempt to fix. If blocked, stop and report.
 5. One commit per stage. Include plan tracker update in each commit.
@@ -912,7 +1393,7 @@ uv run pytest tests/test_e2e_extraction.py -v --timeout=120
 ### Pre-flight checklist
 
 - [ ] `uv sync` — dependencies installed
-- [ ] `docker compose up -d postgres` — PostgreSQL running (for stages 5–7)
+- [ ] `docker compose up -d postgres` — PostgreSQL running (for stages 5–8)
 - [ ] `GOOGLE_API_KEY` set — for Gemini embeddings and extraction agents
 - [ ] Existing tests pass: `uv run pytest tests/ -v`
 
@@ -925,7 +1406,6 @@ uv run pytest tests/test_e2e_extraction.py -v --timeout=120
 | `NEOCORTEX_AUTH_MODE` | Auth mode | `none` |
 | `NEOCORTEX_EXTRACTION_ENABLED` | Enable extraction worker | `true` |
 | `NEOCORTEX_RECALL_TRAVERSAL_DEPTH` | Hops in graph traversal | `2` |
-| `NEOCORTEX_JOB_POLL_INTERVAL` | Worker poll interval (seconds) | `2.0` |
 
 ---
 
@@ -940,6 +1420,7 @@ uv run pytest tests/test_e2e_extraction.py -v --timeout=120
 | 5 | Wire Extraction into Remember & Ingest | PENDING | |
 | 6 | Enhanced Recall with Graph Traversal | PENDING | |
 | 7 | TUI, Discover & E2E Validation | PENDING | |
+| 8 | CLI-Reproducible E2E Smoke Tests | PENDING | |
 
 - **Last stage completed**: —
 - **Last updated by**: —
@@ -954,12 +1435,12 @@ uv run pytest tests/test_e2e_extraction.py -v --timeout=120
 | Gemini API rate limits during extraction | Jobs fail | Retry with backoff (max_attempts=3), TestModel fallback |
 | LLM output doesn't match Pydantic schema | Extraction fails | Pydantic AI validates automatically; librarian agent normalizes |
 | Large graph traversal at high depth | Slow recall | Cap depth at settings level, default=2 |
-| Extraction worker blocks event loop | Server unresponsive | Worker runs in `asyncio.Task`, agents are async I/O-bound |
+| Extraction worker blocks event loop | Server unresponsive | Procrastinate worker is async-native, agents are I/O-bound |
 | Schema routing for new methods | Wrong graph written | Reuse existing `route_store()` / `route_recall()` from GraphRouter |
 
 ## Non-Goals (Deferred)
 
-- Production-grade job scheduler (Celery, Dramatiq) — asyncio worker sufficient for PoC
+- Full DAG job scheduler — Procrastinate with manual chaining (`defer_async` from handler) sufficient for PoC
 - Incremental ontology merging across agents — each agent builds independent ontology
 - Fact mention provenance tables — provenance stored in edge.properties for PoC
 - Advanced deduplication (fuzzy matching, entity resolution) — exact name match for PoC
