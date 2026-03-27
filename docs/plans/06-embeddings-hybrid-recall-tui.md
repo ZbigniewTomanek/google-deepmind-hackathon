@@ -525,8 +525,8 @@ test(recall): add e2e test for hybrid recall with embeddings
 |-------|--------|-------|
 | 1. Embedding Service | DONE | EmbeddingService with Gemini 768-dim MRL, wired into remember + ingestion, 10 unit tests |
 | 2. Hybrid Recall Scoring | DONE | scoring.py with recency decay + weight redistribution, hybrid SQL in adapter, recall tool embeds queries, 12 unit tests |
-| 3. Developer TUI | PENDING | |
+| 3. Developer TUI | DONE | Textual TUI with remember/recall/discover modes, MCP client via streamable-HTTP, click CLI entry point |
 | 4. Integration Verification | PENDING | |
 
-**Last stage completed**: 2. Hybrid Recall Scoring
+**Last stage completed**: 3. Developer TUI
 **Last updated by**: plan-runner-agent
