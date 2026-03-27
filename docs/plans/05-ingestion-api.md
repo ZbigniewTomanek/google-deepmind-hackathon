@@ -189,12 +189,12 @@ Stages are executed sequentially. Each stage:
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
 | 1 | Extract shared service factory | DONE | Created services.py (ServiceContext, create_services, shutdown_services), auth/tokens.py (load_token_map), updated server.py and dev.py |
-| 2 | Package skeleton, protocol, models | PENDING | |
+| 2 | Package skeleton, protocol, models | DONE | Created ingestion package: protocol.py (IngestionProcessor), models.py (request/response), stub_processor.py (StubProcessor) |
 | 3 | FastAPI app with auth and lifespan | PENDING | |
 | 4 | Wire ingestion endpoints | PENDING | |
 | 5 | Docker Compose service | PENDING | |
 | 6 | Tests | PENDING | |
 | 7 | Validation | PENDING | |
 
-Last stage completed: Stage 1 — Extract shared service factory
+Last stage completed: Stage 2 — Package skeleton, protocol, models
 Last updated by: plan-runner-agent
