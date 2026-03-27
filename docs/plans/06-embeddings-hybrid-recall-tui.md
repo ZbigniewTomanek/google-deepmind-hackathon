@@ -523,10 +523,10 @@ test(recall): add e2e test for hybrid recall with embeddings
 
 | Stage | Status | Notes |
 |-------|--------|-------|
-| 1. Embedding Service | NOT_STARTED | |
-| 2. Hybrid Recall Scoring | NOT_STARTED | |
-| 3. Developer TUI | NOT_STARTED | |
-| 4. Integration Verification | NOT_STARTED | |
+| 1. Embedding Service | DONE | EmbeddingService with Gemini 768-dim MRL, wired into remember + ingestion, 10 unit tests |
+| 2. Hybrid Recall Scoring | PENDING | |
+| 3. Developer TUI | PENDING | |
+| 4. Integration Verification | PENDING | |
 
-**Last stage completed**: —
-**Last updated by**: —
+**Last stage completed**: 1. Embedding Service
+**Last updated by**: plan-runner-agent

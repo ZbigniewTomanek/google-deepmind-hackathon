@@ -3,12 +3,13 @@ from typing import TypedDict
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
 
 
-class EpisodeRecord(TypedDict):
+class EpisodeRecord(TypedDict, total=False):
     id: int
     agent_id: str
     content: str
     context: str | None
     source_type: str
+    embedding: list[float] | None
 
 
 class InMemoryRepository:
@@ -75,6 +76,12 @@ class InMemoryRepository:
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         count = sum(1 for e in self._episodes if agent_id is None or e["agent_id"] == agent_id)
         return GraphStats(total_nodes=0, total_edges=0, total_episodes=count)
+
+    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+        for episode in self._episodes:
+            if episode["id"] == episode_id:
+                episode["embedding"] = embedding
+                return
 
     async def list_graphs(self, agent_id: str) -> list[str]:
         del agent_id

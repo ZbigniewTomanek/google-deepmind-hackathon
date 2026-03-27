@@ -18,7 +18,7 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         ctx = await create_services(settings)
-        processor = StubProcessor(repo=ctx["repo"])
+        processor = StubProcessor(repo=ctx["repo"], embeddings=ctx.get("embeddings"))
 
         app.state.services_ctx = ctx
         app.state.processor = processor

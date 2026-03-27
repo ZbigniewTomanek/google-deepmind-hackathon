@@ -75,6 +75,25 @@ class GraphServiceAdapter:
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
         return _deduplicate_recall_items(merged_results)[:limit]
 
+    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+        emb_str = str(embedding)
+        if self._pool is None or self._router is None:
+            if self._pg is None:
+                raise RuntimeError("No database connection available for update_episode_embedding.")
+            await self._pg.execute(
+                "UPDATE episode SET embedding = $1::vector WHERE id = $2",
+                emb_str,
+                episode_id,
+            )
+            return
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE episode SET embedding = $1::vector WHERE id = $2",
+                emb_str,
+                episode_id,
+            )
+
     async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
         return await self._get_types(table_name="node_type", count_table="node", agent_id=agent_id)
 

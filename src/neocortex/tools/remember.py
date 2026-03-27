@@ -19,6 +19,13 @@ async def remember(text: str, context: str | None = None, ctx: Context | None = 
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
     episode_id = await repo.store_episode(agent_id=agent_id, content=text, context=context)
+
+    embeddings = ctx.lifespan_context.get("embeddings")
+    if embeddings:
+        vector = await embeddings.embed(text)
+        if vector:
+            await repo.update_episode_embedding(episode_id, vector, agent_id)
+
     return RememberResult(
         status="stored",
         episode_id=episode_id,
