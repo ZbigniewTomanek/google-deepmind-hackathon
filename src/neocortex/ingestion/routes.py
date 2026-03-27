@@ -44,8 +44,9 @@ async def ingest_document(
             detail=f"Unsupported content type '{content_type}'. Accepted: {', '.join(sorted(_ACCEPTED_CONTENT_TYPES))}",
         )
 
-    # Read and validate size
-    content_bytes = await file.read()
+    # Read up to the limit + 1 byte so we can detect oversized uploads
+    # without buffering the entire file into memory.
+    content_bytes = await file.read(_MAX_UPLOAD_BYTES + 1)
     if len(content_bytes) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,

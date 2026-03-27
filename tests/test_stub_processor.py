@@ -95,3 +95,4 @@ async def test_process_events_partial_failure():
     assert result.status == "partial"
     assert result.episodes_created == 2
     assert "2/4" in result.message
+    assert "DB connection lost" not in result.message  # exception details not leaked

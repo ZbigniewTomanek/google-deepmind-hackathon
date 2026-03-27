@@ -35,6 +35,22 @@ NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
 uv run python -m neocortex
 ```
 
+### 3b. Run the Ingestion API
+
+The ingestion API is a separate FastAPI service on port 8001 for bulk data loading (text, documents, events). It reuses the same service stack and auth as the MCP server.
+
+```bash
+# With mock DB
+NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion
+
+# With PostgreSQL
+NEOCORTEX_AUTH_MODE=dev_token \
+NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+uv run python -m neocortex.ingestion
+```
+
+Endpoints: `POST /ingest/text`, `POST /ingest/document` (file upload), `POST /ingest/events`.
+
 ### 4. Run Tests
 
 ```bash
@@ -50,7 +66,8 @@ NEOCORTEX_RUN_RLS_TESTS=1 uv run pytest tests/ -v
 | Service | Description |
 |---------|-------------|
 | `postgres` | PostgreSQL 16 + pgvector, port 5432, auto-applies init migrations |
-| `neocortex-mcp` | MCP server container (FastMCP), connects to PostgreSQL |
+| `neocortex-mcp` | MCP server container (FastMCP), port 8000, connects to PostgreSQL |
+| `neocortex-ingestion` | Ingestion API container (FastAPI), port 8001, connects to PostgreSQL |
 
 ```bash
 # Full stack
@@ -123,9 +140,12 @@ Validates multi-agent isolation end-to-end against a running server:
 docker compose down -v && docker compose up -d
 
 # Run smoke test
-uv run python scripts/e2e_smoke_test.py
+uv run python scripts/e2e_mcp_test.py
 # or
-bash scripts/run_e2e.sh
+bash scripts/run_e2e_mcp.sh
+
+# Ingestion API E2E
+bash scripts/run_e2e_ingestion.sh
 ```
 
 ## Linting
@@ -180,6 +200,7 @@ src/
 │   ├── postgres_service.py # Connection pool & health checks
 │   ├── auth/               # Authentication (dev tokens, Google OAuth)
 │   ├── db/                 # Database adapters, protocols, RLS
+│   ├── ingestion/          # FastAPI ingestion API (text, document, events)
 │   ├── tools/              # MCP tools (remember, recall, discover)
 │   └── schemas/            # Pydantic I/O schemas
 │

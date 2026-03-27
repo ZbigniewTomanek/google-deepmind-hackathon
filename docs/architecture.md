@@ -2,32 +2,37 @@
 
 ## System Overview
 
-NeoCortex is structured as a layered system: MCP tools at the top provide a simple agent-facing API, while underneath a multi-graph PostgreSQL backend handles storage, search, and isolation.
+NeoCortex is structured as a layered system: MCP tools at the top provide a simple agent-facing API, while a bulk ingestion REST API provides a secondary data-loading path. Both share the same PostgreSQL backend for storage, search, and isolation.
 
 ```
                      +------------------+
                      |   AI Agents      |  (Pydantic AI + Gemini, Claude, etc.)
                      +--------+---------+
                               |  MCP protocol (SSE / streamable-http)
-                     +--------v---------+
-                     |   FastMCP Server |
-                     |  remember/recall |
-                     |  /discover       |
-                     +--------+---------+
-                              |
-              +-------+-------+-------+-------+
-              |               |               |
-     +--------v------+  +----v------+  +------v--------+
-     | GraphRouter   |  | AuthLayer |  | SchemaManager |
-     | (heuristics)  |  | (tokens)  |  | (lifecycle)   |
-     +--------+------+  +----+------+  +------+--------+
-              |               |               |
-     +--------v---------------v---------------v--------+
-     |              PostgreSQL 16                       |
-     |  pgvector (semantic) + tsvector (BM25)          |
-     |  multi-schema isolation + RLS                    |
-     +--------------------------------------------------+
+                     +--------v---------+       +------------------------+
+                     |   FastMCP Server |       |  Ingestion API (:8001) |
+                     |  remember/recall |       |  POST /ingest/text     |
+                     |  /discover       |       |  POST /ingest/document |
+                     |  :8000           |       |  POST /ingest/events   |
+                     +--------+---------+       +----------+-------------+
+                              |                            |
+                              +------- shared stack -------+
+                              |                            |
+              +-------+-------+-------+-------+            |
+              |               |               |            |
+     +--------v------+  +----v------+  +------v--------+  |
+     | GraphRouter   |  | AuthLayer |  | SchemaManager |  |
+     | (heuristics)  |  | (tokens)  |  | (lifecycle)   |  |
+     +--------+------+  +----+------+  +------+--------+  |
+              |               |               |            |
+     +--------v---------------v---------------v------+-----+
+     |              PostgreSQL 16                     |
+     |  pgvector (semantic) + tsvector (BM25)         |
+     |  multi-schema isolation + RLS                  |
+     +------------------------------------------------+
 ```
+
+Both services use `create_services()` from `services.py` for initialization, sharing the same `MemoryRepository` protocol. The ingestion API uses a `StubProcessor` that stores raw episodes; a future `ExtractionPipeline` will replace it for richer processing.
 
 ## MCP Tools
 
@@ -38,6 +43,18 @@ Agents interact with 3 high-level tools. They never operate on the graph directl
 | `remember` | `text`, `context?` | Store natural language content as an episode. Internal agents asynchronously extract facts to the knowledge graph |
 | `recall` | `query`, `limit?` | Hybrid search (semantic + lexical + graph) returns ranked results with provenance |
 | `discover` | `query?` | Returns ontology — entity types, relationship types, graph stats. Optionally filtered |
+
+## Ingestion API
+
+A standalone FastAPI application for bulk data loading. Uses the same auth (bearer tokens) and storage (`MemoryRepository`) as the MCP server.
+
+| Endpoint | Input | Description |
+|----------|-------|-------------|
+| `POST /ingest/text` | JSON `{text, metadata?}` | Store a text string as a single episode |
+| `POST /ingest/document` | Multipart file upload | Store file content as a single episode. Accepted types: `text/plain`, `application/json`, `text/markdown`, `text/csv`. Max 10 MB |
+| `POST /ingest/events` | JSON `{events[], metadata?}` | Store each event as a separate episode |
+
+All endpoints return `IngestionResult {status, episodes_created, message}`. Processing is handled by an `IngestionProcessor` protocol — currently `StubProcessor` (raw storage), designed to be replaced by an extraction pipeline.
 
 ## Data Model
 

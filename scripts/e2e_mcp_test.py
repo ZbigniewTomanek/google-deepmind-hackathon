@@ -6,7 +6,7 @@ Prerequisites:
     NEOCORTEX_MOCK_DB=false uv run python -m neocortex
 
 Usage:
-  uv run python scripts/e2e_smoke_test.py
+  uv run python scripts/e2e_mcp_test.py
 """
 
 from __future__ import annotations
