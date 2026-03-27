@@ -47,7 +47,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     schema_mgr = SchemaManager(pg)
     await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
     router = GraphRouter(schema_mgr, pg.pool)
-    repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg)
+    repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg, settings=settings)
     embeddings = EmbeddingService(model=settings.embedding_model)
 
     return ServiceContext(

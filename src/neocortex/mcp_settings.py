@@ -38,5 +38,14 @@ class MCPSettings(BaseSettings):
     # Embedding model (experimental names may rotate; fallback: "text-embedding-004")
     embedding_model: str = "gemini-embedding-exp-03-07"
 
+    # Hybrid recall weights (must sum to 1.0)
+    recall_weight_vector: float = 0.4
+    recall_weight_text: float = 0.35
+    recall_weight_recency: float = 0.25
+    recall_recency_half_life_hours: float = 168.0  # 7 days
+    # Vector distance threshold: cosine distance below this counts as a match.
+    # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
+    recall_vector_distance_threshold: float = 0.5
+
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired

@@ -18,7 +18,13 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     limit = max(1, min(limit, 100))
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
-    results = await repo.recall(query=query, agent_id=agent_id, limit=limit)
+
+    embeddings = ctx.lifespan_context.get("embeddings")
+    query_embedding = None
+    if embeddings:
+        query_embedding = await embeddings.embed(query)
+
+    results = await repo.recall(query=query, agent_id=agent_id, limit=limit, query_embedding=query_embedding)
     return RecallResult(
         results=results,
         total=len(results),
