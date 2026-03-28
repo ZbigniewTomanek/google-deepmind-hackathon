@@ -41,7 +41,7 @@ class NeoCortexApp(App):
     }
     #input-area {
         height: auto;
-        max-height: 16;
+        max-height: 24;
         padding: 1;
     }
     #results-area {
