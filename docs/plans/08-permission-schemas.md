@@ -913,6 +913,41 @@ Last updated by: plan-runner-agent
 
 ---
 
+## Post-Implementation Review & Fixes
+
+**Review date:** 2026-03-28
+**Reviewer:** code-review agent
+
+### Issues Found & Fixed
+
+| # | Priority | Issue | Fix |
+|---|----------|-------|-----|
+| 1 | P1 | `_scoped_conn` was `async def` returning a sync context manager, requiring awkward `async with await` at 7 call sites | Converted to `def`, updated all call sites to `async with self._scoped_conn(...)` |
+| 2 | P1 | `GET /admin/permissions` (no filter) had N+1 query: fetched all agents then queried permissions per agent in a loop | Added `list_all_permissions()` to `PermissionChecker` protocol + both implementations (single query in PG) |
+| 3 | P2 | `update_episode_embedding` didn't accept `target_schema` — embeddings for shared-schema episodes silently targeted the wrong schema in PG | Added `target_schema` param to protocol/adapter/mock; threaded from `remember.py` and `episode_processor._embed_episode()` |
+| 4 | P2 | Duplicate `_fetch_types_in_schema_direct` / `_fetch_type_counts_in_schema_direct` methods in adapter (identical to non-`_direct` variants) | Removed duplicates, updated callers to use existing methods |
+| 5 | P2 | Mock `get_episode` ignored `target_schema` (searched flat list regardless) — weaker test fidelity vs PG behavior | Now searches `_schema_episodes[target_schema]` when `target_schema` is set |
+| 6 | P2 | `PermissionGrant.schema_name` accepted any string — no validation at API boundary | Added `field_validator` enforcing `^ncx_[a-z0-9]+__[a-z0-9_]+$` pattern |
+| 7 | — | Pre-existing `e2e_mcp_test.py` assumed all agents can see shared graphs (predates permission system) | Updated to grant read permissions via admin API before discover check |
+
+### Validation Results
+
+**Unit & integration tests (no Docker):**
+- 239 passed, 5 skipped, 0 failures
+- 71 permission-specific tests pass (unit + integration)
+
+**E2E tests (real PostgreSQL):**
+
+| Test | Status | Details |
+|------|--------|---------|
+| `e2e_permission_test.py` | PASSED | 8 steps: create graph, grant, write/deny, read verification, revoke, admin lifecycle, bootstrap guard, cascade cleanup + PG-level verification |
+| `e2e_ingestion_test.py` | PASSED | Auth rejection, text/document/events ingestion, content type validation, data isolation |
+| `e2e_mcp_test.py` | PASSED | Remember/recall isolation, discover graph visibility (with permission grants), PG schema verification |
+
+**Mock DB mode:** Boots correctly with permissions wired (`InMemoryPermissionService`, bootstrap admin seeded).
+
+---
+
 ## Files Modified/Created
 
 ### New files

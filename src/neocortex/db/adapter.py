@@ -41,7 +41,7 @@ class GraphServiceAdapter:
         self._pg = pg
         self._settings = settings or MCPSettings()
 
-    async def _scoped_conn(self, schema_name: str, agent_id: str, target_schema: str | None):
+    def _scoped_conn(self, schema_name: str, agent_id: str, target_schema: str | None):
         """Return the appropriate scoped connection context manager.
 
         When target_schema is set (shared schema write), use graph_scoped_connection
@@ -136,7 +136,9 @@ class GraphServiceAdapter:
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
         return _deduplicate_recall_items(merged_results)[:limit]
 
-    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+    async def update_episode_embedding(
+        self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
+    ) -> None:
         emb_str = str(embedding)
         if self._pool is None or self._router is None:
             if self._pg is None:
@@ -147,8 +149,8 @@ class GraphServiceAdapter:
                 episode_id,
             )
             return
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             await conn.execute(
                 "UPDATE episode SET embedding = $1::vector WHERE id = $2",
                 emb_str,
@@ -157,8 +159,8 @@ class GraphServiceAdapter:
 
     async def get_node_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
         if target_schema is not None and self._pool is not None and agent_id is not None:
-            rows = await self._fetch_types_in_schema_direct(target_schema, "node_type", agent_id)
-            counts = await self._fetch_type_counts_in_schema_direct(target_schema, "node", agent_id)
+            rows = await self._fetch_types_in_schema(target_schema, "node_type", agent_id)
+            counts = await self._fetch_type_counts_in_schema(target_schema, "node", agent_id)
             return [
                 TypeInfo(
                     id=int(row["id"]),
@@ -172,8 +174,8 @@ class GraphServiceAdapter:
 
     async def get_edge_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
         if target_schema is not None and self._pool is not None and agent_id is not None:
-            rows = await self._fetch_types_in_schema_direct(target_schema, "edge_type", agent_id)
-            counts = await self._fetch_type_counts_in_schema_direct(target_schema, "edge", agent_id)
+            rows = await self._fetch_types_in_schema(target_schema, "edge_type", agent_id)
+            counts = await self._fetch_type_counts_in_schema(target_schema, "edge", agent_id)
             return [
                 TypeInfo(
                     id=int(row["id"]),
@@ -220,7 +222,7 @@ class GraphServiceAdapter:
             return await self._graph.create_node_type(name, description)
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO node_type (name, description) VALUES ($1, $2)
                    ON CONFLICT (name) DO NOTHING
@@ -246,7 +248,7 @@ class GraphServiceAdapter:
             return await self._graph.create_edge_type(name, description)
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO edge_type (name, description) VALUES ($1, $2)
                    ON CONFLICT (name) DO NOTHING
@@ -269,7 +271,7 @@ class GraphServiceAdapter:
             return await self._graph.get_episode(episode_id)
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 "SELECT id, agent_id, content, source_type, metadata, created_at " "FROM episode WHERE id = $1",
                 episode_id,
@@ -321,7 +323,7 @@ class GraphServiceAdapter:
         schema_name = await self._resolve_schema(agent_id, target_schema)
         props_json = json.dumps(props)
         emb_str = str(embedding) if embedding else None
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
                 "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
@@ -378,7 +380,7 @@ class GraphServiceAdapter:
             return [n for n in nodes if n.name.lower() == name.lower()]
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             rows = await conn.fetch(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
                 "FROM node WHERE lower(name) = lower($1)",
@@ -430,7 +432,7 @@ class GraphServiceAdapter:
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
         props_json = json.dumps(props)
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
                    VALUES ($1, $2, $3, $4, $5::jsonb)
@@ -655,7 +657,7 @@ class GraphServiceAdapter:
             return [n.name for n in nodes]
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
-        async with await self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             rows = await conn.fetch("SELECT name FROM node ORDER BY name")
         return [str(row["name"]) for row in rows]
 
@@ -1006,25 +1008,6 @@ class GraphServiceAdapter:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped type counts.")
 
-        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
-            rows = await conn.fetch(f"SELECT type_id AS id, count(*) AS count FROM {count_table} GROUP BY type_id")
-        return {int(row["id"]): int(row["count"]) for row in rows}
-
-    async def _fetch_types_in_schema_direct(
-        self, schema_name: str, table_name: str, agent_id: str
-    ) -> list[asyncpg.Record]:
-        """Fetch types from a specific schema using graph_scoped_connection."""
-        if self._pool is None:
-            raise RuntimeError("Connection pool is required for schema-scoped type lookups.")
-        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
-            return await conn.fetch(f"SELECT id, name, description FROM {table_name} ORDER BY name")
-
-    async def _fetch_type_counts_in_schema_direct(
-        self, schema_name: str, count_table: str, agent_id: str
-    ) -> dict[int, int]:
-        """Fetch type counts from a specific schema using graph_scoped_connection."""
-        if self._pool is None:
-            raise RuntimeError("Connection pool is required for schema-scoped type counts.")
         async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             rows = await conn.fetch(f"SELECT type_id AS id, count(*) AS count FROM {count_table} GROUP BY type_id")
         return {int(row["id"]): int(row["count"]) for row in rows}
