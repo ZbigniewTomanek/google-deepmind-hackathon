@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends git curl \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (required for npx mcp-remote MCP server proxy)
@@ -8,6 +8,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g mcp-remote
+
+# Install yt-dlp (needed for audio/video transcription tools)
+RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp
 
 ARG UID=1000
 ARG GID=1000
