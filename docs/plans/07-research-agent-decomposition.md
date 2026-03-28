@@ -456,8 +456,8 @@ No commit — validation only.
 | 5 | Research orchestrator (refactored) | DONE | Rewrote research.py as routing orchestrator with list-input-files tool + 3 subagent refs; updated __init__.py exports |
 | 6 | Chat-with-extractions agent | DONE | Created chat_with_extractions.py — primary agent with 4-step MCP workflow (recall, discover, respond, remember); updated __init__.py exports |
 | 7 | Build pipeline & Docker updates | DONE | Updated build_agents.py imports (removed build_research_agent, added 5 new builders), added feedparser dep, added input volume mounts to docker-compose.yml; __init__.py already updated in prior stages |
-| 8 | Stage runner & API call scripts | PENDING | set -e, fail-fast error handling |
+| 8 | Stage runner & API call scripts | DONE | Created stage_1/2/3_api_calls.sh and run_stages.sh with fail-fast error handling |
 | 9 | Validation | PENDING | |
 
-Last stage completed: Stage 7 — Build pipeline & Docker updates
+Last stage completed: Stage 8 — Stage runner & API call scripts
 Last updated by: plan-runner-agent
