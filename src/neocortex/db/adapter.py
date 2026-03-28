@@ -288,7 +288,9 @@ class GraphServiceAdapter:
         schema_name = await self._resolve_schema(agent_id, target_schema)
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
-                "SELECT id, agent_id, content, source_type, metadata, created_at " "FROM episode WHERE id = $1",
+                "SELECT id, agent_id, content, source_type, metadata, "
+                "access_count, last_accessed_at, importance, consolidated, created_at "
+                "FROM episode WHERE id = $1",
                 episode_id,
             )
         if row is None:
@@ -410,7 +412,7 @@ class GraphServiceAdapter:
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             rows = await conn.fetch(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
-                "FROM node WHERE lower(name) = lower($1)",
+                "FROM node WHERE lower(name) = lower($1) AND forgotten = false",
                 name,
             )
         results = []
@@ -614,7 +616,7 @@ class GraphServiceAdapter:
                         visited.add(neighbor_id)
                         next_frontier.append(neighbor_id)
                         neighbor_node = await self._graph.get_node(neighbor_id)
-                        if neighbor_node is not None:
+                        if neighbor_node is not None and not getattr(neighbor_node, "forgotten", False):
                             edge_id = int(neighbor["edge_id"])
                             edge = await self._graph.get_edge(edge_id)
                             results.append(
@@ -696,7 +698,7 @@ class GraphServiceAdapter:
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            rows = await conn.fetch("SELECT name FROM node ORDER BY name")
+            rows = await conn.fetch("SELECT name FROM node WHERE forgotten = false ORDER BY name")
         return [str(row["name"]) for row in rows]
 
     # ── Access Tracking ──
@@ -1298,6 +1300,9 @@ class GraphServiceAdapter:
                        (SELECT count(*) FROM node WHERE forgotten = true) AS forgotten_nodes,
                        (SELECT count(*) FROM episode WHERE consolidated = true) AS consolidated_episodes,
                        (SELECT coalesce(avg(access_count), 0) FROM node WHERE forgotten = false) AS avg_access_count""")
+        # NOTE: avg_access_count is a rough proxy for avg_activation.
+        # Computing real ACT-R activation in SQL is impractical; the mock
+        # implementation uses compute_base_activation() for accuracy.
         if row is None:
             raise RuntimeError(f"Failed to fetch graph stats for schema '{schema_name}'.")
 

@@ -652,3 +652,33 @@ uv run pytest tests/ -v                         # full regression
 
 Last stage completed: Stage 7 — Full Integration & Composition Verification
 Last updated by: plan-runner-agent
+
+## Post-Implementation Review & Fixes
+
+Code review identified P0–P2 issues, all fixed in a follow-up commit:
+
+| Priority | Issue | Fix |
+|----------|-------|-----|
+| P0 | `get_episode()` in adapter SELECT missing new columns (access_count, importance, consolidated) | Added all cognitive columns to the query |
+| P1 | `find_nodes_by_name()` and `list_all_node_names()` returned forgotten nodes in adapter + mock | Added `AND forgotten = false` / `not n.forgotten` filters |
+| P1 | `_bfs_via_graph_service()` fallback path didn't filter forgotten neighbors | Added forgotten check before appending |
+| P1 | `activation_threshold` parameter silently ignored in `identify_forgettable_nodes()` | Documented proxy heuristic in protocol docstring |
+| P2 | Edge decay in recall tool had no `force` parameter for deterministic testing | Extracted `_maybe_decay_edges()` helper with `force` kwarg |
+| P2 | `_get_stats_in_schema` used `avg(access_count)` as proxy for `avg_activation` | Added comment documenting the proxy |
+| P2 | Spreading bonus weight (0.1) was hardcoded in recall tool | Added `spreading_activation_bonus_weight` to MCPSettings |
+| P2 | Mock recall used hardcoded weights not tied to settings | Added sync-with-settings comment |
+
+## E2E Validation Results (2026-03-28, real PG + Gemini extraction)
+
+Validated against 10-episode medical corpus + 1 remember() with importance_hint.
+
+| Heuristic | Result | Evidence |
+|-----------|--------|----------|
+| ACT-R Activation | Pass | Activation increased 0.49 → 0.67 → 0.75 across 3 recalls of "serotonin" |
+| Importance Scoring | Pass | Extraction agents assigned 0.6–1.0; remember(importance=0.95) floored extracted entities to 0.95 |
+| Spreading Activation | Pass | "lithium bipolar" recall discovered Bipolar Disorder (bonus=0.739) and Mood Stabilizer (bonus=0.746) via graph edges |
+| Edge Reinforcement | Pass | Serotonin edges reinforced from 1.0 to 1.15 after 3 recalls (3 × 0.05 delta) |
+| Episodic Consolidation | Pass | All 11 episodes consolidated=true; graph nodes outrank consolidated episodes |
+| Soft-Forget | Pass | Schema columns + partial index present; 0 forgotten nodes (all fresh — correct) |
+| Discover Stats | Pass | Reports forgotten_nodes=0, consolidated_episodes=11, avg_activation=0.18 |
+| Graph Size | Pass | 187 nodes, 183 edges, 24 node types, 49 edge types from 11 episodes |

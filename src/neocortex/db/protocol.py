@@ -159,7 +159,14 @@ class MemoryRepository(Protocol):
     async def identify_forgettable_nodes(
         self, agent_id: str, activation_threshold: float, importance_floor: float
     ) -> list[int]:
-        """Return IDs of nodes whose activation < threshold AND importance < floor."""
+        """Return IDs of nodes eligible for soft-forget.
+
+        Uses a practical proxy (access_count == 0 AND stale > 7 days) rather
+        than computing ACT-R activation in SQL. ``activation_threshold`` is
+        accepted for future use but currently unused by both implementations.
+        ``importance_floor`` is applied: nodes with importance >= floor are
+        never forgettable.
+        """
 
     # ── Episodic Consolidation ──
 
