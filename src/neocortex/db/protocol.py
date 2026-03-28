@@ -117,11 +117,11 @@ class MemoryRepository(Protocol):
         query: str,
         limit: int = 5,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         """Search nodes by text and/or vector similarity.
 
         Combines text search on node names/content with vector similarity
-        on node embeddings. Returns top-N matching nodes.
+        on node embeddings. Returns top-N matching (node, relevance_score) tuples.
         """
 
     # ── Graph Traversal ──

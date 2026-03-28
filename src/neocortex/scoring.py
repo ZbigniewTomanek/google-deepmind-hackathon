@@ -78,3 +78,72 @@ def compute_hybrid_score(
         return 0.0
 
     return sum((w / total_weight) * v for w, v in available)
+
+
+def compute_spreading_activation(
+    seed_nodes: list[tuple[int, float]],
+    neighborhood: dict[int, list[tuple[int, float]]],
+    decay: float = 0.6,
+    max_depth: int = 2,
+) -> dict[int, float]:
+    """Propagate activation energy from seed nodes through graph edges.
+
+    Returns mapping of node_id -> accumulated activation bonus.
+    Uses BFS with decaying energy propagation.
+    """
+    bonus: dict[int, float] = {}
+
+    for seed_id, initial_score in seed_nodes:
+        # BFS from this seed
+        frontier: list[tuple[int, float]] = [(seed_id, initial_score)]
+        visited: set[int] = {seed_id}
+
+        for _depth in range(max_depth):
+            next_frontier: list[tuple[int, float]] = []
+            for node_id, energy in frontier:
+                for neighbor_id, edge_weight in neighborhood.get(node_id, []):
+                    if neighbor_id in visited:
+                        continue
+                    propagated = energy * edge_weight * decay
+                    bonus[neighbor_id] = bonus.get(neighbor_id, 0.0) + propagated
+                    visited.add(neighbor_id)
+                    next_frontier.append((neighbor_id, propagated))
+            frontier = next_frontier
+            if not frontier:
+                break
+
+    # Normalize to [0, 1]
+    if bonus:
+        max_val = max(bonus.values())
+        if max_val > 0:
+            bonus = {k: v / max_val for k, v in bonus.items()}
+
+    return bonus
+
+
+def neighborhood_to_adjacency(
+    neighborhood: list[dict],
+    center_node_id: int,
+) -> dict[int, list[tuple[int, float]]]:
+    """Convert get_node_neighborhood() output to adjacency map for spreading activation.
+
+    Builds a bidirectional adjacency map from the BFS neighborhood results.
+    """
+    adjacency: dict[int, list[tuple[int, float]]] = {}
+
+    for entry in neighborhood:
+        edges = entry.get("edges", [])
+        for edge in edges:
+            src = edge.source_id
+            tgt = edge.target_id
+            weight = edge.weight
+
+            if src not in adjacency:
+                adjacency[src] = []
+            adjacency[src].append((tgt, weight))
+
+            if tgt not in adjacency:
+                adjacency[tgt] = []
+            adjacency[tgt].append((src, weight))
+
+    return adjacency

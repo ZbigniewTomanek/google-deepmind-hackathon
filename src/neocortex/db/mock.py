@@ -385,14 +385,19 @@ class InMemoryRepository:
         query: str,
         limit: int = 5,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         query_lower = query.lower()
-        matches: list[Node] = []
+        matches: list[tuple[Node, float]] = []
         for node in self._nodes.values():
             name_match = query_lower in node.name.lower()
             content_match = node.content and query_lower in node.content.lower()
             if name_match or content_match:
-                matches.append(node)
+                # Simple text overlap heuristic for relevance score
+                name_score = 1.0 if name_match else 0.0
+                content_score = 0.5 if content_match else 0.0
+                relevance = max(name_score, content_score)
+                matches.append((node, relevance))
+        matches.sort(key=lambda x: x[1], reverse=True)
         return matches[:limit]
 
     # ── Graph Traversal ──

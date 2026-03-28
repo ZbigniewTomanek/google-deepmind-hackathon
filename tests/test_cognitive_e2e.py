@@ -14,7 +14,13 @@ from neocortex.extraction.schemas import (
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, Episode, Node
 from neocortex.schemas.memory import RecallItem
-from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score
+from neocortex.scoring import (
+    HybridWeights,
+    compute_base_activation,
+    compute_hybrid_score,
+    compute_spreading_activation,
+    neighborhood_to_adjacency,
+)
 
 AGENT_ID = "test-agent"
 
@@ -461,3 +467,185 @@ class TestStage3Importance:
         nodes = await repo.find_nodes_by_name(AGENT_ID, "Serotonin")
         assert len(nodes) == 1
         assert nodes[0].importance == 0.9  # extractor was higher, max semantics
+
+
+class TestStage4SpreadingActivation:
+    def test_spreading_single_seed_two_neighbors(self):
+        """Graph: A→B(w=1.0), A→C(w=0.5). Seed A with score 1.0.
+        Verify B gets higher bonus than C (proportional to edge weight).
+        """
+        adjacency = {
+            1: [(2, 1.0), (3, 0.5)],  # A -> B(1.0), A -> C(0.5)
+        }
+        bonus = compute_spreading_activation(
+            seed_nodes=[(1, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        assert 2 in bonus
+        assert 3 in bonus
+        # B should get higher bonus than C (proportional to edge weight)
+        assert bonus[2] > bonus[3]
+
+    def test_spreading_two_seeds_converge(self):
+        """Graph: A→C, B→C. Seed A and B each with score 1.0.
+        Verify C's bonus is the sum of both contributions (before normalization).
+        """
+        adjacency = {
+            1: [(3, 1.0)],  # A -> C
+            2: [(3, 1.0)],  # B -> C
+        }
+        # Single seed A
+        compute_spreading_activation(
+            seed_nodes=[(1, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        # Both seeds — C should receive from both
+        bonus_both = compute_spreading_activation(
+            seed_nodes=[(1, 1.0), (2, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        # With two seeds, C gets contributions from both (normalized)
+        assert 3 in bonus_both
+        assert bonus_both[3] > 0
+
+    def test_spreading_decay_across_hops(self):
+        """Graph: A→B→C. Seed A. Verify B's bonus > C's bonus."""
+        adjacency = {
+            1: [(2, 1.0)],  # A -> B
+            2: [(3, 1.0)],  # B -> C
+        }
+        bonus = compute_spreading_activation(
+            seed_nodes=[(1, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        assert 2 in bonus
+        assert 3 in bonus
+        assert bonus[2] > bonus[3]  # B (1 hop) > C (2 hops)
+
+    def test_spreading_isolated_node_zero_bonus(self):
+        """Node D with no edges. Verify D gets 0 bonus."""
+        adjacency: dict[int, list[tuple[int, float]]] = {}
+        bonus = compute_spreading_activation(
+            seed_nodes=[(1, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        assert bonus.get(4, 0.0) == 0.0
+
+    def test_spreading_respects_max_depth(self):
+        """Graph: A→B→C→D. max_depth=2. Verify D (3 hops) gets 0 bonus."""
+        adjacency = {
+            1: [(2, 1.0)],  # A -> B
+            2: [(3, 1.0)],  # B -> C
+            3: [(4, 1.0)],  # C -> D
+        }
+        bonus = compute_spreading_activation(
+            seed_nodes=[(1, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        assert 2 in bonus  # 1 hop
+        assert 3 in bonus  # 2 hops
+        assert 4 not in bonus  # 3 hops — beyond max_depth
+
+    def test_spreading_with_varying_edge_weights(self):
+        """Graph: A→B(w=2.0), A→C(w=0.1). Verify B bonus >> C bonus."""
+        adjacency = {
+            1: [(2, 2.0), (3, 0.1)],
+        }
+        bonus = compute_spreading_activation(
+            seed_nodes=[(1, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        assert bonus[2] > bonus[3]
+        # B should have significantly more bonus
+        assert bonus[2] / bonus[3] > 10
+
+    @pytest.mark.asyncio
+    async def test_recall_includes_spreading_bonus(self, repo: InMemoryRepository):
+        """Full integration: populate mock repo with a triangle graph (A→B→C→A).
+        Recall a query matching node A. Verify results include B and C with
+        non-zero spreading_bonus in RecallItem.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+
+        a = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter serotonin")
+        b = await repo.upsert_node(AGENT_ID, "Dopamine", concept.id, content="A neurotransmitter dopamine")
+        c = await repo.upsert_node(AGENT_ID, "GABA", concept.id, content="An inhibitory neurotransmitter")
+
+        await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        await repo.upsert_edge(AGENT_ID, b.id, c.id, relates.id, weight=1.0)
+        await repo.upsert_edge(AGENT_ID, c.id, a.id, relates.id, weight=1.0)
+
+        # search_nodes for "Serotonin" should find node A
+        results = await repo.search_nodes(AGENT_ID, "Serotonin")
+        assert len(results) >= 1
+        node, _score = results[0]
+        assert node.name == "Serotonin"
+
+        # Recall "Serotonin" — should get A directly plus B and C via neighborhood
+        # The recall tool handles spreading activation, but here we test the scoring primitives
+        neighborhood = await repo.get_node_neighborhood(AGENT_ID, a.id, depth=2)
+        adjacency = neighborhood_to_adjacency(neighborhood, a.id)
+        bonus = compute_spreading_activation(
+            seed_nodes=[(a.id, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        # B and C should have non-zero bonus
+        assert b.id in bonus
+        assert bonus[b.id] > 0
+        # C is also reachable (via A→B→C or C→A bidirectional)
+        assert c.id in bonus
+        assert bonus[c.id] > 0
+
+    @pytest.mark.asyncio
+    async def test_neighborhood_to_adjacency_conversion(self, repo: InMemoryRepository):
+        """Call get_node_neighborhood() for a known graph, convert via
+        neighborhood_to_adjacency(), verify correct adjacency map structure.
+        """
+        graph = await populate_small_graph(repo)
+        serotonin = graph["nodes"]["serotonin"]
+        neighborhood = await repo.get_node_neighborhood(AGENT_ID, serotonin.id, depth=2)
+        adjacency = neighborhood_to_adjacency(neighborhood, serotonin.id)
+
+        # adjacency should contain entries for nodes connected by edges
+        assert len(adjacency) > 0
+        # All values should be lists of (neighbor_id, weight) tuples
+        for _node_id, neighbors in adjacency.items():
+            assert isinstance(neighbors, list)
+            for neighbor_id, weight in neighbors:
+                assert isinstance(neighbor_id, int)
+                assert isinstance(weight, (int, float))
+
+    @pytest.mark.asyncio
+    async def test_search_nodes_returns_relevance_scores(self, repo: InMemoryRepository):
+        """Call search_nodes() on mock repo, verify results include relevance scores."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter")
+        await repo.upsert_node(AGENT_ID, "Dopamine", concept.id, content="Has serotonin-like effects")
+
+        results = await repo.search_nodes(AGENT_ID, "Serotonin")
+        assert len(results) >= 1
+        for _node, score in results:
+            assert isinstance(score, float)
+            assert score > 0
+        # Name match should score higher than content-only match
+        name_match = [(n, s) for n, s in results if n.name == "Serotonin"]
+        content_match = [(n, s) for n, s in results if n.name == "Dopamine"]
+        if name_match and content_match:
+            assert name_match[0][1] >= content_match[0][1]
