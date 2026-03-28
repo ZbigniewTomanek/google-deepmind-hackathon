@@ -16,7 +16,7 @@ from neocortex.ingestion.models import IngestionResult
 if TYPE_CHECKING:
     from neocortex.embedding_service import EmbeddingService
     from neocortex.ingestion.media_compressor import CompressedMedia, MediaCompressor
-    from neocortex.ingestion.media_description import MediaDescription
+    from neocortex.ingestion.media_description import MediaDescription, MediaDescriptionService
     from neocortex.ingestion.media_description_mock import MockMediaDescriptionService
     from neocortex.ingestion.media_store import MediaFileStore
 
@@ -39,7 +39,7 @@ class EpisodeProcessor:
         # Media services
         media_store: MediaFileStore | None = None,
         media_compressor: MediaCompressor | None = None,
-        media_describer: MockMediaDescriptionService | None = None,
+        media_describer: MockMediaDescriptionService | MediaDescriptionService | None = None,
     ) -> None:
         self._repo = repo
         self._embeddings = embeddings
