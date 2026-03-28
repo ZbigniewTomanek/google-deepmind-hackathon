@@ -100,7 +100,8 @@ class DomainRouter:
                 )
                 continue
 
-            job_id = await self._enqueue_extraction(agent_id, episode_id, schema_name)
+            hint = f"{domain.name}: {domain.description}"
+            job_id = await self._enqueue_extraction(agent_id, episode_id, schema_name, domain_hint=hint)
             results.append(
                 RoutingResult(
                     domain_slug=match.domain_slug,
@@ -183,7 +184,9 @@ class DomainRouter:
         await self._domain_service.update_schema_name(domain.slug, schema_name)
         return schema_name
 
-    async def _enqueue_extraction(self, agent_id: str, episode_id: int, target_schema: str) -> int | None:
+    async def _enqueue_extraction(
+        self, agent_id: str, episode_id: int, target_schema: str, domain_hint: str | None = None
+    ) -> int | None:
         """Defer an extract_episode task for the target schema.
 
         Episodes live in the agent's personal graph (source_schema=None),
@@ -197,6 +200,7 @@ class DomainRouter:
             episode_ids=[episode_id],
             target_schema=target_schema,
             source_schema=None,  # read from personal graph
+            domain_hint=domain_hint,
         )
         logger.debug(
             "domain_extraction_enqueued",

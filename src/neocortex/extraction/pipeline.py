@@ -38,6 +38,7 @@ async def run_extraction(
     ontology_config: AgentInferenceConfig | None = None,
     extractor_config: AgentInferenceConfig | None = None,
     librarian_config: AgentInferenceConfig | None = None,
+    domain_hint: str | None = None,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -53,6 +54,8 @@ async def run_extraction(
         ontology_config: Inference config for the ontology agent.
         extractor_config: Inference config for the extractor agent.
         librarian_config: Inference config for the librarian agent.
+        domain_hint: Optional domain context (e.g. "Technical Knowledge: Programming languages, ...")
+                     passed to ontology and extractor agents to guide type proposals.
     """
     ont_cfg = ontology_config or AgentInferenceConfig()
     ext_cfg = extractor_config or AgentInferenceConfig()
@@ -90,6 +93,7 @@ async def run_extraction(
                 episode_text=text,
                 existing_node_types=[t.name for t in node_types],
                 existing_edge_types=[t.name for t in edge_types],
+                domain_hint=domain_hint,
             ),
             model_settings=ont_cfg.model_settings,
         )
@@ -111,6 +115,7 @@ async def run_extraction(
                 episode_text=text,
                 node_types=[t.name for t in node_types],
                 edge_types=[t.name for t in edge_types],
+                domain_hint=domain_hint,
             ),
             model_settings=ext_cfg.model_settings,
         )
