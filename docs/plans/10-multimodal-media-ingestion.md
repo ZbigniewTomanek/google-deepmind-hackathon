@@ -890,9 +890,9 @@ bash scripts/e2e_media.sh
 | 4 | Extend IngestionProcessor + EpisodeProcessor | `DONE` | Protocol aligned with target_schema, added process_audio/process_video to protocol and EpisodeProcessor with full compress→describe→store→embed→extract pipeline |
 | 5 | API endpoints for audio/video | `DONE` | Added POST /ingest/audio and /ingest/video endpoints with content-type validation, size limits, audit logging; wired media services into app lifespan |
 | 6 | Unit and integration tests | `DONE` | 7 MediaFileStore tests, 11 media ingestion tests (processor + HTTP endpoints), 1 Gemini integration test; 19 new tests total, all passing |
-| 7 | Documentation | `PENDING` | |
+| 7 | Documentation | `DONE` | Updated development.md with media ingestion section (system requirements, env vars, settings, endpoints, curl examples, storage layout, supported formats); updated CLAUDE.md codebase map with 5 new media files |
 | 8 | E2E validation script and tests | `PENDING` | |
 | 9 | Final validation and cleanup | `PENDING` | |
 
-**Last stage completed**: Stage 6 — Unit and integration tests
+**Last stage completed**: Stage 7 — Documentation
 **Last updated by**: plan-runner-agent

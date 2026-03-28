@@ -6,6 +6,7 @@
 - Python 3.13+ (see `.python-version`)
 - `uv` package manager
 - Port 5432 free (PostgreSQL)
+- **ffmpeg** and **ffprobe** on PATH (required for audio/video media ingestion)
 
 ## Quick Start
 
@@ -58,6 +59,58 @@ POST /ingest/document  — multipart form with optional target_graph field
 ```
 
 When `target_graph` is set, the agent must have write permission to the specified shared graph schema. Without it, data is stored in the agent's personal graph.
+
+#### Media ingestion (audio/video)
+
+The ingestion API also supports audio and video uploads. Media files go through a two-stage pipeline: ffmpeg compression followed by Gemini 3 Flash Preview multimodal inference to generate a text description. The description is stored as an episode (feeding the existing extraction pipeline), and the compressed file is persisted on the filesystem.
+
+```
+POST /ingest/audio  — multipart form: file + optional metadata + target_graph
+POST /ingest/video  — multipart form: file + optional metadata + target_graph
+```
+
+Supported audio types: `audio/mpeg`, `audio/wav`, `audio/x-wav`, `audio/ogg`, `audio/flac`, `audio/aac`, `audio/mp4`, `audio/webm`
+
+Supported video types: `video/mp4`, `video/mpeg`, `video/webm`, `video/quicktime`, `video/x-msvideo`, `video/x-matroska`, `video/3gpp`
+
+Upload size limit: 100 MB (configurable via `NEOCORTEX_MEDIA_MAX_UPLOAD_BYTES`).
+
+Example usage:
+
+```bash
+# Upload audio
+curl -X POST localhost:8001/ingest/audio \
+  -H "Authorization: Bearer dev-token-neocortex" \
+  -F "file=@recording.wav;type=audio/wav" \
+  -F "metadata={\"source\": \"meeting\"}"
+
+# Upload video
+curl -X POST localhost:8001/ingest/video \
+  -H "Authorization: Bearer dev-token-neocortex" \
+  -F "file=@clip.mp4;type=video/mp4" \
+  -F "target_graph=ncx_shared__media"
+```
+
+Response includes a `media_ref` with the relative path to the stored compressed file:
+
+```json
+{
+  "status": "stored",
+  "episodes_created": 1,
+  "message": "...",
+  "media_ref": {
+    "relative_path": "dev-user/abcd1234.ogg",
+    "original_filename": "recording.wav",
+    "content_type": "audio/wav",
+    "compressed_size": 8192,
+    "duration_seconds": 30.5
+  }
+}
+```
+
+**Media storage layout**: Compressed files are saved under `{NEOCORTEX_MEDIA_STORE_PATH}/{agent_id}/{uuid}.{ext}`. Paths in `media_ref` are relative to the store root. Audio is compressed to 64 kbps mono Opus (`.ogg`), video to 480p CRF-30 H.264 with 64 kbps mono audio (`.mp4`).
+
+**Mock mode**: When `NEOCORTEX_MOCK_DB=true`, compression is skipped and a placeholder description is generated. Media files are still saved to the media store. This allows endpoint testing without ffmpeg or a Gemini API key.
 
 Admin API (mounted on the same ingestion server):
 
@@ -149,6 +202,16 @@ All configuration via environment variables (Pydantic BaseSettings):
 | `NEOCORTEX_RECALL_WEIGHT_IMPORTANCE` | `0.15` | Hybrid recall weight for node importance |
 | `NEOCORTEX_RECALL_RECENCY_HALF_LIFE_HOURS` | `168.0` | Recency half-life in hours (7 days) |
 | `NEOCORTEX_RECALL_VECTOR_DISTANCE_THRESHOLD` | `0.5` | Cosine distance threshold for vector match |
+
+### Media Ingestion (`mcp_settings.py`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEOCORTEX_MEDIA_STORE_PATH` | `./media_store` | Root directory for compressed media files |
+| `NEOCORTEX_MEDIA_MAX_UPLOAD_BYTES` | `104857600` (100 MB) | Maximum upload size for audio/video files |
+| `NEOCORTEX_MEDIA_DESCRIPTION_MODEL` | `gemini-3-flash-preview` | Gemini model for multimodal description |
+| `NEOCORTEX_MEDIA_DESCRIPTION_MAX_TOKENS` | `8192` | Max output tokens for media descriptions |
+| `GOOGLE_API_KEY` | _(unset)_ | Required for Gemini media descriptions in production mode |
 
 ### Admin & Permissions (`mcp_settings.py`)
 
@@ -286,7 +349,12 @@ src/
 │   ├── embedding_service.py # Gemini embedding wrapper (768-dim MRL, normalized)
 │   ├── scoring.py          # Hybrid recall scoring (vector + text + recency)
 │   ├── db/                 # Database adapters, protocols, RLS
-│   ├── ingestion/          # FastAPI ingestion API (text, document, events)
+│   ├── ingestion/          # FastAPI ingestion API (text, document, events, audio, video)
+│   │   ├── media_models.py       # MediaRef, MediaIngestionResult, CompressedMedia
+│   │   ├── media_store.py        # Filesystem-based media file store
+│   │   ├── media_compressor.py   # ffmpeg compression service
+│   │   ├── media_description.py  # Gemini multimodal description service
+│   │   └── media_description_mock.py  # Mock description service for tests
 │   ├── tools/              # MCP tools (remember, recall, discover)
 │   ├── tui/                # Developer TUI (Textual + Click)
 │   │   ├── app.py          # Textual App with remember/recall/discover modes
