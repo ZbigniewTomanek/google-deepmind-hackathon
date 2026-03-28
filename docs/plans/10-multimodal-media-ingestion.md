@@ -891,8 +891,8 @@ bash scripts/e2e_media.sh
 | 5 | API endpoints for audio/video | `DONE` | Added POST /ingest/audio and /ingest/video endpoints with content-type validation, size limits, audit logging; wired media services into app lifespan |
 | 6 | Unit and integration tests | `DONE` | 7 MediaFileStore tests, 11 media ingestion tests (processor + HTTP endpoints), 1 Gemini integration test; 19 new tests total, all passing |
 | 7 | Documentation | `DONE` | Updated development.md with media ingestion section (system requirements, env vars, settings, endpoints, curl examples, storage layout, supported formats); updated CLAUDE.md codebase map with 5 new media files |
-| 8 | E2E validation script and tests | `PENDING` | |
+| 8 | E2E validation script and tests | `DONE` | E2E test suite (9 tests: audio/video upload, content-type rejection, size rejection, regression for text/doc/events/health), synthetic fixtures, shell script, MockMediaCompressor for mock mode |
 | 9 | Final validation and cleanup | `PENDING` | |
 
-**Last stage completed**: Stage 7 — Documentation
+**Last stage completed**: Stage 8 — E2E Validation Script and Tests
 **Last updated by**: plan-runner-agent
