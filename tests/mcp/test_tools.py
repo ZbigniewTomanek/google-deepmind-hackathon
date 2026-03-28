@@ -36,21 +36,62 @@ async def test_recall_with_empty_repo_returns_empty_results(test_server) -> None
 
 
 @pytest.mark.asyncio
-async def test_discover_with_empty_repo_returns_empty_ontology_and_zero_stats(test_server) -> None:
+async def test_discover_domains_returns_domains_when_enabled(test_server) -> None:
     async with Client(test_server) as client:
-        result = await client.call_tool("discover", {})
+        result = await client.call_tool("discover_domains", {})
 
     assert result.is_error is False
-    assert result.structured_content == {
-        "node_types": [],
-        "edge_types": [],
-        "stats": {
-            "total_nodes": 0,
-            "total_edges": 0,
-            "total_episodes": 0,
-            "forgotten_nodes": 0,
-            "consolidated_episodes": 0,
-            "avg_activation": 0.0,
-        },
-        "graphs": [],
-    }
+    data = result.structured_content
+    assert data["message"] is None
+    assert len(data["domains"]) == 4
+    slugs = {d["slug"] for d in data["domains"]}
+    assert "user_profile" in slugs
+    assert "technical_knowledge" in slugs
+
+
+@pytest.mark.asyncio
+async def test_discover_domains_returns_message_when_disabled(test_server_no_domains) -> None:
+    async with Client(test_server_no_domains) as client:
+        result = await client.call_tool("discover_domains", {})
+
+    assert result.is_error is False
+    data = result.structured_content
+    assert data["message"] == "Domain routing is not enabled"
+    assert data["domains"] == []
+
+
+@pytest.mark.asyncio
+async def test_discover_graphs_with_empty_repo(test_server) -> None:
+    async with Client(test_server) as client:
+        result = await client.call_tool("discover_graphs", {})
+
+    assert result.is_error is False
+    data = result.structured_content
+    assert data["graphs"] == []
+
+
+@pytest.mark.asyncio
+async def test_discover_ontology_with_empty_repo(test_server) -> None:
+    async with Client(test_server) as client:
+        result = await client.call_tool("discover_ontology", {"graph_name": "ncx_test__personal"})
+
+    assert result.is_error is False
+    data = result.structured_content
+    assert data["graph_name"] == "ncx_test__personal"
+    assert data["node_types"] == []
+    assert data["edge_types"] == []
+
+
+@pytest.mark.asyncio
+async def test_discover_details_returns_not_found_for_missing_type(test_server) -> None:
+    async with Client(test_server) as client:
+        result = await client.call_tool(
+            "discover_details",
+            {"type_name": "NonExistent", "graph_name": "ncx_test__personal", "kind": "node"},
+        )
+
+    assert result.is_error is False
+    data = result.structured_content
+    assert data["graph_name"] == "ncx_test__personal"
+    assert data["type_detail"]["name"] == "NonExistent"
+    assert data["type_detail"]["id"] == 0
