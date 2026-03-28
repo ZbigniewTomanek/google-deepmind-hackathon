@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from open_agent_compiler._types import AgentPermissions, ToolPermissions
+from open_agent_compiler._types import AgentPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
 from agents.tools import build_joke_tool
@@ -67,7 +67,6 @@ def build_joke_with_memory(config):
         .mode("subagent")
         .config(config)
         .tool(joke_tool)
-        .tool_permissions(ToolPermissions(mcp=True))
         .preamble(
             "# Joke With Memory Agent\n\n"
             "You are a joke-telling agent that remembers preferences across conversations.\n\n"

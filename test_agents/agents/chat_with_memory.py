@@ -20,8 +20,9 @@ def build_chat_with_memory(config):
         .name("Recall Context")
         .todo("Recall context", "Check memory for relevant prior knowledge")
         .instructions(
-            "Always run `neocortex-chat` `recall` with the user's message to check for prior memories.\n"
-            "Run `discover` to understand what knowledge is available in the graph.\n"
+            "Call the MCP tools DIRECTLY yourself (do NOT delegate to any subagent):\n"
+            "1. Call `neocortex-chat_recall` with the user's message as query\n"
+            "2. Call `neocortex-chat_discover` to see what knowledge is available\n\n"
             "Note any relevant recalled facts for use in later steps."
         )
         .mark_done("Recall context")
@@ -73,7 +74,7 @@ def build_chat_with_memory(config):
         .instructions(
             "Answer the user's question or acknowledge their request.\n"
             "Reference any recalled memories naturally in your response.\n"
-            "Use `neocortex-chat` `remember` to store important facts from the conversation:\n"
+            "Call `neocortex-chat_remember` DIRECTLY (not via subagent) to store important facts:\n"
             "- User preferences, personal details, or explicit requests to remember\n"
             "- Key decisions or conversation highlights worth retaining\n"
             "Do NOT store trivial or redundant information."
@@ -89,19 +90,24 @@ def build_chat_with_memory(config):
         .mode("primary")
         .config(config)
         .subagent(joke_mem_ref)
-        .tool_permissions(ToolPermissions(mcp=True))
         .preamble(
             "# Chat With Memory Agent\n\n"
-            "You are a memory-first conversational agent. Your key behaviors:\n\n"
-            "1. **Always recall before responding** — check NeoCortex memory for relevant context.\n"
-            "2. **Store important facts** — user preferences, personal details, and conversation highlights.\n"
-            "3. **Reference memories naturally** — weave recalled information into your responses.\n"
-            "4. **Use discover** — explore the knowledge graph to understand what's available.\n\n"
-            "Route joke requests to the **joke-with-memory** subagent via the Task tool.\n"
-            "IMPORTANT: Always set `subagent_type` to `joke-with-memory` — never use a generic agent.\n"
-            "Each agent has its own MCP auth token and isolated memory schema.\n\n"
+            "You are a memory-first conversational agent.\n\n"
+            "## CRITICAL RULES\n\n"
+            "1. **Call MCP tools DIRECTLY yourself** — use `neocortex-chat_recall`, "
+            "`neocortex-chat_remember`, `neocortex-chat_discover` directly. "
+            "NEVER delegate MCP calls to a subagent.\n"
+            "2. **The ONLY subagent you may invoke is `joke-with-memory`** — all other "
+            "subagent types are BLOCKED. Do not attempt to create general or ad-hoc subagents.\n"
+            "3. When invoking joke-with-memory, use Task tool with `subagent_type` set to "
+            "EXACTLY `joke-with-memory`.\n\n"
+            "## Behaviors\n\n"
+            "- **Always recall before responding** — call `neocortex-chat_recall` with the user's message.\n"
+            "- **Store important facts** — call `neocortex-chat_remember` for user preferences and key facts.\n"
+            "- **Reference memories naturally** — weave recalled information into responses.\n"
+            "- **Use discover** — call `neocortex-chat_discover` to explore the knowledge graph.\n\n"
             "If `<CONVERSATION_HISTORY>` tags present, use as prior turns.\n"
-            "Connected to NeoCortex MCP (neocortex-chat) for memory (remember/recall/discover)."
+            "Connected to NeoCortex MCP (neocortex-chat) for memory."
         )
         .workflow_step(step_1)
         .workflow_step(step_2)
