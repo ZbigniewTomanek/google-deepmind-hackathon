@@ -132,16 +132,19 @@ async def main() -> None:
             if resp.status_code != 200:
                 raise AssertionError(f"Failed to grant read to {agent}: {resp.status_code} {resp.text}")
 
-    print("Verifying discover graph visibility...")
-    alice_discover = await mcp_call(ALICE_TOKEN, "discover", {})
-    bob_discover = await mcp_call(BOB_TOKEN, "discover", {})
-    if alice_schema not in alice_discover["graphs"] or shared_schema not in alice_discover["graphs"]:
-        raise AssertionError(f"Alice discover graphs were incomplete: {alice_discover}")
-    if bob_schema not in bob_discover["graphs"] or shared_schema not in bob_discover["graphs"]:
-        raise AssertionError(f"Bob discover graphs were incomplete: {bob_discover}")
+    print("Verifying discover_graphs visibility...")
+    alice_graphs_result = await mcp_call(ALICE_TOKEN, "discover_graphs", {})
+    bob_graphs_result = await mcp_call(BOB_TOKEN, "discover_graphs", {})
+    alice_graph_names = [g["schema_name"] for g in alice_graphs_result["graphs"]]
+    bob_graph_names = [g["schema_name"] for g in bob_graphs_result["graphs"]]
+    if alice_schema not in alice_graph_names or shared_schema not in alice_graph_names:
+        raise AssertionError(f"Alice discover_graphs incomplete: {alice_graph_names}")
+    if bob_schema not in bob_graph_names or shared_schema not in bob_graph_names:
+        raise AssertionError(f"Bob discover_graphs incomplete: {bob_graph_names}")
 
-    print("Verifying discover cognitive stats shape...")
-    alice_stats = alice_discover.get("stats", {})
+    print("Verifying discover_ontology cognitive stats shape...")
+    alice_ontology = await mcp_call(ALICE_TOKEN, "discover_ontology", {"graph_name": alice_schema})
+    alice_stats = alice_ontology.get("stats", {})
     for key in (
         "total_nodes",
         "total_edges",
@@ -151,8 +154,17 @@ async def main() -> None:
         "avg_activation",
     ):
         if key not in alice_stats:
-            raise AssertionError(f"Missing stat '{key}' in discover: {alice_stats}")
+            raise AssertionError(f"Missing stat '{key}' in discover_ontology: {alice_stats}")
     print(f"  [PASS] Cognitive stats present: {alice_stats}")
+
+    print("Verifying discover_domains returns seed domains...")
+    domains_result = await mcp_call(ALICE_TOKEN, "discover_domains", {})
+    domain_slugs = [d["slug"] for d in domains_result.get("domains", [])]
+    if len(domain_slugs) > 0:
+        print(f"  [PASS] discover_domains returned {len(domain_slugs)} domains: {domain_slugs}")
+    else:
+        msg = domains_result.get("message", "")
+        print(f"  [INFO] No domains returned ({msg}) — domain routing may be disabled")
 
     print("Verifying PostgreSQL schemas and data isolation...")
     conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
