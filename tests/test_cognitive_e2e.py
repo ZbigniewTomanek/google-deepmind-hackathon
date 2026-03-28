@@ -813,3 +813,193 @@ class TestStage5EdgeReinforcement:
         )
         # Reinforced path (weight=2.0) should deliver higher bonus
         assert bonus[b.id] > bonus[c.id]
+
+
+class TestStage6ForgetAndConsolidate:
+    @pytest.mark.asyncio
+    async def test_mark_forgotten_excludes_from_recall(self, repo: InMemoryRepository):
+        """Create 3 nodes matching query 'serotonin'. Forget node #2. Recall. Verify only #1 and #3 returned."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        n1 = await repo.upsert_node(AGENT_ID, "Serotonin Alpha", concept.id, content="A serotonin variant")
+        n2 = await repo.upsert_node(AGENT_ID, "Serotonin Beta", concept.id, content="A serotonin variant")
+        n3 = await repo.upsert_node(AGENT_ID, "Serotonin Gamma", concept.id, content="A serotonin variant")
+
+        await repo.mark_forgotten(AGENT_ID, [n2.id])
+        results = await repo.recall("serotonin", AGENT_ID, limit=10)
+        result_ids = {r.item_id for r in results if r.source_kind == "node"}
+        assert n1.id in result_ids
+        assert n2.id not in result_ids
+        assert n3.id in result_ids
+
+    @pytest.mark.asyncio
+    async def test_mark_forgotten_excludes_from_search_nodes(self, repo: InMemoryRepository):
+        """Same as above but via search_nodes()."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        n1 = await repo.upsert_node(AGENT_ID, "Serotonin Alpha", concept.id, content="A serotonin variant")
+        n2 = await repo.upsert_node(AGENT_ID, "Serotonin Beta", concept.id, content="A serotonin variant")
+        n3 = await repo.upsert_node(AGENT_ID, "Serotonin Gamma", concept.id, content="A serotonin variant")
+
+        await repo.mark_forgotten(AGENT_ID, [n2.id])
+        results = await repo.search_nodes(AGENT_ID, "Serotonin")
+        result_ids = {n.id for n, _s in results}
+        assert n1.id in result_ids
+        assert n2.id not in result_ids
+        assert n3.id in result_ids
+
+    @pytest.mark.asyncio
+    async def test_forgotten_node_excluded_from_neighborhood(self, repo: InMemoryRepository):
+        """A→B→C graph. Forget B. Get neighborhood of A. Verify B and C absent from results."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
+        c = await repo.upsert_node(AGENT_ID, "Gamma", concept.id)
+        await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        await repo.upsert_edge(AGENT_ID, b.id, c.id, relates.id, weight=1.0)
+
+        await repo.mark_forgotten(AGENT_ID, [b.id])
+        neighborhood = await repo.get_node_neighborhood(AGENT_ID, a.id, depth=2)
+        neighbor_ids = {entry["node"].id for entry in neighborhood}
+        assert b.id not in neighbor_ids
+        assert c.id not in neighbor_ids  # C unreachable since B is forgotten
+
+    @pytest.mark.asyncio
+    async def test_forgotten_node_persists_in_db(self, repo: InMemoryRepository):
+        """Forget a node, verify it's still in _nodes dict (not deleted)."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        n = await repo.upsert_node(AGENT_ID, "Ephemeral", concept.id)
+
+        await repo.mark_forgotten(AGENT_ID, [n.id])
+        assert n.id in repo._nodes
+        assert repo._nodes[n.id].forgotten is True
+        assert repo._nodes[n.id].forgotten_at is not None
+
+    @pytest.mark.asyncio
+    async def test_resurrect_node_on_upsert(self, repo: InMemoryRepository):
+        """Forget a node, then upsert same name+type. Verify forgotten=False, access_count incremented."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        n = await repo.upsert_node(AGENT_ID, "Lazarus", concept.id, content="Will be resurrected")
+        original_access = n.access_count
+
+        await repo.mark_forgotten(AGENT_ID, [n.id])
+        assert repo._nodes[n.id].forgotten is True
+
+        # Re-upsert same name+type — should resurrect
+        resurrected = await repo.upsert_node(AGENT_ID, "Lazarus", concept.id, content="Resurrected content")
+        assert resurrected.forgotten is False
+        assert resurrected.forgotten_at is None
+        assert resurrected.access_count == original_access + 1
+
+    @pytest.mark.asyncio
+    async def test_identify_forgettable_nodes_low_activation_low_importance(self, repo: InMemoryRepository):
+        """Create 4 nodes with different profiles. Only the low-importance, never-accessed, stale one is forgettable."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+
+        # (a) high importance + accessed
+        na = await repo.upsert_node(AGENT_ID, "Important Active", concept.id, importance=0.8)
+        await repo.record_node_access(AGENT_ID, [na.id])
+
+        # (b) low importance + accessed
+        nb = await repo.upsert_node(AGENT_ID, "Unimportant Active", concept.id, importance=0.1)
+        await repo.record_node_access(AGENT_ID, [nb.id])
+
+        # (c) high importance + never accessed (but stale)
+        nc = await repo.upsert_node(AGENT_ID, "Important Stale", concept.id, importance=0.8)
+        old_time = datetime.now(UTC) - timedelta(days=14)
+        repo._nodes[nc.id] = nc.model_copy(update={"last_accessed_at": old_time})
+
+        # (d) low importance + never accessed + stale → forgettable
+        nd = await repo.upsert_node(AGENT_ID, "Unimportant Stale", concept.id, importance=0.1)
+        repo._nodes[nd.id] = nd.model_copy(update={"last_accessed_at": old_time})
+
+        forgettable = await repo.identify_forgettable_nodes(AGENT_ID, 0.05, 0.3)
+        assert nd.id in forgettable
+        assert na.id not in forgettable
+        assert nb.id not in forgettable
+        assert nc.id not in forgettable
+
+    @pytest.mark.asyncio
+    async def test_identify_forgettable_nodes_respects_importance_floor(self, repo: InMemoryRepository):
+        """Node with importance=0.4 and floor=0.3 → forgettable. With floor=0.5 → not forgettable."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        old_time = datetime.now(UTC) - timedelta(days=14)
+        n = await repo.upsert_node(AGENT_ID, "Borderline", concept.id, importance=0.4)
+        repo._nodes[n.id] = n.model_copy(update={"last_accessed_at": old_time})
+
+        # floor=0.3 → importance 0.4 >= 0.3, NOT forgettable
+        forgettable = await repo.identify_forgettable_nodes(AGENT_ID, 0.05, 0.3)
+        assert n.id not in forgettable
+
+        # floor=0.5 → importance 0.4 < 0.5, forgettable
+        forgettable = await repo.identify_forgettable_nodes(AGENT_ID, 0.05, 0.5)
+        assert n.id in forgettable
+
+    @pytest.mark.asyncio
+    async def test_episode_consolidation_marks_flag(self, repo: InMemoryRepository):
+        """Store episode, call mark_episode_consolidated(), verify consolidated=True."""
+        ep_id = await repo.store_episode(AGENT_ID, "Test consolidation episode")
+        ep_record = next(e for e in repo._episodes if e["id"] == ep_id)
+        assert ep_record.get("consolidated", False) is False
+
+        await repo.mark_episode_consolidated(AGENT_ID, ep_id)
+        ep_record = next(e for e in repo._episodes if e["id"] == ep_id)
+        assert ep_record["consolidated"] is True
+
+    @pytest.mark.asyncio
+    async def test_consolidated_episodes_ranked_lower(self, repo: InMemoryRepository):
+        """Store 2 episodes matching query. Consolidate one. Recall. Verify unconsolidated ranks above."""
+        ep1_id = await repo.store_episode(AGENT_ID, "Serotonin pathway discussion first")
+        ep2_id = await repo.store_episode(AGENT_ID, "Serotonin pathway discussion second")
+
+        # Consolidate ep1
+        await repo.mark_episode_consolidated(AGENT_ID, ep1_id)
+
+        results = await repo.recall("Serotonin", AGENT_ID, limit=10)
+        episode_results = [r for r in results if r.source_kind == "episode"]
+        assert len(episode_results) == 2
+
+        # Unconsolidated episode (ep2) should rank above consolidated (ep1)
+        assert episode_results[0].item_id == ep2_id
+        assert episode_results[1].item_id == ep1_id
+        assert episode_results[0].score > episode_results[1].score
+
+    @pytest.mark.asyncio
+    async def test_full_lifecycle_forget_and_resurrect(self, repo: InMemoryRepository):
+        """Create node, recall it (access_count=1), verify not forgettable.
+        Create another never-accessed low-importance node, verify it IS forgettable.
+        Forget it. Upsert same entity again, verify resurrected.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+
+        # Active node — should not be forgettable
+        n_active = await repo.upsert_node(AGENT_ID, "Active Serotonin", concept.id, importance=0.2)
+        await repo.record_node_access(AGENT_ID, [n_active.id])
+
+        # Stale low-importance node — should be forgettable
+        n_stale = await repo.upsert_node(AGENT_ID, "Stale Compound", concept.id, importance=0.1)
+        old_time = datetime.now(UTC) - timedelta(days=14)
+        repo._nodes[n_stale.id] = n_stale.model_copy(update={"last_accessed_at": old_time})
+
+        # Verify forgettable identification
+        forgettable = await repo.identify_forgettable_nodes(AGENT_ID, 0.05, 0.3)
+        assert n_active.id not in forgettable
+        assert n_stale.id in forgettable
+
+        # Forget the stale node
+        count = await repo.mark_forgotten(AGENT_ID, [n_stale.id])
+        assert count == 1
+
+        # Verify it's excluded from recall
+        results = await repo.recall("Stale Compound", AGENT_ID, limit=10)
+        node_ids = {r.item_id for r in results if r.source_kind == "node"}
+        assert n_stale.id not in node_ids
+
+        # Re-extract the same entity (upsert resurrects)
+        resurrected = await repo.upsert_node(AGENT_ID, "Stale Compound", concept.id, importance=0.1)
+        assert resurrected.forgotten is False
+        assert resurrected.access_count >= 1
+
+        # Now it should appear in recall again
+        results = await repo.recall("Stale Compound", AGENT_ID, limit=10)
+        node_ids = {r.item_id for r in results if r.source_kind == "node"}
+        assert n_stale.id in node_ids

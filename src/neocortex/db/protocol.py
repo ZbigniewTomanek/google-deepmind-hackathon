@@ -148,6 +148,24 @@ class MemoryRepository(Protocol):
     async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
         """Increment access_count and update last_accessed_at for recalled episodes."""
 
+    # ── Soft-Forget ──
+
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+        """Soft-delete nodes by setting forgotten=true. Returns count."""
+
+    async def resurrect_node(self, agent_id: str, node_id: int) -> None:
+        """Clear forgotten flag and bump access_count for a re-referenced node."""
+
+    async def identify_forgettable_nodes(
+        self, agent_id: str, activation_threshold: float, importance_floor: float
+    ) -> list[int]:
+        """Return IDs of nodes whose activation < threshold AND importance < floor."""
+
+    # ── Episodic Consolidation ──
+
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+        """Mark an episode as consolidated (extraction completed)."""
+
     # ── Edge Reinforcement ──
 
     async def reinforce_edges(
