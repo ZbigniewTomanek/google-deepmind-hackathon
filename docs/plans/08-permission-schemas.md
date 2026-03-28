@@ -906,9 +906,9 @@ test(permissions): E2E smoke tests and development docs update
 | 3 | Ingestion API permission enforcement & extraction awareness | DONE | target_graph on ingestion models/routes, permission checks (403), EpisodeProcessor routes to target schema, extraction pipeline carries target_schema through task→run_extraction→_persist_payload, MemoryRepository methods accept target_schema, 16 new tests |
 | 4 | Admin REST API | DONE | require_admin dependency, permission CRUD endpoints, agent promote/demote, graph management (501 in mock mode), bootstrap admin token injection, 18 tests |
 | 5 | Integration tests (in-memory) & CLAUDE.md | DONE | Full permission lifecycle test (10 steps), admin lifecycle test, discover filtering test, admin bypass test, 4 extraction target schema tests, mock DB mode verified, CLAUDE.md updated with rule #6 + codebase map |
-| 6 | E2E smoke tests & development docs | PENDING | |
+| 6 | E2E smoke tests & development docs | DONE | E2E permission lifecycle test (8 steps: create graph, grant, write/deny, read verification, revoke, admin promote/demote, bootstrap guard, cleanup+cascade), dev_tokens.json updated with admin+eve tokens, docs/development.md updated with admin config, API endpoints, target_graph docs, project layout |
 
-Last stage completed: Stage 5 — Integration tests (in-memory) & CLAUDE.md
+Last stage completed: Stage 6 — E2E smoke tests & development docs
 Last updated by: plan-runner-agent
 
 ---
