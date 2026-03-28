@@ -87,7 +87,7 @@ src/neocortex/domains/
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | Domain Data Model & Storage | PENDING | | |
+| 1 | Domain Data Model & Storage | DONE | Models, protocol, PG + in-memory services, migration 008, 13 tests passing | `feat(domains): add semantic domain data model, migration, and storage services` |
 | 2 | Classification Agent | PENDING | | |
 | 3 | Domain Router & Auto-Provisioning | PENDING | | |
 | 4 | Pipeline Integration | PENDING | | |
