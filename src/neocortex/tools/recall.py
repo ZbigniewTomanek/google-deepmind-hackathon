@@ -3,7 +3,7 @@ import random
 from fastmcp import Context
 from loguru import logger
 
-from neocortex.auth.dependencies import get_agent_id_from_context
+from neocortex.auth.dependencies import ensure_provisioned, get_agent_id_from_context
 from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
 from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency
 
@@ -48,6 +48,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     repo = ctx.lifespan_context["repo"]
     settings = ctx.lifespan_context["settings"]
     agent_id = get_agent_id_from_context(ctx)
+    await ensure_provisioned(ctx, agent_id)
 
     embeddings = ctx.lifespan_context.get("embeddings")
     query_embedding = None

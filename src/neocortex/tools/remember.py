@@ -1,7 +1,7 @@
 from fastmcp import Context
 from loguru import logger
 
-from neocortex.auth.dependencies import get_agent_id_from_context
+from neocortex.auth.dependencies import ensure_provisioned, get_agent_id_from_context
 from neocortex.schemas.memory import RememberResult
 
 
@@ -28,6 +28,7 @@ async def remember(
 
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
+    await ensure_provisioned(ctx, agent_id)
 
     metadata: dict = {}
     episode_importance = 0.5

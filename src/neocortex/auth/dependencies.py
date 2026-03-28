@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastmcp import Context
 from fastmcp.server.dependencies import get_access_token
 
@@ -33,3 +35,23 @@ def get_agent_id_from_context(ctx: Context) -> str:
             return str(subject)
 
     return "anonymous"
+
+
+async def ensure_provisioned(ctx: Context, agent_id: str) -> None:
+    """Auto-provision agent on first access (Auth0 mode only)."""
+    settings = ctx.lifespan_context.get("settings")
+    if not isinstance(settings, MCPSettings) or settings.auth_mode != "auth0":
+        return
+    permissions = ctx.lifespan_context.get("permissions")
+    if permissions is None:
+        return
+
+    from neocortex.auth.provisioning import ensure_agent_provisioned
+
+    token = get_access_token()
+    auth0_perms = token.claims.get("permissions", []) if token else None
+    await ensure_agent_provisioned(
+        permissions=permissions,
+        agent_id=agent_id,
+        auth0_permissions=auth0_perms,
+    )
