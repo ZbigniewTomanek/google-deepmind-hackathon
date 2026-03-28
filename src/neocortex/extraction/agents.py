@@ -1,6 +1,6 @@
 """Three-agent extraction pipeline: ontology, extractor, librarian.
 
-Each agent is built via a factory function that accepts a model override.
+Each agent is built via a factory function that accepts an inference config.
 Agents are domain-agnostic — they work with any text, not just medical content.
 """
 
@@ -12,6 +12,7 @@ from loguru import logger
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.settings import ModelSettings, ThinkingLevel
 
 from neocortex.extraction.schemas import (
     ExtractedEntity,
@@ -21,17 +22,33 @@ from neocortex.extraction.schemas import (
     OntologyProposal,
 )
 
-DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
+DEFAULT_THINKING_EFFORT = "low"
 
 
-def _build_model(model_name: str | None = None, use_test_model: bool = False):
-    """Build the LLM model."""
-    if use_test_model:
+@dataclass
+class AgentInferenceConfig:
+    """Per-agent inference configuration (model, thinking budget, etc.)."""
+
+    model_name: str = DEFAULT_MODEL_NAME
+    thinking_effort: ThinkingLevel | None = DEFAULT_THINKING_EFFORT
+    use_test_model: bool = False
+
+    @property
+    def model_settings(self) -> ModelSettings | None:
+        """Build pydantic-ai model_settings dict for agent.run()."""
+        if self.thinking_effort is not None:
+            return ModelSettings(thinking=self.thinking_effort)
+        return None
+
+
+def _build_model(config: AgentInferenceConfig):
+    """Build the LLM model from inference config."""
+    if config.use_test_model:
         logger.debug("Using TestModel for extraction agents")
         return TestModel()
-    name = model_name or DEFAULT_MODEL_NAME
-    logger.debug("Using GoogleModel model_name={}", name)
-    return GoogleModel(name)
+    logger.debug("Using GoogleModel model_name={}", config.model_name)
+    return GoogleModel(config.model_name)
 
 
 # ── Ontology Agent ──
@@ -45,9 +62,10 @@ class OntologyAgentDeps:
 
 
 def build_ontology_agent(
-    model_name: str | None = None, use_test_model: bool = False
+    config: AgentInferenceConfig | None = None,
 ) -> Agent[OntologyAgentDeps, OntologyProposal]:
-    model = _build_model(model_name, use_test_model)
+    cfg = config or AgentInferenceConfig()
+    model = _build_model(cfg)
     agent = Agent(
         model,
         output_type=OntologyProposal,
@@ -98,9 +116,10 @@ class ExtractorAgentDeps:
 
 
 def build_extractor_agent(
-    model_name: str | None = None, use_test_model: bool = False
+    config: AgentInferenceConfig | None = None,
 ) -> Agent[ExtractorAgentDeps, ExtractionResult]:
-    model = _build_model(model_name, use_test_model)
+    cfg = config or AgentInferenceConfig()
+    model = _build_model(cfg)
     agent = Agent(
         model,
         output_type=ExtractionResult,
@@ -154,9 +173,10 @@ class LibrarianAgentDeps:
 
 
 def build_librarian_agent(
-    model_name: str | None = None, use_test_model: bool = False
+    config: AgentInferenceConfig | None = None,
 ) -> Agent[LibrarianAgentDeps, LibrarianPayload]:
-    model = _build_model(model_name, use_test_model)
+    cfg = config or AgentInferenceConfig()
+    model = _build_model(cfg)
     agent = Agent(
         model,
         output_type=LibrarianPayload,

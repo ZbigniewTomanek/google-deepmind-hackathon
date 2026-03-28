@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from neocortex.extraction.agents import (
+    AgentInferenceConfig,
     ExtractorAgentDeps,
     LibrarianAgentDeps,
     OntologyAgentDeps,
@@ -30,8 +31,9 @@ async def run_extraction(
     embeddings: EmbeddingService | None,
     agent_id: str,
     episode_ids: list[int],
-    model_name: str | None = None,
-    use_test_model: bool = False,
+    ontology_config: AgentInferenceConfig | None = None,
+    extractor_config: AgentInferenceConfig | None = None,
+    librarian_config: AgentInferenceConfig | None = None,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -40,12 +42,17 @@ async def run_extraction(
         embeddings: Embedding service for node vectors (may be None).
         agent_id: Agent whose graph is being populated.
         episode_ids: Episodes to process.
-        model_name: LLM model name (from settings.extraction_model).
-        use_test_model: If True, use pydantic_ai TestModel (for unit tests).
+        ontology_config: Inference config for the ontology agent.
+        extractor_config: Inference config for the extractor agent.
+        librarian_config: Inference config for the librarian agent.
     """
-    ontology_agent = build_ontology_agent(model_name, use_test_model)
-    extractor_agent = build_extractor_agent(model_name, use_test_model)
-    librarian_agent = build_librarian_agent(model_name, use_test_model)
+    ont_cfg = ontology_config or AgentInferenceConfig()
+    ext_cfg = extractor_config or AgentInferenceConfig()
+    lib_cfg = librarian_config or AgentInferenceConfig()
+
+    ontology_agent = build_ontology_agent(ont_cfg)
+    extractor_agent = build_extractor_agent(ext_cfg)
+    librarian_agent = build_librarian_agent(lib_cfg)
 
     for episode_id in episode_ids:
         episode = await repo.get_episode(agent_id, episode_id)
@@ -73,6 +80,7 @@ async def run_extraction(
                 existing_node_types=[t.name for t in node_types],
                 existing_edge_types=[t.name for t in edge_types],
             ),
+            model_settings=ont_cfg.model_settings,
         )
 
         # 3. Persist new types
@@ -93,6 +101,7 @@ async def run_extraction(
                 node_types=[t.name for t in node_types],
                 edge_types=[t.name for t in edge_types],
             ),
+            model_settings=ext_cfg.model_settings,
         )
 
         # 5. Librarian stage
@@ -107,6 +116,7 @@ async def run_extraction(
                 extracted_relations=extraction_result.output.relations,
                 known_node_names=known_names,
             ),
+            model_settings=lib_cfg.model_settings,
         )
 
         # 6. Persist graph data

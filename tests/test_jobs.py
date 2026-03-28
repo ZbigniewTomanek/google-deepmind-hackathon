@@ -124,7 +124,12 @@ async def test_extract_episode_calls_run_extraction():
     mock_repo = AsyncMock()
     mock_embeddings = AsyncMock()
     mock_settings = AsyncMock()
-    mock_settings.extraction_model = "test-model"
+    mock_settings.ontology_model = "test-model"
+    mock_settings.ontology_thinking_effort = "low"
+    mock_settings.extractor_model = "test-model"
+    mock_settings.extractor_thinking_effort = "low"
+    mock_settings.librarian_model = "test-model"
+    mock_settings.librarian_thinking_effort = "low"
 
     fake_ctx = {
         "repo": mock_repo,
@@ -133,17 +138,24 @@ async def test_extract_episode_calls_run_extraction():
     }
     ctx_mod._services = fake_ctx  # ty: ignore[invalid-assignment]
 
-    # The extraction.pipeline module doesn't exist yet (Stage 4).
-    # Create a temporary mock module so the lazy import in the task succeeds.
+    # Create temporary mock modules so the lazy imports in the task succeed.
     mock_run = AsyncMock()
     fake_pipeline = types.ModuleType("neocortex.extraction.pipeline")
     fake_pipeline.run_extraction = mock_run  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
-    # Also need the parent package
     fake_extraction = types.ModuleType("neocortex.extraction")
+
+    # AgentInferenceConfig must be importable from the agents module
+    from neocortex.extraction.agents import AgentInferenceConfig
+
+    fake_agents = types.ModuleType("neocortex.extraction.agents")
+    fake_agents.AgentInferenceConfig = (  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        AgentInferenceConfig
+    )
 
     sys.modules["neocortex.extraction"] = fake_extraction
     sys.modules["neocortex.extraction.pipeline"] = fake_pipeline
+    sys.modules["neocortex.extraction.agents"] = fake_agents  # type: ignore[assignment]
 
     try:
         from neocortex.jobs.tasks import extract_episode
@@ -156,11 +168,23 @@ async def test_extract_episode_calls_run_extraction():
             embeddings=mock_embeddings,
             agent_id="test-agent",
             episode_ids=[10, 20],
-            model_name="test-model",
+            ontology_config=AgentInferenceConfig(
+                model_name="test-model",
+                thinking_effort="low",
+            ),
+            extractor_config=AgentInferenceConfig(
+                model_name="test-model",
+                thinking_effort="low",
+            ),
+            librarian_config=AgentInferenceConfig(
+                model_name="test-model",
+                thinking_effort="low",
+            ),
         )
     finally:
         ctx_mod._services = None
         sys.modules.pop("neocortex.extraction.pipeline", None)
+        sys.modules.pop("neocortex.extraction.agents", None)
         sys.modules.pop("neocortex.extraction", None)
 
 
@@ -196,12 +220,14 @@ async def test_worker_starts_and_stops():
 
 
 def test_extraction_settings_defaults():
-    """MCPSettings has extraction_enabled and extraction_model with correct defaults."""
+    """MCPSettings has per-agent extraction settings with correct defaults."""
     from neocortex.mcp_settings import MCPSettings
 
     s = MCPSettings()
     assert s.extraction_enabled is True
-    assert s.extraction_model == "gemini-2.5-flash"
+    for prefix in ("ontology", "extractor", "librarian"):
+        assert getattr(s, f"{prefix}_model") == "gemini-3-flash-preview"
+        assert getattr(s, f"{prefix}_thinking_effort") == "low"
 
 
 # ── ServiceContext includes job_app ──
