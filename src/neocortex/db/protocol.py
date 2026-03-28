@@ -16,6 +16,16 @@ class MemoryRepository(Protocol):
     ) -> int:
         """Store a raw episode and return the episode ID."""
 
+    async def store_episode_to(
+        self,
+        agent_id: str,
+        target_schema: str,
+        content: str,
+        context: str | None = None,
+        source_type: str = "mcp",
+    ) -> int:
+        """Store an episode in an explicit target schema (for shared graph writes)."""
+
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
     ) -> list[RecallItem]:

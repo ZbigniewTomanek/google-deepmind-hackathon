@@ -73,6 +73,32 @@ class GraphServiceAdapter:
             raise RuntimeError("Failed to store episode.")
         return int(row["id"])
 
+    async def store_episode_to(
+        self,
+        agent_id: str,
+        target_schema: str,
+        content: str,
+        context: str | None = None,
+        source_type: str = "mcp",
+    ) -> int:
+        metadata = {"context": context} if context else {}
+        if self._pool is None:
+            raise RuntimeError("Connection pool required for store_episode_to.")
+
+        async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO episode (agent_id, content, source_type, metadata)
+                   VALUES ($1, $2, $3, $4::jsonb)
+                   RETURNING id""",
+                agent_id,
+                content,
+                source_type,
+                json.dumps(metadata),
+            )
+        if row is None:
+            raise RuntimeError("Failed to store episode.")
+        return int(row["id"])
+
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
     ) -> list[RecallItem]:

@@ -61,7 +61,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
     pg_permissions: PermissionChecker = PostgresPermissionService(pg, settings.bootstrap_admin_id)
     await pg_permissions.ensure_admin(settings.bootstrap_admin_id)
-    router = GraphRouter(schema_mgr, pg.pool)
+    router = GraphRouter(schema_mgr, pg.pool, permissions=pg_permissions)
     repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg, settings=settings)
     embeddings = EmbeddingService(model=settings.embedding_model)
 
