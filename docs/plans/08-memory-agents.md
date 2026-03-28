@@ -373,5 +373,37 @@ psql -h localhost -U neocortex -d neocortex -c \
 | 5. Build pipeline registration | DONE | Added exports to __init__.py; added both builders to build_agents.py; compiles 6 agents successfully |
 | 6. Validate compiled output | DONE | All permission globs, MCP entries, cross-isolation, and existing agent integrity verified. MCP tool naming deferred to E2E testing (requires live server). |
 
-Last stage completed: Stage 6 — Validate compiled output
+Last stage completed: Stage 6 — Validate compiled output + E2E verified
 Last updated by: plan-runner-agent
+
+---
+
+## Lessons Learned (E2E Debugging)
+
+Key issues discovered during live testing and their fixes:
+
+### 1. MCP permission ordering (critical)
+
+OpenCode uses **last-match-wins** for the `permission:` section. `AgentPermissions.extra` entries (e.g., `"neocortex-chat*": allow`) must appear **AFTER** `"*": deny`, not before. Fixed in OpenAgentCompiler v0.1.2.
+
+### 2. Generic `mcp:` keys don't work
+
+`mcp: true` in `tool:` and `mcp: allow` in `permission:` are both ignored by OpenCode. Only **glob patterns** matching MCP server names work: `"neocortex-chat*": allow`.
+
+### 3. Remote MCP is more reliable than local
+
+Using `"type": "remote"` with `url` + `headers` is more reliable than `"type": "local"` with `npx mcp-remote` (which requires Node.js in the container and can timeout on first download). Added remote MCP support with headers to OpenAgentCompiler v0.1.2.
+
+### 4. MCP URL must include the path
+
+`http://localhost:8000` fails silently. The correct URL is `http://localhost:8000/mcp` (or whatever path the MCP server listens on).
+
+### 5. Agent instructions must be explicit about MCP tool names
+
+Models delegate MCP work to generic subagents unless explicitly told: "Call `neocortex-chat_recall` DIRECTLY yourself. NEVER delegate MCP calls to a subagent."
+
+### 6. Security policy text from compiler
+
+The compiler's security section always said "Use MCP tools (they are disabled)". Fixed in v0.1.1 to conditionally omit this when MCP is enabled via `ToolPermissions`.
+
+See `OpenAgentCompiler/docs/mcp-permissions.md` for the full MCP permissions guide.
