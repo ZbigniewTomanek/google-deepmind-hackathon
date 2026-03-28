@@ -20,11 +20,12 @@ class MCPSettings(BaseSettings):
     server_port: int = 8000
     transport: Literal["stdio", "http", "sse", "streamable-http"] = "http"
 
-    # Authentication — "none" | "dev_token" | "google_oauth"
+    # Authentication — "none" | "dev_token" | "google_oauth" | "auth0"
     #  - none: no auth, all requests are anonymous
     #  - dev_token: static bearer token for testing (no browser flow needed)
     #  - google_oauth: full Google OAuth via FastMCP OAuthProxy
-    auth_mode: Literal["none", "dev_token", "google_oauth"] = "none"
+    #  - auth0: Auth0 OAuth/JWT via FastMCP Auth0Provider
+    auth_mode: Literal["none", "dev_token", "google_oauth", "auth0"] = "none"
 
     # Dev-token auth (used when auth_mode = "dev_token")
     dev_token: str = "dev-token-neocortex"  # Deprecated single-token fallback
@@ -35,6 +36,14 @@ class MCPSettings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     oauth_base_url: str = "http://localhost:8000"
+
+    # Auth0 (used when auth_mode = "auth0")
+    auth0_domain: str = ""  # e.g., "dev-xxx.us.auth0.com"
+    auth0_client_id: str = ""  # Regular Web App client ID
+    auth0_client_secret: str = ""  # Regular Web App client secret
+    auth0_audience: str = ""  # API identifier (audience)
+    auth0_m2m_client_id: str = ""  # M2M app client ID (for ingestion API)
+    auth0_m2m_client_secret: str = ""  # M2M app client secret
 
     # Embedding model (experimental names may rotate)
     embedding_model: str = "gemini-embedding-001"
