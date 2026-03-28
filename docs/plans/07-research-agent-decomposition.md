@@ -454,10 +454,10 @@ No commit — validation only.
 | 3 | Config — tokens, MCP servers, shared graph setup | DONE | Added 5 tokens, 5 MCP servers (URL+headers), env vars, setup_shared_graph.sh |
 | 4 | Subagent definitions | DONE | Created video_processor.py, audio_processor.py, rss_processor.py — all write to shared graph via MCP |
 | 5 | Research orchestrator (refactored) | DONE | Rewrote research.py as routing orchestrator with list-input-files tool + 3 subagent refs; updated __init__.py exports |
-| 6 | Chat-with-extractions agent | PENDING | |
+| 6 | Chat-with-extractions agent | DONE | Created chat_with_extractions.py — primary agent with 4-step MCP workflow (recall, discover, respond, remember); updated __init__.py exports |
 | 7 | Build pipeline & Docker updates | PENDING | |
 | 8 | Stage runner & API call scripts | PENDING | set -e, fail-fast error handling |
 | 9 | Validation | PENDING | |
 
-Last stage completed: Stage 5 — Research orchestrator (refactored)
+Last stage completed: Stage 6 — Chat-with-extractions agent
 Last updated by: plan-runner-agent

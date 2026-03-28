@@ -1,5 +1,6 @@
 from agents.audio_processor import build_audio_processor
 from agents.chat import build_chat
+from agents.chat_with_extractions import build_chat_with_extractions
 from agents.chat_with_memory import build_chat_with_memory
 from agents.joke import build_joke_subagent
 from agents.joke_with_memory import build_joke_with_memory
@@ -12,6 +13,7 @@ from agents.video_processor import build_video_processor
 __all__ = [
     "build_audio_processor",
     "build_chat",
+    "build_chat_with_extractions",
     "build_chat_with_memory",
     "build_joke_subagent",
     "build_joke_with_memory",
