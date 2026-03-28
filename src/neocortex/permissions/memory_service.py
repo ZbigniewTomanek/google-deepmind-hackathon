@@ -112,6 +112,12 @@ class InMemoryPermissionService:
             key=lambda p: p.agent_id,
         )
 
+    async def list_all_permissions(self) -> list[PermissionInfo]:
+        return sorted(
+            self._permissions.values(),
+            key=lambda p: (p.agent_id, p.schema_name),
+        )
+
     async def set_admin(self, agent_id: str, is_admin: bool) -> None:
         if agent_id == self._bootstrap_admin_id and not is_admin:
             raise ValueError(f"Cannot demote the bootstrap admin '{self._bootstrap_admin_id}'")

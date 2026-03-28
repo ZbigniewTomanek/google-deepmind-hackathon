@@ -133,7 +133,15 @@ class InMemoryRepository:
             total_episodes=count,
         )
 
-    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+    async def update_episode_embedding(
+        self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
+    ) -> None:
+        # When target_schema is set, search the schema-bucketed episodes first
+        if target_schema and target_schema in self._schema_episodes:
+            for episode in self._schema_episodes[target_schema]:
+                if episode["id"] == episode_id:
+                    episode["embedding"] = embedding
+                    return
         for episode in self._episodes:
             if episode["id"] == episode_id:
                 episode["embedding"] = embedding
@@ -172,8 +180,9 @@ class InMemoryRepository:
     # ── Episode Read ──
 
     async def get_episode(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> Episode | None:
-        del target_schema
-        for ep in self._episodes:
+        # When target_schema is set, search the schema-bucketed episodes first
+        episodes = self._schema_episodes.get(target_schema, []) if target_schema else self._episodes
+        for ep in episodes:
             if ep["id"] == episode_id and ep["agent_id"] == agent_id:
                 return Episode(
                     id=ep["id"],

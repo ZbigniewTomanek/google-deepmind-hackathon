@@ -34,12 +34,12 @@ class EpisodeProcessor:
         self._job_app = job_app
         self._extraction_enabled = extraction_enabled
 
-    async def _embed_episode(self, episode_id: int, text: str, agent_id: str) -> None:
+    async def _embed_episode(self, episode_id: int, text: str, agent_id: str, target_schema: str | None = None) -> None:
         if self._embeddings is None:
             return
         vector = await self._embeddings.embed(text)
         if vector:
-            await self._repo.update_episode_embedding(episode_id, vector, agent_id)
+            await self._repo.update_episode_embedding(episode_id, vector, agent_id, target_schema=target_schema)
 
     async def _enqueue_extraction(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> int | None:
         if not self._job_app or not self._extraction_enabled:
@@ -66,7 +66,7 @@ class EpisodeProcessor:
         self, agent_id: str, text: str, metadata: dict, target_schema: str | None = None
     ) -> IngestionResult:
         episode_id = await self._store_episode(agent_id, text, "ingestion_text", target_schema)
-        await self._embed_episode(episode_id, text, agent_id)
+        await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
         return IngestionResult(
             status="stored",
@@ -85,7 +85,7 @@ class EpisodeProcessor:
     ) -> IngestionResult:
         text = content.decode("utf-8", errors="replace")
         episode_id = await self._store_episode(agent_id, text, "ingestion_document", target_schema)
-        await self._embed_episode(episode_id, text, agent_id)
+        await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
         return IngestionResult(
             status="stored",
@@ -101,7 +101,7 @@ class EpisodeProcessor:
             try:
                 event_text = json.dumps(event)
                 episode_id = await self._store_episode(agent_id, event_text, "ingestion_event", target_schema)
-                await self._embed_episode(episode_id, event_text, agent_id)
+                await self._embed_episode(episode_id, event_text, agent_id, target_schema)
                 await self._enqueue_extraction(agent_id, episode_id, target_schema)
                 stored += 1
             except Exception:

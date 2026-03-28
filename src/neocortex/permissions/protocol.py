@@ -37,6 +37,9 @@ class PermissionChecker(Protocol):
 
     async def list_for_schema(self, schema_name: str) -> list[PermissionInfo]: ...
 
+    async def list_all_permissions(self) -> list[PermissionInfo]:
+        """Return all permissions across all agents."""
+
     async def set_admin(self, agent_id: str, is_admin: bool) -> None:
         """Promote or demote an agent. Upserts into agent_registry.
 

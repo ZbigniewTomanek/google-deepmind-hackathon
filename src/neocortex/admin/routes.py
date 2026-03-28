@@ -58,12 +58,7 @@ async def list_permissions(
         return await permissions.list_for_agent(agent_id)
     if schema_name:
         return await permissions.list_for_schema(schema_name)
-    # No filter — return all agents' permissions
-    agents = await permissions.list_agents()
-    all_perms: list[PermissionInfo] = []
-    for agent in agents:
-        all_perms.extend(await permissions.list_for_agent(agent.agent_id))
-    return all_perms
+    return await permissions.list_all_permissions()
 
 
 @router.get("/permissions/{agent_id}", response_model=list[PermissionInfo])

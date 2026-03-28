@@ -117,6 +117,14 @@ class PostgresPermissionService:
         )
         return [PermissionInfo.model_validate(_record_to_dict(row)) for row in rows]
 
+    async def list_all_permissions(self) -> list[PermissionInfo]:
+        rows = await self._pg.fetch(
+            "SELECT id, agent_id, schema_name, can_read, can_write,"
+            " granted_by, created_at, updated_at"
+            " FROM graph_permissions ORDER BY agent_id, schema_name"
+        )
+        return [PermissionInfo.model_validate(_record_to_dict(row)) for row in rows]
+
     async def set_admin(self, agent_id: str, is_admin: bool) -> None:
         if agent_id == self._bootstrap_admin_id and not is_admin:
             raise ValueError(f"Cannot demote the bootstrap admin '{self._bootstrap_admin_id}'")

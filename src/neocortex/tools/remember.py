@@ -40,7 +40,7 @@ async def remember(
     if embeddings:
         vector = await embeddings.embed(text)
         if vector:
-            await repo.update_episode_embedding(episode_id, vector, agent_id)
+            await repo.update_episode_embedding(episode_id, vector, agent_id, target_schema=target_graph)
 
     # Enqueue extraction job if enabled
     extraction_job_id: int | None = None

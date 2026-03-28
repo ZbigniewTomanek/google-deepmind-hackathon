@@ -40,7 +40,9 @@ class MemoryRepository(Protocol):
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         """Return graph summary statistics."""
 
-    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+    async def update_episode_embedding(
+        self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
+    ) -> None:
         """Attach a vector embedding to an existing episode."""
 
     async def list_graphs(self, agent_id: str) -> list[str]:
