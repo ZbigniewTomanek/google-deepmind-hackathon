@@ -108,68 +108,25 @@ def get_session(session_id: str) -> SessionState | None:
     return _sessions.get(session_id)
 
 
-async def run_agent(
-    agent_name: str,
-    prompt: str,
-    session_id: str = "",
-    callback_url: str | None = None,
-    context: list[ContextMessage] | None = None,
-) -> SessionState:
-    """Run an agent asynchronously via the opencode CLI.
-
-    Args:
-        agent_name: Name of the compiled agent to run.
-        prompt: User's message/prompt.
-        session_id: Optional session ID to resume (auto-generated if empty).
-        callback_url: Optional URL to POST results when agent completes.
-        context: Optional prepopulated conversation history.
-
-    Returns:
-        SessionState with status, output, and error.
-    """
-    if not session_id:
-        session_id = f"sess-{uuid.uuid4().hex[:12]}"
-
-    session = SessionState(session_id=session_id, agent_name=agent_name, status="running")
-    _sessions[session_id] = session
-
-    # Inject context into prompt
-    full_prompt = _build_prompt_with_context(prompt, context)
-
-    # Resolve agent path
+def _resolve_agent(agent_name: str) -> tuple[str, str | None]:
+    """Resolve agent name to agent ref. Returns (agent_ref, error)."""
     agents_dir = _agents_dir()
     agent_file = agents_dir / f"{agent_name}.md"
-    if not agent_file.exists():
-        matches = list(agents_dir.rglob(f"{agent_name}.md"))
-        if matches:
-            agent_file = matches[0]
-            rel = agent_file.relative_to(agents_dir)
-            agent_ref = str(rel.with_suffix(""))
-        else:
-            session.status = "failed"
-            session.error = f"Agent '{agent_name}' not found in {agents_dir}"
-            if callback_url:
-                asyncio.create_task(
-                    _fire_callback(
-                        callback_url,
-                        CallbackPayload(
-                            session_id=session.session_id,
-                            agent_name=session.agent_name,
-                            status=session.status,
-                            error=session.error,
-                            full_context=context or [],
-                        ),
-                    )
-                )
-            return session
-    else:
-        agent_ref = agent_name
+    if agent_file.exists():
+        return agent_name, None
+    matches = list(agents_dir.rglob(f"{agent_name}.md"))
+    if matches:
+        rel = matches[0].relative_to(agents_dir)
+        return str(rel.with_suffix("")), None
+    return "", f"Agent '{agent_name}' not found in {agents_dir}"
 
-    # Launch opencode CLI via the running opencode-web server
-    # Using --attach makes sessions visible in the web UI
+
+async def _run_subprocess(session: SessionState, agent_ref: str, full_prompt: str, callback_url: str | None, context: list[ContextMessage] | None) -> None:
+    """Run the opencode subprocess and update session state."""
     opencode_url = f"http://localhost:{os.environ.get('OPENCODE_PORT', '4098')}"
     cmd = ["opencode", "run", "--attach", opencode_url, "--agent", agent_ref, full_prompt]
 
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -203,7 +160,7 @@ async def run_agent(
             "opencode CLI not found. Install it or ensure it's in PATH. "
             "Falling back to direct tool execution."
         )
-        session.output = await _fallback_direct_run(agent_name, prompt)
+        session.output = await _fallback_direct_run(session.agent_name, full_prompt)
         if session.output:
             session.status = "completed"
             session.error = ""
@@ -214,9 +171,8 @@ async def run_agent(
 
     # Fire callback if provided
     if callback_url:
-        # Build full_context: original context + agent response
         result_context = list(context or [])
-        result_context.append(ContextMessage(role="user", content=prompt))
+        result_context.append(ContextMessage(role="user", content=full_prompt))
         if session.output:
             result_context.append(ContextMessage(role="assistant", content=session.output))
 
@@ -234,6 +190,54 @@ async def run_agent(
             )
         )
 
+
+async def start_agent(
+    agent_name: str,
+    prompt: str,
+    session_id: str = "",
+    callback_url: str | None = None,
+    context: list[ContextMessage] | None = None,
+) -> SessionState:
+    """Start an agent in the background. Returns immediately with status=running."""
+    if not session_id:
+        session_id = f"sess-{uuid.uuid4().hex[:12]}"
+
+    session = SessionState(session_id=session_id, agent_name=agent_name, status="running")
+    _sessions[session_id] = session
+
+    full_prompt = _build_prompt_with_context(prompt, context)
+    agent_ref, error = _resolve_agent(agent_name)
+    if error:
+        session.status = "failed"
+        session.error = error
+        return session
+
+    asyncio.create_task(_run_subprocess(session, agent_ref, full_prompt, callback_url, context))
+    return session
+
+
+async def run_agent(
+    agent_name: str,
+    prompt: str,
+    session_id: str = "",
+    callback_url: str | None = None,
+    context: list[ContextMessage] | None = None,
+) -> SessionState:
+    """Run an agent synchronously — waits for completion before returning."""
+    if not session_id:
+        session_id = f"sess-{uuid.uuid4().hex[:12]}"
+
+    session = SessionState(session_id=session_id, agent_name=agent_name, status="running")
+    _sessions[session_id] = session
+
+    full_prompt = _build_prompt_with_context(prompt, context)
+    agent_ref, error = _resolve_agent(agent_name)
+    if error:
+        session.status = "failed"
+        session.error = error
+        return session
+
+    await _run_subprocess(session, agent_ref, full_prompt, callback_url, context)
     return session
 
 
