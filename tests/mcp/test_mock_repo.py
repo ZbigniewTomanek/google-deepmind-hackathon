@@ -82,3 +82,65 @@ async def test_get_stats_for_schema(mock_repo) -> None:
     stats = await mock_repo.get_stats_for_schema("agent-a", "any_schema")
     assert stats.total_episodes == 1
     assert stats.total_nodes == 0
+
+
+# --- list_nodes_page tests ---
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_page_returns_all_nodes(mock_repo) -> None:
+    nt = await mock_repo.get_or_create_node_type("agent", "Person")
+    await mock_repo.upsert_node("agent", "Alice", nt.id, content="Alice")
+    await mock_repo.upsert_node("agent", "Bob", nt.id, content="Bob")
+
+    nodes = await mock_repo.list_nodes_page("agent")
+    assert len(nodes) == 2
+    names = {n.name for n in nodes}
+    assert names == {"Alice", "Bob"}
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_page_filters_by_type(mock_repo) -> None:
+    nt_person = await mock_repo.get_or_create_node_type("agent", "Person")
+    nt_org = await mock_repo.get_or_create_node_type("agent", "Organization")
+    await mock_repo.upsert_node("agent", "Alice", nt_person.id)
+    await mock_repo.upsert_node("agent", "Acme", nt_org.id)
+
+    nodes = await mock_repo.list_nodes_page("agent", type_id=nt_person.id)
+    assert len(nodes) == 1
+    assert nodes[0].name == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_page_respects_limit(mock_repo) -> None:
+    nt = await mock_repo.get_or_create_node_type("agent", "Person")
+    for name in ["Alice", "Bob", "Charlie", "Diana", "Eve"]:
+        await mock_repo.upsert_node("agent", name, nt.id)
+
+    nodes = await mock_repo.list_nodes_page("agent", limit=3)
+    assert len(nodes) == 3
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_page_excludes_forgotten(mock_repo) -> None:
+    nt = await mock_repo.get_or_create_node_type("agent", "Person")
+    alice = await mock_repo.upsert_node("agent", "Alice", nt.id)
+    await mock_repo.upsert_node("agent", "Bob", nt.id)
+    await mock_repo.mark_forgotten("agent", [alice.id])
+
+    nodes = await mock_repo.list_nodes_page("agent")
+    assert len(nodes) == 1
+    assert nodes[0].name == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_page_sorts_by_importance(mock_repo) -> None:
+    nt = await mock_repo.get_or_create_node_type("agent", "Person")
+    await mock_repo.upsert_node("agent", "Alice", nt.id, importance=0.3)
+    await mock_repo.upsert_node("agent", "Bob", nt.id, importance=0.9)
+    await mock_repo.upsert_node("agent", "Charlie", nt.id, importance=0.6)
+
+    nodes = await mock_repo.list_nodes_page("agent")
+    assert nodes[0].name == "Bob"
+    assert nodes[1].name == "Charlie"
+    assert nodes[2].name == "Alice"
