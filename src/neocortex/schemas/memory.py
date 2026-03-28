@@ -63,3 +63,52 @@ class DiscoverResult(BaseModel):
     edge_types: list[TypeInfo]
     stats: GraphStats
     graphs: list[str] = []
+
+
+# --- Granular Discovery Models ---
+
+
+class DomainInfo(BaseModel):
+    slug: str
+    name: str
+    description: str
+    schema_name: str | None = None
+
+
+class GraphSummary(BaseModel):
+    """Discovery-facing graph info (not to be confused with schemas.graph.GraphInfo)."""
+
+    schema_name: str
+    is_shared: bool
+    purpose: str
+    stats: GraphStats
+
+
+class TypeDetail(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    count: int = 0
+    connected_edge_types: list[str] = []
+    sample_names: list[str] = []
+
+
+class DiscoverDomainsResult(BaseModel):
+    domains: list[DomainInfo]
+    message: str | None = None
+
+
+class DiscoverGraphsResult(BaseModel):
+    graphs: list[GraphSummary]
+
+
+class DiscoverOntologyResult(BaseModel):
+    graph_name: str
+    node_types: list[TypeInfo]
+    edge_types: list[TypeInfo]
+    stats: GraphStats
+
+
+class DiscoverDetailsResult(BaseModel):
+    graph_name: str
+    type_detail: TypeDetail
