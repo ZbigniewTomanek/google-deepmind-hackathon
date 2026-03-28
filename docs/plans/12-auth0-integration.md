@@ -62,7 +62,7 @@ and `auth0.md` (gitignored). `.gitignore` was already updated to exclude both fi
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | Auth0 Account & Tenant Setup | DONE | Tenant `dev-vexy1xpbs6te6c53.us.auth0.com`, API + 2 apps + 3 roles + test user created. `.env.auth0` written. OIDC discovery verified. M2M token tested. | — |
-| 2 | Add Auth0 Settings to MCPSettings | PENDING | `.gitignore` already updated | |
+| 2 | Add Auth0 Settings to MCPSettings | DONE | Added `auth0` to auth_mode literal, added 6 Auth0 config fields to MCPSettings | `feat(auth): add Auth0 configuration fields to MCPSettings` |
 | 3 | Create Auth0 Auth Provider for MCP Server | PENDING | | |
 | 4 | Update Ingestion API for Auth0 JWT Validation | PENDING | | |
 | 5 | Auto-Provision Auth0 Identities into Permissions | PENDING | | |
