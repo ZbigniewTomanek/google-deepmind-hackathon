@@ -501,11 +501,11 @@ For now, accept the manual cleanup path.
 | 1 | Fix seed domain schema provisioning | DONE | is_shared flag for world-readable shared schemas, seed schema provisioning on bootstrap, _ensure_schema validates existence |
 | 2 | Domain context in extraction pipeline | DONE | domain_hint added to OntologyAgentDeps, ExtractorAgentDeps, run_extraction, extract_episode task, and DomainRouter._enqueue_extraction |
 | 3 | Discovery response models + protocol | DONE | Added DomainInfo, GraphSummary, TypeDetail, DiscoverDomainsResult/GraphsResult/OntologyResult/DetailsResult models; get_stats_for_schema + get_type_detail on protocol/adapter/mock; list_domains on DomainRouter |
-| 4 | Replace discover with 4 granular tools | TODO | |
+| 4 | Replace discover with 4 granular tools | DONE | discover_domains, discover_graphs, discover_ontology, discover_details; updated server instructions, tests, and multi-graph adapter test |
 | 5 | TUI rebuild | TODO | |
 | 6 | Tests and validation | TODO | |
 
-**Last stage completed:** Stage 3 — Discovery response models + protocol
+**Last stage completed:** Stage 4 — Replace discover with 4 granular tools
 **Last updated by:** plan-runner-agent
 
 ## Issues
