@@ -103,20 +103,25 @@ class GraphServiceAdapter:
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
-        metadata = {"context": context} if context else {}
+        episode_metadata = metadata or {}
+        if context:
+            episode_metadata["context"] = context
         if self._pool is None:
             raise RuntimeError("Connection pool required for store_episode_to.")
 
         async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata)
-                   VALUES ($1, $2, $3, $4::jsonb)
+                """INSERT INTO episode (agent_id, content, source_type, metadata, importance)
+                   VALUES ($1, $2, $3, $4::jsonb, $5)
                    RETURNING id""",
                 agent_id,
                 content,
                 source_type,
-                json.dumps(metadata),
+                json.dumps(episode_metadata),
+                importance,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")

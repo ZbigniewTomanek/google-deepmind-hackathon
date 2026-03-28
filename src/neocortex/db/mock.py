@@ -80,6 +80,8 @@ class InMemoryRepository:
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1

@@ -113,6 +113,11 @@ async def test_recall_merges_results_across_agent_and_shared_graphs(pg_service) 
     personal_schema = await manager.ensure_default_graphs(agent_id)
 
     try:
+        permissions = await _make_admin_permissions()
+        await permissions.grant(agent_id, shared_schema, can_read=True, can_write=False, granted_by="admin")
+        router = GraphRouter(manager, pg_service.pool, permissions=permissions)
+        adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
+
         await adapter.store_episode(agent_id=agent_id, content=f"Alice likes pizza {suffix}", source_type="mcp")
         await _insert_concept_node(
             pg_service,
@@ -177,6 +182,11 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
     personal_schema = await manager.ensure_default_graphs(agent_id)
 
     try:
+        permissions = await _make_admin_permissions()
+        await permissions.grant(agent_id, shared_schema, can_read=True, can_write=False, granted_by="admin")
+        router = GraphRouter(manager, pg_service.pool, permissions=permissions)
+        adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
+
         await adapter.store_episode(agent_id=agent_id, content=f"Discover episode {suffix}", source_type="mcp")
         await _insert_concept_node(
             pg_service,
