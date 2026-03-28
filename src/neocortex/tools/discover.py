@@ -1,6 +1,6 @@
 from fastmcp import Context
 
-from neocortex.auth.dependencies import get_agent_id_from_context
+from neocortex.auth.dependencies import ensure_provisioned, get_agent_id_from_context
 from neocortex.schemas.memory import DiscoverResult, GraphStats
 
 
@@ -13,6 +13,7 @@ async def discover(ctx: Context | None = None) -> DiscoverResult:
 
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
+    await ensure_provisioned(ctx, agent_id)
     node_types = await repo.get_node_types(agent_id=agent_id)
     edge_types = await repo.get_edge_types(agent_id=agent_id)
     stats = await repo.get_stats(agent_id=agent_id)
