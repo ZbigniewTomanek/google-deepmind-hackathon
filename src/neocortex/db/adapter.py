@@ -13,7 +13,7 @@ from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
-from neocortex.scoring import HybridWeights, compute_hybrid_score, compute_recency_score
+from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
 
 if TYPE_CHECKING:
     from neocortex.graph_router import GraphRouter
@@ -661,6 +661,36 @@ class GraphServiceAdapter:
             rows = await conn.fetch("SELECT name FROM node ORDER BY name")
         return [str(row["name"]) for row in rows]
 
+    # ── Access Tracking ──
+
+    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+        if not node_ids:
+            return
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE node SET access_count = access_count + 1, last_accessed_at = now() "
+                "WHERE id = ANY($1::int[])",
+                node_ids,
+            )
+
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+        if not episode_ids:
+            return
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE episode SET access_count = access_count + 1, last_accessed_at = now() "
+                "WHERE id = ANY($1::int[])",
+                episode_ids,
+            )
+
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         if self._pool is None or self._router is None:
             return []
@@ -682,6 +712,8 @@ class GraphServiceAdapter:
             vector=self._settings.recall_weight_vector,
             text=self._settings.recall_weight_text,
             recency=self._settings.recall_weight_recency,
+            activation=self._settings.recall_weight_activation,
+            importance=self._settings.recall_weight_importance,
         )
         half_life = self._settings.recall_recency_half_life_hours
 
@@ -732,7 +764,25 @@ class GraphServiceAdapter:
             hit = info["hit"]
             created_at = hit.get("created_at")
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(info["vector_sim"], info["text_rank"], recency, weights)
+
+            # Compute activation from access_count and last_accessed_at if available
+            access_count = int(hit.get("access_count") or 0)
+            last_accessed = hit.get("last_accessed_at") or created_at
+            activation = (
+                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                if last_accessed
+                else None
+            )
+            node_importance = float(hit.get("importance") or 0.5)
+
+            score = compute_hybrid_score(
+                info["vector_sim"],
+                info["text_rank"],
+                recency,
+                activation,
+                node_importance,
+                weights,
+            )
             node_results.append(
                 RecallItem(
                     item_id=nid,
@@ -740,6 +790,8 @@ class GraphServiceAdapter:
                     content=str(hit.get("content") or ""),
                     item_type=type_names.get(int(hit["type_id"]), "Unknown"),
                     score=score,
+                    activation_score=activation,
+                    importance=node_importance,
                     source=str(hit["source"]) if hit.get("source") is not None else None,
                     source_kind="node",
                     graph_name=None,
@@ -774,7 +826,27 @@ class GraphServiceAdapter:
             ep = info["episode"]
             created_at = ep.created_at if hasattr(ep, "created_at") else ep.get("created_at")
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(info["vector_sim"], info["text_rank"], recency, weights)
+
+            # Episode activation
+            ep_access = int(ep.access_count if hasattr(ep, "access_count") else ep.get("access_count", 0))
+            ep_last_acc = (
+                ep.last_accessed_at if hasattr(ep, "last_accessed_at") else ep.get("last_accessed_at")
+            ) or created_at
+            activation = (
+                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                if ep_last_acc
+                else None
+            )
+            ep_importance = float(ep.importance if hasattr(ep, "importance") else ep.get("importance", 0.5))
+
+            score = compute_hybrid_score(
+                info["vector_sim"],
+                info["text_rank"],
+                recency,
+                activation,
+                ep_importance,
+                weights,
+            )
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -784,6 +856,8 @@ class GraphServiceAdapter:
                     content=content,
                     item_type="Episode",
                     score=score,
+                    activation_score=activation,
+                    importance=ep_importance,
                     source=source_type,
                     source_kind="episode",
                     graph_name=None,
@@ -809,6 +883,8 @@ class GraphServiceAdapter:
             vector=self._settings.recall_weight_vector,
             text=self._settings.recall_weight_text,
             recency=self._settings.recall_weight_recency,
+            activation=self._settings.recall_weight_activation,
+            importance=self._settings.recall_weight_importance,
         )
         half_life = self._settings.recall_recency_half_life_hours
 
@@ -822,6 +898,7 @@ class GraphServiceAdapter:
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
                               END AS vector_sim,
+                              access_count, last_accessed_at, importance,
                               created_at
                        FROM node
                        WHERE tsv @@ plainto_tsquery('english', $1)
@@ -835,7 +912,9 @@ class GraphServiceAdapter:
                 )
                 escaped_query = _escape_ilike(query)
                 episode_rows = await conn.fetch(
-                    """SELECT id, content, source_type, created_at,
+                    """SELECT id, content, source_type,
+                              access_count, last_accessed_at, importance,
+                              created_at,
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
@@ -856,6 +935,7 @@ class GraphServiceAdapter:
                     """SELECT id, name, content, source, type_id,
                               ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
                               NULL::double precision AS vector_sim,
+                              access_count, last_accessed_at, importance,
                               created_at
                        FROM node
                        WHERE tsv @@ plainto_tsquery('english', $1)
@@ -866,7 +946,9 @@ class GraphServiceAdapter:
                 )
                 escaped_query = _escape_ilike(query)
                 episode_rows = await conn.fetch(
-                    """SELECT id, content, source_type, created_at,
+                    """SELECT id, content, source_type,
+                              access_count, last_accessed_at, importance,
+                              created_at,
                               NULL::double precision AS vector_sim
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
@@ -886,7 +968,24 @@ class GraphServiceAdapter:
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(vector_sim, text_rank, recency, weights)
+
+            access_count = int(row["access_count"] or 0)
+            last_accessed = row["last_accessed_at"] or created_at
+            activation = (
+                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                if last_accessed
+                else None
+            )
+            node_importance = float(row["importance"]) if row["importance"] is not None else 0.5
+
+            score = compute_hybrid_score(
+                vector_sim,
+                text_rank,
+                recency,
+                activation,
+                node_importance,
+                weights,
+            )
             results.append(
                 RecallItem(
                     item_id=int(row["id"]),
@@ -894,6 +993,8 @@ class GraphServiceAdapter:
                     content=str(row["content"] or ""),
                     item_type=type_names.get(int(row["type_id"]), "Unknown"),
                     score=score,
+                    activation_score=activation,
+                    importance=node_importance,
                     source=str(row["source"]) if row["source"] is not None else None,
                     source_kind="node",
                     graph_name=schema_name,
@@ -904,7 +1005,24 @@ class GraphServiceAdapter:
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(vector_sim, None, recency, weights)
+
+            ep_access = int(row["access_count"] or 0)
+            ep_last_acc = row["last_accessed_at"] or created_at
+            activation = (
+                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                if ep_last_acc
+                else None
+            )
+            ep_importance = float(row["importance"]) if row["importance"] is not None else 0.5
+
+            score = compute_hybrid_score(
+                vector_sim,
+                None,
+                recency,
+                activation,
+                ep_importance,
+                weights,
+            )
             results.append(
                 RecallItem(
                     item_id=int(row["id"]),
@@ -912,6 +1030,8 @@ class GraphServiceAdapter:
                     content=str(row["content"]),
                     item_type="Episode",
                     score=score,
+                    activation_score=activation,
+                    importance=ep_importance,
                     source=str(row["source_type"]) if row["source_type"] is not None else None,
                     source_kind="episode",
                     graph_name=schema_name,

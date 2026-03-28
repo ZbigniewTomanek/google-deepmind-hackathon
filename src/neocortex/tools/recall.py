@@ -103,6 +103,15 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     all_results = results + node_results
     all_results.sort(key=lambda item: item.score, reverse=True)
 
+    # Record access for returned results (ACT-R activation tracking)
+    final_results = all_results[:limit]
+    recalled_node_ids = [r.item_id for r in final_results if r.source_kind == "node"]
+    recalled_episode_ids = [r.item_id for r in final_results if r.source_kind == "episode"]
+    if recalled_node_ids:
+        await repo.record_node_access(agent_id, recalled_node_ids)
+    if recalled_episode_ids:
+        await repo.record_episode_access(agent_id, recalled_episode_ids)
+
     logger.bind(action_log=True).info(
         "recall_with_graph_traversal",
         agent_id=agent_id,
@@ -112,7 +121,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     )
 
     return RecallResult(
-        results=all_results[:limit],
-        total=len(all_results[:limit]),
+        results=final_results,
+        total=len(final_results),
         query=query,
     )
