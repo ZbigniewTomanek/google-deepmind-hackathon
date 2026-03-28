@@ -25,6 +25,8 @@ class MemoryRepository(Protocol):
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
         """Store an episode in an explicit target schema (for shared graph writes)."""
 
