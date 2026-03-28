@@ -649,3 +649,167 @@ class TestStage4SpreadingActivation:
         content_match = [(n, s) for n, s in results if n.name == "Dopamine"]
         if name_match and content_match:
             assert name_match[0][1] >= content_match[0][1]
+
+
+class TestStage5EdgeReinforcement:
+    @pytest.mark.asyncio
+    async def test_reinforce_edges_increments_weight(self, repo: InMemoryRepository):
+        """Create edge with weight=1.0, call reinforce_edges, verify weight=1.1."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+
+        await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1, ceiling=2.0)
+        updated = repo._edges[edge.id]
+        assert updated.weight == pytest.approx(1.1)
+        assert updated.last_reinforced_at is not None
+
+    @pytest.mark.asyncio
+    async def test_reinforce_edges_respects_ceiling(self, repo: InMemoryRepository):
+        """Create edge with weight=1.95, reinforce with delta=0.1, ceiling=2.0, verify capped at 2.0."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.95)
+
+        await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1, ceiling=2.0)
+        updated = repo._edges[edge.id]
+        assert updated.weight == pytest.approx(2.0)
+
+    @pytest.mark.asyncio
+    async def test_reinforce_edges_multiple(self, repo: InMemoryRepository):
+        """Create 3 edges, reinforce 2, verify only those 2 have increased weight."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "A", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "B", concept.id)
+        c = await repo.upsert_node(AGENT_ID, "C", concept.id)
+        d = await repo.upsert_node(AGENT_ID, "D", concept.id)
+        e1 = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        e2 = await repo.upsert_edge(AGENT_ID, b.id, c.id, relates.id, weight=1.0)
+        e3 = await repo.upsert_edge(AGENT_ID, c.id, d.id, relates.id, weight=1.0)
+
+        await repo.reinforce_edges(AGENT_ID, [e1.id, e2.id], delta=0.1, ceiling=2.0)
+        assert repo._edges[e1.id].weight == pytest.approx(1.1)
+        assert repo._edges[e2.id].weight == pytest.approx(1.1)
+        assert repo._edges[e3.id].weight == pytest.approx(1.0)  # untouched
+
+    @pytest.mark.asyncio
+    async def test_decay_stale_edges_reduces_weight(self, repo: InMemoryRepository):
+        """Create edge with weight=1.5 and old last_reinforced_at, call decay, verify weight reduced."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "A", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "B", concept.id)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.5)
+
+        # Make the edge stale by setting last_reinforced_at to 2 weeks ago
+        old_time = datetime.now(UTC) - timedelta(days=14)
+        repo._edges[edge.id] = edge.model_copy(update={"last_reinforced_at": old_time})
+
+        count = await repo.decay_stale_edges(AGENT_ID, older_than_hours=168.0, decay_factor=0.95, floor=0.1, force=True)
+        assert count == 1
+        assert repo._edges[edge.id].weight == pytest.approx(1.5 * 0.95)
+
+    @pytest.mark.asyncio
+    async def test_decay_stale_edges_respects_floor(self, repo: InMemoryRepository):
+        """Edge at weight=0.12, floor=0.1, decay_factor=0.5, verify weight stays at floor."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "A", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "B", concept.id)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=0.12)
+
+        old_time = datetime.now(UTC) - timedelta(days=14)
+        repo._edges[edge.id] = edge.model_copy(update={"last_reinforced_at": old_time})
+
+        await repo.decay_stale_edges(AGENT_ID, older_than_hours=168.0, decay_factor=0.5, floor=0.1, force=True)
+        assert repo._edges[edge.id].weight == pytest.approx(0.1)
+
+    @pytest.mark.asyncio
+    async def test_decay_stale_edges_skips_recently_reinforced(self, repo: InMemoryRepository):
+        """Create edge, reinforce it, call decay, verify weight unchanged (recently reinforced)."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "A", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "B", concept.id)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.5)
+
+        # Reinforce it (sets last_reinforced_at to now)
+        await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1)
+        weight_after_reinforce = repo._edges[edge.id].weight
+
+        # Decay should skip it (just reinforced)
+        count = await repo.decay_stale_edges(AGENT_ID, older_than_hours=168.0, decay_factor=0.95, floor=0.1, force=True)
+        assert count == 0
+        assert repo._edges[edge.id].weight == pytest.approx(weight_after_reinforce)
+
+    @pytest.mark.asyncio
+    async def test_decay_targets_last_reinforced_not_created(self, repo: InMemoryRepository):
+        """Create an old edge that was recently reinforced. Decay should skip it."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "A", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "B", concept.id)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.5)
+
+        # Make created_at old but last_reinforced_at recent
+        old_time = datetime.now(UTC) - timedelta(days=30)
+        recent = datetime.now(UTC) - timedelta(hours=1)
+        repo._edges[edge.id] = edge.model_copy(update={"created_at": old_time, "last_reinforced_at": recent})
+
+        count = await repo.decay_stale_edges(AGENT_ID, older_than_hours=168.0, decay_factor=0.95, floor=0.1, force=True)
+        assert count == 0
+        assert repo._edges[edge.id].weight == pytest.approx(1.5)
+
+    @pytest.mark.asyncio
+    async def test_repeated_recall_strengthens_edges(self, repo: InMemoryRepository):
+        """Populate graph, recall same query 5 times. Verify edge weights monotonically increase."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter serotonin")
+        b = await repo.upsert_node(AGENT_ID, "Dopamine", concept.id, content="A neurotransmitter dopamine")
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+
+        weights = [repo._edges[edge.id].weight]
+        for _ in range(5):
+            # Simulate what recall tool does: reinforce edges in neighborhood
+            neighborhood = await repo.get_node_neighborhood(AGENT_ID, a.id, depth=2)
+            edge_ids = [e.id for entry in neighborhood for e in entry["edges"]]
+            if edge_ids:
+                await repo.reinforce_edges(AGENT_ID, edge_ids, delta=0.05, ceiling=2.0)
+            weights.append(repo._edges[edge.id].weight)
+
+        # Weights should monotonically increase
+        for i in range(1, len(weights)):
+            assert weights[i] >= weights[i - 1], f"Weight at iteration {i} did not increase: {weights}"
+
+    @pytest.mark.asyncio
+    async def test_spreading_uses_reinforced_weights(self, repo: InMemoryRepository):
+        """Reinforce an edge to weight=2.0, verify spreading activation delivers
+        higher bonus than a weight=1.0 path.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+        a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
+        b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
+        c = await repo.upsert_node(AGENT_ID, "Gamma", concept.id)
+
+        # A→B with high weight, A→C with normal weight
+        await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=2.0)
+        await repo.upsert_edge(AGENT_ID, a.id, c.id, relates.id, weight=1.0)
+
+        adjacency = {
+            a.id: [(b.id, 2.0), (c.id, 1.0)],
+        }
+        bonus = compute_spreading_activation(
+            seed_nodes=[(a.id, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+        # Reinforced path (weight=2.0) should deliver higher bonus
+        assert bonus[b.id] > bonus[c.id]

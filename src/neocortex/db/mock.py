@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
@@ -456,6 +456,37 @@ class InMemoryRepository:
             if ep["id"] in episode_ids:
                 ep["access_count"] = ep.get("access_count", 0) + 1
                 ep["last_accessed_at"] = now
+
+    # ── Edge Reinforcement ──
+
+    async def reinforce_edges(
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+    ) -> None:
+        now = datetime.now(UTC)
+        for eid in edge_ids:
+            edge = self._edges.get(eid)
+            if edge is not None:
+                new_weight = min(edge.weight + delta, ceiling)
+                self._edges[eid] = edge.model_copy(update={"weight": new_weight, "last_reinforced_at": now})
+
+    async def decay_stale_edges(
+        self,
+        agent_id: str,
+        older_than_hours: float = 168.0,
+        decay_factor: float = 0.95,
+        floor: float = 0.1,
+        force: bool = False,
+    ) -> int:
+        now = datetime.now(UTC)
+        threshold = now - timedelta(hours=older_than_hours)
+        count = 0
+        for eid, edge in list(self._edges.items()):
+            reinforced_at = edge.last_reinforced_at or edge.created_at
+            if reinforced_at < threshold and edge.weight > floor:
+                new_weight = max(edge.weight * decay_factor, floor)
+                self._edges[eid] = edge.model_copy(update={"weight": new_weight})
+                count += 1
+        return count
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         sigs = []

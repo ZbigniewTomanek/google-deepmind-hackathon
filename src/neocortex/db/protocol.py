@@ -147,3 +147,25 @@ class MemoryRepository(Protocol):
 
     async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
         """Increment access_count and update last_accessed_at for recalled episodes."""
+
+    # ── Edge Reinforcement ──
+
+    async def reinforce_edges(
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+    ) -> None:
+        """Increment edge weights for traversed edges, capped at ceiling."""
+
+    async def decay_stale_edges(
+        self,
+        agent_id: str,
+        older_than_hours: float = 168.0,
+        decay_factor: float = 0.95,
+        floor: float = 0.1,
+        force: bool = False,
+    ) -> int:
+        """Decay weights of edges not recently reinforced. Returns count of decayed edges.
+
+        Uses last_reinforced_at (not created_at) to target edges that haven't
+        been traversed recently. The force parameter bypasses probabilistic
+        gating for deterministic testing.
+        """

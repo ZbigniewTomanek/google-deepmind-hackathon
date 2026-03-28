@@ -713,6 +713,51 @@ class GraphServiceAdapter:
                 episode_ids,
             )
 
+    # ── Edge Reinforcement ──
+
+    async def reinforce_edges(
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+    ) -> None:
+        if not edge_ids:
+            return
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE edge SET weight = LEAST(weight + $2, $3), last_reinforced_at = now() "
+                "WHERE id = ANY($1::int[])",
+                edge_ids,
+                delta,
+                ceiling,
+            )
+
+    async def decay_stale_edges(
+        self,
+        agent_id: str,
+        older_than_hours: float = 168.0,
+        decay_factor: float = 0.95,
+        floor: float = 0.1,
+        force: bool = False,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            result = await conn.execute(
+                "UPDATE edge SET weight = GREATEST(weight * $1, $2) "
+                "WHERE last_reinforced_at < now() - make_interval(hours => $3) "
+                "AND weight > $2",
+                decay_factor,
+                floor,
+                older_than_hours,
+            )
+        # asyncpg returns "UPDATE N" string
+        count = int(result.split()[-1]) if result else 0
+        return count
+
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         if self._pool is None or self._router is None:
             return []
