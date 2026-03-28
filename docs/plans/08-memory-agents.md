@@ -369,9 +369,9 @@ psql -h localhost -U neocortex -d neocortex -c \
 | 1. Token & env setup | DONE | Added chat-agent-token and joke-agent-token to dev_tokens.json; added NEOCORTEX_CHAT_TOKEN and NEOCORTEX_JOKE_TOKEN to .env and .env.example |
 | 2. Dual MCP config | DONE | Added neocortex-chat and neocortex-joke MCP servers with auth headers; kept original neocortex server for existing agents |
 | 3. chat_with_memory agent | DONE | Created chat_with_memory.py with 4-step workflow (recall, analyze, joke routing, respond+remember); permissions restrict to neocortex-chat MCP only |
-| 4. joke_with_memory subagent | TODO | |
+| 4. joke_with_memory subagent | DONE | Created joke_with_memory.py with 3-step workflow (recall preferences, generate joke, remember feedback); permissions restrict to neocortex-joke MCP only |
 | 5. Build pipeline registration | TODO | |
 | 6. Validate compiled output | TODO | |
 
-Last stage completed: Stage 3 — chat_with_memory primary agent
+Last stage completed: Stage 4 — joke_with_memory subagent
 Last updated by: plan-runner-agent
