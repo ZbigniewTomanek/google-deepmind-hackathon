@@ -21,6 +21,7 @@ import httpx
 from neocortex.config import PostgresConfig
 
 BASE_URL = os.environ.get("NEOCORTEX_INGESTION_BASE_URL", "http://127.0.0.1:8001")
+ADMIN_TOKEN = os.environ.get("NEOCORTEX_ADMIN_TOKEN", "admin-token-neocortex")
 ALICE_TOKEN = os.environ.get("NEOCORTEX_ALICE_TOKEN", "alice-token")
 BOB_TOKEN = os.environ.get("NEOCORTEX_BOB_TOKEN", "bob-token")
 
@@ -161,6 +162,68 @@ async def main() -> None:
         )
     if resp.status_code != 415:
         raise AssertionError(f"Expected 415, got {resp.status_code}")
+
+    # --- Shared graph target_graph permission enforcement ---
+    print("Verifying target_graph permission enforcement...")
+    # Create shared graph and grant Alice write, Bob read-only
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10.0) as client:
+        resp = await client.post(
+            "/admin/graphs",
+            headers=_headers(ADMIN_TOKEN),
+            json={"purpose": f"ingest_test_{suffix[:6]}"},
+        )
+        if resp.status_code != 200:
+            raise AssertionError(f"Failed to create shared graph: {resp.status_code} {resp.text}")
+        created_schema = resp.json().get("schema_name", "")
+        print(f"  Created shared graph: {created_schema}")
+
+        # Grant Alice read+write
+        resp = await client.post(
+            "/admin/permissions",
+            headers=_headers(ADMIN_TOKEN),
+            json={"agent_id": "alice", "schema_name": created_schema, "can_read": True, "can_write": True},
+        )
+        assert resp.status_code == 200, f"Grant alice failed: {resp.status_code}"
+
+        # Grant Bob read-only
+        resp = await client.post(
+            "/admin/permissions",
+            headers=_headers(ADMIN_TOKEN),
+            json={"agent_id": "bob", "schema_name": created_schema, "can_read": True, "can_write": False},
+        )
+        assert resp.status_code == 200, f"Grant bob failed: {resp.status_code}"
+
+    # Alice can write to shared graph
+    shared_text = f"alice shared ingestion {suffix}"
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10.0) as client:
+        resp = await client.post(
+            "/ingest/text",
+            headers=_headers(ALICE_TOKEN),
+            json={"text": shared_text, "target_graph": created_schema},
+        )
+    if resp.status_code != 200:
+        raise AssertionError(f"Alice write to shared graph failed: {resp.status_code} {resp.text}")
+    print("  [PASS] Alice can write to shared graph with target_graph")
+
+    # Bob cannot write to shared graph (read-only)
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10.0) as client:
+        resp = await client.post(
+            "/ingest/text",
+            headers=_headers(BOB_TOKEN),
+            json={"text": f"bob denied {suffix}", "target_graph": created_schema},
+        )
+    if resp.status_code != 403:
+        raise AssertionError(f"Expected 403 for Bob write to shared graph, got {resp.status_code}")
+    print("  [PASS] Bob denied write to shared graph (403)")
+
+    # Cleanup: drop shared graph
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10.0) as client:
+        resp = await client.delete(
+            f"/admin/graphs/{created_schema}",
+            headers=_headers(ADMIN_TOKEN),
+        )
+        if resp.status_code != 200:
+            print(f"  [WARN] Cleanup failed: {resp.status_code}")
 
     # --- Database verification ---
     print("Verifying PostgreSQL data isolation...")

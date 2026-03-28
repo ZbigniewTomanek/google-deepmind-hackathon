@@ -140,6 +140,20 @@ async def main() -> None:
     if bob_schema not in bob_discover["graphs"] or shared_schema not in bob_discover["graphs"]:
         raise AssertionError(f"Bob discover graphs were incomplete: {bob_discover}")
 
+    print("Verifying discover cognitive stats shape...")
+    alice_stats = alice_discover.get("stats", {})
+    for key in (
+        "total_nodes",
+        "total_edges",
+        "total_episodes",
+        "forgotten_nodes",
+        "consolidated_episodes",
+        "avg_activation",
+    ):
+        if key not in alice_stats:
+            raise AssertionError(f"Missing stat '{key}' in discover: {alice_stats}")
+    print(f"  [PASS] Cognitive stats present: {alice_stats}")
+
     print("Verifying PostgreSQL schemas and data isolation...")
     conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
     try:
