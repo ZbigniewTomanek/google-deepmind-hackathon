@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 26pt;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  margin: 0 0 8pt 0;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 15pt;
+  font-weight: 300;
+  margin: 0 0 20pt 0;
+  letter-spacing: 0.04em;
+}
+
+p.point {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #E8E4DC;
+  font-size: 11pt;
+  font-weight: 300;
+  line-height: 1.5;
+  margin: 0 0 12pt 0;
+}
+
+p.point-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #6B5B95;
+  font-size: 9pt;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  margin: 0 0 3pt 0;
+  text-transform: uppercase;
+}
+
+/* ── Agent domain boxes ── */
+.agent-box {
+  position: absolute;
+  border: 1pt dotted;
+  border-radius: 3pt;
+  padding: 4pt 8pt 0 8pt;
+}
+
+p.agent-name {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 8pt;
+  font-weight: 400;
+  margin: 0 0 2pt 0;
+  letter-spacing: 0.04em;
+}
+
+p.agent-desc {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #6B5B95;
+  font-size: 7pt;
+  font-weight: 300;
+  margin: 0;
+}
+
+/* ── Leak lines ── */
+.leak {
+  position: absolute;
+  border-top: 1pt dashed rgba(200, 78, 78, 0.40);
+}
+
+/* ── Labels ── */
+p.diagram-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 8pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Flat memory bar ── */
+.flat-bar {
+  position: absolute;
+  border: 1pt solid;
+  border-radius: 3pt;
+  padding: 3pt 8pt 0 8pt;
+}
+
+p.bar-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 8pt;
+  font-weight: 400;
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+</style>
+</head>
+<body>
+
+  <!-- ── Left content area ── -->
+  <div style="position: absolute; left: 50pt; top: 32pt; width: 340pt;">
+    <h1>The Problem</h1>
+    <h2>One developer, many agents, no shared memory</h2>
+
+    <p class="point-label">Our reality</p>
+    <p class="point">We run multiple agents: Claude Code for work, OpenClaws for coaching, bots for Garmin health data and workouts, cron agents for HackerNews and YouTube.</p>
+
+    <p class="point-label">Zettelkasten is not enough</p>
+    <p class="point">Flat note-based memory leaks context across domains. Your health data bleeds into work context. Meeting notes mix with personal interests. No isolation.</p>
+
+    <p class="point-label">What we actually need</p>
+    <p class="point">An agent-friendly knowledge vault where agents in one domain can learn together, but never mix context with unrelated domains.</p>
+  </div>
+
+  <!-- ═══ RIGHT SIDE: Agent domains diagram ═══ -->
+
+  <!-- Title -->
+  <p class="diagram-label" style="position: absolute; right: 60pt; top: 36pt; color: #6B5B95;">AGENT LANDSCAPE</p>
+
+  <!-- Work domain -->
+  <div class="agent-box" style="right: 50pt; top: 54pt; width: 100pt; height: 36pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.05);">
+    <p class="agent-name" style="color: #3ECFA0;">Claude Code</p>
+    <p class="agent-desc">work, code, PRs</p>
+  </div>
+  <div class="agent-box" style="right: 168pt; top: 54pt; width: 100pt; height: 36pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.05);">
+    <p class="agent-name" style="color: #3ECFA0;">Cron Agent</p>
+    <p class="agent-desc">HN, YouTube, docs</p>
+  </div>
+
+  <!-- Health domain -->
+  <div class="agent-box" style="right: 50pt; top: 104pt; width: 100pt; height: 36pt; border-color: rgba(157, 110, 247, 0.40); background: rgba(157, 110, 247, 0.05);">
+    <p class="agent-name" style="color: #9D6EF7;">Garmin Bot</p>
+    <p class="agent-desc">health, workouts</p>
+  </div>
+  <div class="agent-box" style="right: 168pt; top: 104pt; width: 100pt; height: 36pt; border-color: rgba(157, 110, 247, 0.40); background: rgba(157, 110, 247, 0.05);">
+    <p class="agent-name" style="color: #9D6EF7;">OpenClaw Coach</p>
+    <p class="agent-desc">training plans</p>
+  </div>
+
+  <!-- Meeting domain -->
+  <div class="agent-box" style="right: 110pt; top: 154pt; width: 100pt; height: 36pt; border-color: rgba(200, 168, 78, 0.40); background: rgba(200, 168, 78, 0.05);">
+    <p class="agent-name" style="color: #C8A84E;">Meeting Agent</p>
+    <p class="agent-desc">transcripts, notes</p>
+  </div>
+
+  <!-- Flat memory bar (the problem) -->
+  <div class="flat-bar" style="right: 50pt; top: 210pt; width: 218pt; height: 18pt; border-color: rgba(200, 78, 78, 0.45); background: rgba(200, 78, 78, 0.06);">
+    <p class="bar-label" style="color: rgba(200, 78, 78, 0.70);">Flat Zettelkasten / RAG memory</p>
+  </div>
+
+  <!-- Leak arrows (dashed red lines) from all agents to flat memory -->
+  <div class="leak" style="right: 100pt; top: 195pt; width: 60pt;"></div>
+  <div class="leak" style="right: 160pt; top: 195pt; width: 40pt;"></div>
+  <div class="leak" style="right: 200pt; top: 195pt; width: 20pt;"></div>
+
+  <!-- Problem label -->
+  <p class="diagram-label" style="position: absolute; right: 74pt; top: 236pt; color: rgba(200, 78, 78, 0.60);">everything mixes together</p>
+
+  <!-- Divider -->
+  <div style="position: absolute; right: 50pt; top: 258pt; width: 218pt; height: 1pt; background: rgba(107, 91, 149, 0.18);"></div>
+
+  <!-- Solution: isolated schemas -->
+  <p class="diagram-label" style="position: absolute; right: 86pt; top: 266pt; color: #3ECFA0;">with NeoCortex</p>
+
+  <!-- Isolated schema boxes -->
+  <div class="agent-box" style="right: 175pt; top: 284pt; width: 92pt; height: 30pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.05);">
+    <p class="agent-name" style="color: #3ECFA0;">Work Graph</p>
+    <p class="agent-desc">code + articles + PRs</p>
+  </div>
+  <div class="agent-box" style="right: 50pt; top: 284pt; width: 108pt; height: 30pt; border-color: rgba(157, 110, 247, 0.40); background: rgba(157, 110, 247, 0.05);">
+    <p class="agent-name" style="color: #9D6EF7;">Health Graph</p>
+    <p class="agent-desc">Garmin + training + coach</p>
+  </div>
+  <div class="agent-box" style="right: 110pt; top: 324pt; width: 108pt; height: 30pt; border-color: rgba(200, 168, 78, 0.40); background: rgba(200, 168, 78, 0.05);">
+    <p class="agent-name" style="color: #C8A84E;">Meetings Graph</p>
+    <p class="agent-desc">transcripts + decisions</p>
+  </div>
+
+  <!-- Isolation label -->
+  <p class="diagram-label" style="position: absolute; right: 60pt; top: 358pt; color: #3ECFA0;">isolated but selectively shared</p>
+
+</body>
+</html>

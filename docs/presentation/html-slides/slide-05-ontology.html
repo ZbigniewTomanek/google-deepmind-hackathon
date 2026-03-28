@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 26pt;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  margin: 0 0 4pt 0;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 13pt;
+  font-weight: 300;
+  margin: 0 0 14pt 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Explanation text ── */
+p.explain {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #E8E4DC;
+  font-size: 10pt;
+  font-weight: 300;
+  line-height: 1.5;
+  margin: 0 0 10pt 0;
+}
+
+p.explain-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 9pt;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  margin: 0 0 3pt 0;
+  text-transform: uppercase;
+}
+
+/* ── Domain boxes ── */
+.domain-box {
+  position: absolute;
+  border: 1pt dotted;
+  border-radius: 4pt;
+  padding: 5pt 10pt 0 10pt;
+}
+
+p.domain-name {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 9pt;
+  font-weight: 400;
+  margin: 0 0 2pt 0;
+  letter-spacing: 0.04em;
+}
+
+p.domain-desc {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #6B5B95;
+  font-size: 7pt;
+  font-weight: 300;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* ── Type examples ── */
+p.type-example {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #6B5B95;
+  font-size: 7pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+/* ── Labels ── */
+p.section-tag {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 9pt;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  margin: 0 0 8pt 0;
+  text-transform: uppercase;
+}
+
+/* ── Connectors ── */
+.conn {
+  position: absolute;
+  background: rgba(107, 91, 149, 0.22);
+}
+
+/* ── Brain analogy callout ── */
+.callout-box {
+  position: absolute;
+  border: 1pt dotted;
+  border-radius: 4pt;
+  padding: 5pt 10pt 0 10pt;
+}
+</style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div style="position: absolute; left: 50pt; top: 22pt;">
+    <h1>Ontologies</h1>
+    <h2>Agents that understand what they know before they query</h2>
+  </div>
+
+  <!-- ── Left: explanation ── -->
+  <div style="position: absolute; left: 50pt; top: 66pt; width: 284pt;">
+
+    <p class="explain-label" style="color: #3ECFA0;">What is an ontology?</p>
+    <p class="explain">A schema of knowledge: typed entities (Person, Tool, Article) and typed relations (USES, AUTHORED, DISCUSSED_IN). It describes the world an agent can reason about.</p>
+
+    <p class="explain-label" style="color: #C8A84E;">Why it matters for GenAI</p>
+    <p class="explain">Without ontology, knowledge dissolves into unstructured embeddings. With it, agents discover what exists before querying. They ask structured questions, get precise answers.</p>
+
+    <p class="explain-label" style="color: #9D6EF7;">Upper ontology</p>
+    <p class="explain">Groups knowledge into high-level semantic domains, each with its own ontology. Resembles how the human brain organizes knowledge: work memory, spatial memory, procedural memory are separate but connected systems.</p>
+
+    <p class="explain-label" style="color: #3ECFA0;">Self-extending</p>
+    <p class="explain">When new knowledge doesn't fit existing domains, the classifier proposes new ones. Schemas auto-provision. The ontology grows with you.</p>
+  </div>
+
+  <!-- ═══ RIGHT: Upper ontology diagram ═══ -->
+
+  <!-- Upper ontology label -->
+  <p class="section-tag" style="position: absolute; left: 380pt; top: 66pt; color: #9D6EF7;">Upper Ontology</p>
+
+  <!-- Domain 1: User Profile -->
+  <div class="domain-box" style="left: 370pt; top: 84pt; width: 140pt; height: 42pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.04);">
+    <p class="domain-name" style="color: #3ECFA0;">user_profile</p>
+    <p class="domain-desc">preferences, goals, habits</p>
+    <p class="type-example">Person, Preference, Goal</p>
+  </div>
+
+  <!-- Domain 2: Technical Knowledge -->
+  <div class="domain-box" style="left: 530pt; top: 84pt; width: 140pt; height: 42pt; border-color: rgba(157, 110, 247, 0.40); background: rgba(157, 110, 247, 0.04);">
+    <p class="domain-name" style="color: #9D6EF7;">technical_knowledge</p>
+    <p class="domain-desc">tools, APIs, patterns</p>
+    <p class="type-example">Framework, Algorithm, API</p>
+  </div>
+
+  <!-- Domain 3: Work Context -->
+  <div class="domain-box" style="left: 370pt; top: 140pt; width: 140pt; height: 42pt; border-color: rgba(200, 168, 78, 0.40); background: rgba(200, 168, 78, 0.04);">
+    <p class="domain-name" style="color: #C8A84E;">work_context</p>
+    <p class="domain-desc">projects, tasks, people</p>
+    <p class="type-example">Project, Decision, Deadline</p>
+  </div>
+
+  <!-- Domain 4: Domain Knowledge -->
+  <div class="domain-box" style="left: 530pt; top: 140pt; width: 140pt; height: 42pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.04);">
+    <p class="domain-name" style="color: #3ECFA0;">domain_knowledge</p>
+    <p class="domain-desc">facts, concepts, trends</p>
+    <p class="type-example">Concept, Article, Event</p>
+  </div>
+
+  <!-- Auto-provisioned domain (dashed, dimmer) -->
+  <div class="domain-box" style="left: 450pt; top: 196pt; width: 140pt; height: 42pt; border-color: rgba(107, 91, 149, 0.30); background: rgba(107, 91, 149, 0.03);">
+    <p class="domain-name" style="color: #6B5B95;">auto-provisioned</p>
+    <p class="domain-desc">new domain proposed by classifier</p>
+    <p class="type-example">schema created on first match</p>
+  </div>
+
+  <!-- Connector lines between domains and auto-provisioned -->
+  <div class="conn" style="left: 520pt; top: 184pt; width: 1pt; height: 12pt;"></div>
+
+  <!-- Per-graph ontology section label -->
+  <p class="section-tag" style="position: absolute; left: 380pt; top: 252pt; color: #3ECFA0;">Per-Graph Ontology</p>
+
+  <!-- Mini ontology example -->
+  <div class="domain-box" style="left: 370pt; top: 270pt; width: 300pt; height: 50pt; border-color: rgba(62, 207, 160, 0.30); background: rgba(62, 207, 160, 0.03);">
+    <p class="domain-name" style="color: #3ECFA0;">technical_knowledge ontology</p>
+    <p class="type-example" style="color: #E8E4DC;">nodes: Framework, Language, Algorithm, Library, Pattern</p>
+    <p class="type-example" style="color: #E8E4DC;">edges: USES, IMPLEMENTS, DEPENDS_ON, ALTERNATIVE_TO</p>
+    <p class="type-example">proposed by ontology agent, extended per extraction</p>
+  </div>
+
+  <!-- Brain analogy -->
+  <div class="callout-box" style="left: 370pt; bottom: 42pt; width: 300pt; height: 28pt; border-color: rgba(200, 168, 78, 0.30); background: rgba(200, 168, 78, 0.03);">
+    <p class="explain" style="color: #C8A84E; font-size: 9pt;">Like the human brain: separate systems for spatial, procedural, and declarative memory. Connected but not entangled.</p>
+  </div>
+
+</body>
+</html>

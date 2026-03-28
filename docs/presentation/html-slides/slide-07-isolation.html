@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 26pt;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  margin: 0 0 6pt 0;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 14pt;
+  font-weight: 300;
+  margin: 0 0 22pt 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Schema boxes ── */
+.schema-box {
+  position: absolute;
+  border-radius: 4pt;
+  border: 1pt dotted;
+  padding: 8pt 12pt 0 12pt;
+}
+
+.schema-name {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 10pt;
+  font-weight: 400;
+  margin: 0 0 3pt 0;
+  letter-spacing: 0.04em;
+}
+
+.schema-detail {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #6B5B95;
+  font-size: 9pt;
+  font-weight: 300;
+  margin: 0;
+}
+
+/* ── Feature list ── */
+p.feature-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 10pt;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  margin: 0 0 3pt 0;
+  text-transform: uppercase;
+}
+
+p.feature-desc {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #E8E4DC;
+  font-size: 11pt;
+  font-weight: 300;
+  margin: 0 0 14pt 0;
+  line-height: 1.4;
+}
+
+/* ── Section label ── */
+p.section-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 11pt;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  margin: 0 0 12pt 0;
+  text-transform: uppercase;
+}
+
+/* ── Arrow connector ── */
+.arrow-line {
+  position: absolute;
+  background: rgba(107, 91, 149, 0.20);
+}
+</style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div style="position: absolute; left: 50pt; top: 28pt;">
+    <h1>Organization Ready</h1>
+    <h2>Auth0 identity. Per-agent isolation. Shared knowledge with zero leaks.</h2>
+  </div>
+
+  <!-- ═══ LEFT SIDE: Auth0 flow + Schema diagram ═══ -->
+
+  <!-- Auth0 entry point -->
+  <p class="section-label" style="position: absolute; left: 50pt; top: 90pt; color: #C8A84E;">Auth0 Integration</p>
+
+  <div class="schema-box" style="left: 50pt; top: 110pt; width: 220pt; height: 48pt; border-color: rgba(200, 168, 78, 0.45); background: rgba(200, 168, 78, 0.06);">
+    <p class="schema-name" style="color: #C8A84E;">Auth0 OAuth / M2M Tokens</p>
+    <p class="schema-detail">Users authenticate via Auth0. Service agents use M2M tokens. Identity auto-provisions into agent_registry on first access.</p>
+  </div>
+
+  <!-- Arrow down -->
+  <div style="position: absolute; left: 160pt; top: 162pt; width: 1pt; height: 10pt; background: rgba(200, 168, 78, 0.30);"></div>
+
+  <!-- Private schemas -->
+  <p class="section-label" style="position: absolute; left: 50pt; top: 178pt; color: #3ECFA0;">Private Schemas</p>
+
+  <div class="schema-box" style="left: 50pt; top: 198pt; width: 220pt; height: 28pt; border-color: rgba(62, 207, 160, 0.35); background: rgba(62, 207, 160, 0.04);">
+    <p class="schema-name" style="color: #3ECFA0;">ncx_alice__personal</p>
+    <p class="schema-detail">search_path isolation, no RLS needed</p>
+  </div>
+
+  <!-- Shared schemas -->
+  <p class="section-label" style="position: absolute; left: 50pt; top: 242pt; color: #C8A84E;">Shared Schemas</p>
+
+  <div class="schema-box" style="left: 50pt; top: 262pt; width: 220pt; height: 28pt; border-color: rgba(200, 168, 78, 0.35); background: rgba(200, 168, 78, 0.04);">
+    <p class="schema-name" style="color: #C8A84E;">ncx_shared__technical_knowledge</p>
+    <p class="schema-detail">RLS: Auth0 identity -> PG role scoping</p>
+  </div>
+
+  <div class="schema-box" style="left: 50pt; top: 302pt; width: 220pt; height: 28pt; border-color: rgba(200, 168, 78, 0.35); background: rgba(200, 168, 78, 0.04);">
+    <p class="schema-name" style="color: #C8A84E;">ncx_shared__work_context</p>
+    <p class="schema-detail">Fine-grained read/write per agent</p>
+  </div>
+
+  <!-- ═══ RIGHT SIDE: Feature descriptions ═══ -->
+
+  <div style="position: absolute; left: 390pt; top: 90pt; width: 290pt;">
+    <p class="feature-label" style="color: #C8A84E;">Auth0 as Identity Backbone</p>
+    <p class="feature-desc">OAuth for users, M2M tokens for automated agents and cron jobs. Roles map to graph permissions automatically.</p>
+
+    <p class="feature-label" style="color: #3ECFA0;">Schema-Level Isolation</p>
+    <p class="feature-desc">Each agent gets its own PostgreSQL schemas. No cross-contamination by default. Shared graphs use Row-Level Security.</p>
+
+    <p class="feature-label" style="color: #9D6EF7;">Auto-Provisioning</p>
+    <p class="feature-desc">First access creates agent identity, personal graph, and permission grants. Zero manual setup per user.</p>
+
+    <p class="feature-label" style="color: #9D6EF7;">Domain Routing</p>
+    <p class="feature-desc">Upper ontology auto-routes knowledge to the right shared graph. Organization knowledge grows organically.</p>
+  </div>
+
+  <!-- ── Vertical divider ── -->
+  <div style="position: absolute; left: 372pt; top: 90pt; width: 1pt; height: 248pt; background: rgba(107, 91, 149, 0.15);"></div>
+
+</body>
+</html>

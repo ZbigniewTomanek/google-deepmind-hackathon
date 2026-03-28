@@ -218,18 +218,22 @@ p {
 
 ---
 
-## Slide Plan (Draft)
+## Presentation Flow
+
+**Act 1: Narrated Demo Video (~60-90s)** — screen recording with voiceover, plays first.
+**Act 2: Technical Slides (~60-90s)** — presenter explains the HOW and WHY after demo.
+
+## Slide Plan
 
 | # | Slide | Purpose | Duration |
 |---|-------|---------|----------|
-| 01 | Title | NeoCortex identity, team, event context | 10s |
-| 02 | The Problem | Agents are stateless. Memory is the missing piece. | 20s |
-| 03 | What is NeoCortex | MCP server + knowledge graph = structured long-term memory | 20s |
-| 04 | Architecture | Multi-schema isolation, graph router, MCP tools | 30s |
-| 05 | Extraction Pipeline | 3-agent pipeline: ontology → entities → relations | 30s |
-| 06 | Live Demo | **Switch to terminal** — remember, recall, discover flow | 60s |
-| 07 | Security & Isolation | Per-agent schemas, RLS, permission model | 15s |
-| 08 | Why Graphs | Vector search alone hallucinates. Graphs ground truth. | 15s |
-| 09 | Closing | What we built, what's next | 10s |
+| 01 | Title | NeoCortex identity, team (Overstimulated Kuce), event | 5s |
+| 02 | The Problem | One developer, many agents, Zettelkasten leaks context | 15s |
+| 03 | Architecture | MCP tools, multimodal ingestion, extraction, PostgreSQL | 15s |
+| 04 | Knowledge Structure | PostgreSQL data model: ontology, graph, episode layers | 12s |
+| 05 | Ontologies | Upper ontology = brain-like domain separation, self-extending | 15s |
+| 06 | How Memory Works | Biology-inspired recall: ACT-R, Hebbian, spreading activation | 15s |
+| 07 | Organization Ready | Auth0 identity backbone, schema isolation, auto-provisioning | 12s |
+| 08 | What We Built | Criteria-mapped summary (multimodal agents focus) + team | 10s |
 
-Total: ~3 minutes (slide time ~2:30, demo ~60s integrated)
+Total: ~3 minutes (demo ~75s + slides ~100s)

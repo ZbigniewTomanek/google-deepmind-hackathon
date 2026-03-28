@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 26pt;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  margin: 0 0 6pt 0;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 15pt;
+  font-weight: 300;
+  margin: 0 0 20pt 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Column headings ── */
+h3 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 13pt;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  margin: 0 0 12pt 0;
+  text-transform: uppercase;
+}
+
+/* ── Item labels ── */
+p.item-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 10pt;
+  font-weight: 400;
+  margin: 0 0 2pt 0;
+  letter-spacing: 0.04em;
+}
+
+p.item-desc {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #E8E4DC;
+  font-size: 11pt;
+  font-weight: 300;
+  margin: 0 0 10pt 0;
+  line-height: 1.4;
+}
+
+/* ── Column panels ── */
+.col-panel {
+  position: absolute;
+  top: 92pt;
+  border: 1pt dotted rgba(107, 91, 149, 0.25);
+  border-radius: 4pt;
+  background: rgba(13, 27, 62, 0.3);
+  padding: 14pt 16pt 0 16pt;
+}
+
+/* ── Formula bar ── */
+.formula-bar {
+  position: absolute;
+  bottom: 42pt;
+  left: 50pt;
+  right: 50pt;
+  border: 1pt dotted rgba(62, 207, 160, 0.30);
+  border-radius: 3pt;
+  background: rgba(62, 207, 160, 0.04);
+  padding: 8pt 14pt 0 14pt;
+}
+
+p.formula {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #3ECFA0;
+  font-size: 9pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+/* ── Vertical divider ── */
+.vdiv {
+  position: absolute;
+  width: 1pt;
+  background: rgba(107, 91, 149, 0.18);
+}
+</style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div style="position: absolute; left: 50pt; top: 28pt;">
+    <h1>How Memory Works</h1>
+    <h2>Biology-inspired, not brute-force RAG</h2>
+  </div>
+
+  <!-- ── LEFT COLUMN: Extraction ── -->
+  <div class="col-panel" style="left: 50pt; width: 280pt; height: 224pt;">
+    <h3 style="color: #3ECFA0;">Extraction</h3>
+
+    <p class="item-label" style="color: #3ECFA0;">Ontology Agent</p>
+    <p class="item-desc">Discovers and proposes node/edge types</p>
+
+    <p class="item-label" style="color: #3ECFA0;">Entity Agent</p>
+    <p class="item-desc">Extracts facts as typed graph nodes</p>
+
+    <p class="item-label" style="color: #3ECFA0;">Relation Agent</p>
+    <p class="item-desc">Builds edges between entities</p>
+
+    <p class="item-label" style="color: #C8A84E;">Upper Ontology</p>
+    <p class="item-desc">Auto-routes to domain-specific graphs</p>
+  </div>
+
+  <!-- ── Vertical divider ── -->
+  <div class="vdiv" style="left: 358pt; top: 100pt; height: 208pt;"></div>
+
+  <!-- ── RIGHT COLUMN: Recall ── -->
+  <div class="col-panel" style="left: 376pt; width: 294pt; height: 224pt;">
+    <h3 style="color: #C8A84E;">Recall</h3>
+
+    <p class="item-label" style="color: #C8A84E;">Hybrid Search</p>
+    <p class="item-desc">Vector cosine + BM25 full-text + graph traversal</p>
+
+    <p class="item-label" style="color: #C8A84E;">ACT-R Activation</p>
+    <p class="item-desc">Memories strengthen through repeated access</p>
+
+    <p class="item-label" style="color: #C8A84E;">Spreading Activation</p>
+    <p class="item-desc">Graph neighbors boost recall relevance</p>
+
+    <p class="item-label" style="color: #C8A84E;">Hebbian Learning + Forgetting</p>
+    <p class="item-desc">Traversed edges grow; unused memories fade</p>
+  </div>
+
+  <!-- ── Formula bar at bottom ── -->
+  <div class="formula-bar">
+    <p class="formula">score = w_vec * cosine + w_text * bm25 + w_recency * decay + w_importance * imp + spreading_bonus</p>
+  </div>
+
+</body>
+</html>

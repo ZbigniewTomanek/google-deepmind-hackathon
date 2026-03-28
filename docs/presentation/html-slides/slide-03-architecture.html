@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 28pt;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  margin: 0 0 6pt 0;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 16pt;
+  font-weight: 300;
+  margin: 0 0 24pt 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Architecture layers ── */
+.layer {
+  position: absolute;
+  left: 50pt;
+  right: 50pt;
+  border: 1pt dotted rgba(107, 91, 149, 0.30);
+  border-radius: 4pt;
+  background: rgba(13, 27, 62, 0.4);
+}
+
+.layer-label {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #E8E4DC;
+  font-size: 12pt;
+  font-weight: 400;
+  margin: 0;
+}
+
+.layer-detail {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #6B5B95;
+  font-size: 9pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Tool boxes ── */
+.tool-box {
+  position: absolute;
+  border: 1pt solid rgba(62, 207, 160, 0.45);
+  border-radius: 3pt;
+  background: rgba(62, 207, 160, 0.06);
+}
+
+.tool-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #3ECFA0;
+  font-size: 11pt;
+  font-weight: 400;
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+
+/* ── Connector lines ── */
+.vline {
+  position: absolute;
+  width: 1pt;
+  background: rgba(107, 91, 149, 0.25);
+}
+
+/* ── Side annotations ── */
+.annot {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 9pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Protocol label ── */
+.proto-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #6B5B95;
+  font-size: 9pt;
+  font-weight: 400;
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+</style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div style="position: absolute; left: 50pt; top: 30pt;">
+    <h1>Architecture</h1>
+    <h2>3 MCP tools. Knowledge graph on Postgres.</h2>
+  </div>
+
+  <!-- ═══ LAYER 1: Agents ═══ -->
+  <div class="layer" style="top: 98pt; height: 34pt; padding: 8pt 16pt 0 16pt;">
+    <p class="layer-label">AI Agents</p>
+    <p class="layer-detail">Claude Code  /  OpenClaw  /  VAPI  /  any MCP client</p>
+  </div>
+
+  <!-- Connector -->
+  <div class="vline" style="left: 360pt; top: 142pt; height: 14pt;"></div>
+
+  <!-- Protocol label -->
+  <p class="proto-label" style="position: absolute; left: 0; right: 0; top: 152pt;">MCP protocol (streamable HTTP)</p>
+
+  <!-- ═══ LAYER 2: MCP Tools ═══ -->
+  <div style="position: absolute; left: 50pt; right: 50pt; top: 172pt; height: 36pt;">
+    <!-- Three tool boxes side by side -->
+    <div class="tool-box" style="left: 110pt; top: 0; width: 110pt; height: 30pt; padding: 6pt 0 0 0;">
+      <p class="tool-label">remember</p>
+    </div>
+    <div class="tool-box" style="left: 250pt; top: 0; width: 110pt; height: 30pt; padding: 6pt 0 0 0;">
+      <p class="tool-label">recall</p>
+    </div>
+    <div class="tool-box" style="left: 390pt; top: 0; width: 110pt; height: 30pt; padding: 6pt 0 0 0;">
+      <p class="tool-label">discover</p>
+    </div>
+  </div>
+
+  <!-- Connector -->
+  <div class="vline" style="left: 360pt; top: 210pt; height: 14pt;"></div>
+
+  <!-- ═══ LAYER 3: Multimodal Ingestion ═══ -->
+  <div class="layer" style="top: 228pt; height: 34pt; padding: 8pt 16pt 0 16pt; border-color: rgba(200, 168, 78, 0.30);">
+    <p class="layer-label" style="color: #C8A84E;">Multimodal Ingestion</p>
+    <p class="layer-detail">text  /  audio  /  video  /  meetings  ->  Gemini multimodal  ->  extraction pipeline</p>
+  </div>
+
+  <!-- Connector -->
+  <div class="vline" style="left: 360pt; top: 272pt; height: 10pt;"></div>
+
+  <!-- ═══ LAYER 4: Extraction Pipeline ═══ -->
+  <div class="layer" style="top: 286pt; height: 28pt; padding: 6pt 16pt 0 16pt;">
+    <p class="layer-label">3-Agent Extraction</p>
+    <p class="layer-detail">Gemini agents:  ontology  ->  entities  ->  relations  ->  knowledge graph</p>
+  </div>
+
+  <!-- Connector -->
+  <div class="vline" style="left: 360pt; top: 322pt; height: 10pt;"></div>
+
+  <!-- ═══ LAYER 5: Storage ═══ -->
+  <div class="layer" style="top: 336pt; height: 24pt; padding: 5pt 16pt 0 16pt; border-color: rgba(62, 207, 160, 0.30);">
+    <p class="layer-detail" style="color: #3ECFA0; font-size: 10pt;">PostgreSQL:  pgvector (768-dim)  +  tsvector (BM25)  +  graph  +  episodes  |  Auth0 OAuth  |  MCP standard</p>
+  </div>
+
+</body>
+</html>
