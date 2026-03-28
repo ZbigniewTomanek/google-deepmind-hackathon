@@ -4,5 +4,7 @@
   "bob-token": "bob",
   "eve-token": "eve",
   "shared-token": "shared",
-  "dev-token-neocortex": "dev-user"
+  "dev-token-neocortex": "dev-user",
+  "chat-agent-token": "chat-agent",
+  "joke-agent-token": "joke-agent"
 }
