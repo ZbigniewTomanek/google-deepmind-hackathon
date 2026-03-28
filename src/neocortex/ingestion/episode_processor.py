@@ -141,101 +141,60 @@ class EpisodeProcessor:
         self,
         agent_id: str,
         filename: str,
-        content: bytes,
+        raw_path: str,
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
     ) -> MediaIngestionResult:
         """Compress audio -> describe via Gemini -> store file -> store episode."""
-        if self._media_compressor is None:
-            return MediaIngestionResult(status="failed", episodes_created=0, message="ffmpeg not available")
-
-        describer = self._media_describer
-        if describer is None:
-            from neocortex.ingestion.media_description_mock import MockMediaDescriptionService
-
-            describer = MockMediaDescriptionService()
-
-        raw_path: str | None = None
-        try:
-            # 1. Write raw upload to temp file
-            suffix = os.path.splitext(filename)[1] or ".bin"
-            fd, raw_path = tempfile.mkstemp(suffix=suffix)
-            os.write(fd, content)
-            os.close(fd)
-
-            # 2. Compress
-            _, compressed_path = tempfile.mkstemp(suffix=".ogg")
-            os.close(_)
-            compressed = await self._media_compressor.compress_audio(raw_path, compressed_path)
-
-            # 3. Describe
-            context = metadata.get("context", "")
-            description = await describer.describe_audio(compressed.path, compressed.mime_type, context=context)
-
-            # 4. Save to media store
-            media_ref = None
-            if self._media_store is not None:
-                media_ref = await self._media_store.save(
-                    agent_id=agent_id,
-                    source_path=compressed.path,
-                    extension="ogg",
-                    original_filename=filename,
-                    content_type=content_type,
-                    duration_seconds=compressed.duration_seconds,
-                )
-
-            # 5. Build episode text with embedded metadata
-            episode_text = self._build_episode_text(
-                media_type="audio",
-                filename=filename,
-                description=description,
-                media_ref=media_ref,
-                compressed=compressed,
-            )
-
-            # 6-8. Store, embed, enqueue
-            episode_id = await self._store_episode(agent_id, episode_text, "ingestion_audio", target_schema)
-            await self._embed_episode(episode_id, episode_text, agent_id, target_schema)
-            await self._enqueue_extraction(agent_id, episode_id, target_schema)
-
-            logger.bind(action_log=True).info(
-                "media_ingested",
-                media_type="audio",
-                agent_id=agent_id,
-                filename=filename,
-                episode_id=episode_id,
-                media_ref=media_ref.relative_path if media_ref else None,
-            )
-
-            return MediaIngestionResult(
-                status="stored",
-                episodes_created=1,
-                message=f"Audio '{filename}' processed and stored as episode",
-                media_ref=media_ref,
-            )
-        except Exception:
-            logger.opt(exception=True).error("Audio ingestion failed for {}", filename)
-            return MediaIngestionResult(
-                status="failed",
-                episodes_created=0,
-                message=f"Audio ingestion failed for '{filename}'",
-            )
-        finally:
-            if raw_path is not None:
-                with contextlib.suppress(OSError):
-                    os.unlink(raw_path)
+        return await self._process_media(
+            media_type="audio",
+            agent_id=agent_id,
+            filename=filename,
+            raw_path=raw_path,
+            content_type=content_type,
+            metadata=metadata,
+            target_schema=target_schema,
+            compressed_ext="ogg",
+        )
 
     async def process_video(
         self,
         agent_id: str,
         filename: str,
-        content: bytes,
+        raw_path: str,
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
     ) -> MediaIngestionResult:
         """Compress video -> describe via Gemini -> store file -> store episode."""
+        return await self._process_media(
+            media_type="video",
+            agent_id=agent_id,
+            filename=filename,
+            raw_path=raw_path,
+            content_type=content_type,
+            metadata=metadata,
+            target_schema=target_schema,
+            compressed_ext="mp4",
+        )
+
+    async def _process_media(
+        self,
+        media_type: str,
+        agent_id: str,
+        filename: str,
+        raw_path: str,
+        content_type: str,
+        metadata: dict,
+        target_schema: str | None,
+        compressed_ext: str,
+    ) -> MediaIngestionResult:
+        """Shared pipeline: compress -> describe -> store file -> store episode.
+
+        Caller is responsible for writing the upload to raw_path; this method
+        cleans up raw_path after processing.
+        """
         if self._media_compressor is None:
             return MediaIngestionResult(status="failed", episodes_created=0, message="ffmpeg not available")
 
@@ -245,38 +204,38 @@ class EpisodeProcessor:
 
             describer = MockMediaDescriptionService()
 
-        raw_path: str | None = None
+        compressed_path: str | None = None
         try:
-            # 1. Write raw upload to temp file
-            suffix = os.path.splitext(filename)[1] or ".bin"
-            fd, raw_path = tempfile.mkstemp(suffix=suffix)
-            os.write(fd, content)
-            os.close(fd)
-
-            # 2. Compress
-            _, compressed_path = tempfile.mkstemp(suffix=".mp4")
-            os.close(_)
-            compressed = await self._media_compressor.compress_video(raw_path, compressed_path)
+            # 1. Compress
+            fd_c, compressed_path = tempfile.mkstemp(suffix=f".{compressed_ext}")
+            os.close(fd_c)
+            compress_fn = getattr(self._media_compressor, f"compress_{media_type}")
+            compressed: CompressedMedia = await compress_fn(raw_path, compressed_path)
+            # Compressor may change the path (e.g. appending extension)
+            compressed_path = compressed.path
 
             # 3. Describe
             context = metadata.get("context", "")
-            description = await describer.describe_video(compressed.path, compressed.mime_type, context=context)
+            describe_fn = getattr(describer, f"describe_{media_type}")
+            description: MediaDescription = await describe_fn(compressed.path, compressed.mime_type, context=context)
 
-            # 4. Save to media store
+            # 4. Save to media store (moves compressed file into the store)
             media_ref = None
             if self._media_store is not None:
                 media_ref = await self._media_store.save(
                     agent_id=agent_id,
                     source_path=compressed.path,
-                    extension="mp4",
+                    extension=compressed_ext,
                     original_filename=filename,
                     content_type=content_type,
                     duration_seconds=compressed.duration_seconds,
                 )
+                # File was moved into the store, no longer at compressed_path
+                compressed_path = None
 
             # 5. Build episode text with embedded metadata
             episode_text = self._build_episode_text(
-                media_type="video",
+                media_type=media_type,
                 filename=filename,
                 description=description,
                 media_ref=media_ref,
@@ -284,36 +243,40 @@ class EpisodeProcessor:
             )
 
             # 6-8. Store, embed, enqueue
-            episode_id = await self._store_episode(agent_id, episode_text, "ingestion_video", target_schema)
+            source_type = f"ingestion_{media_type}"
+            episode_id = await self._store_episode(agent_id, episode_text, source_type, target_schema)
             await self._embed_episode(episode_id, episode_text, agent_id, target_schema)
             await self._enqueue_extraction(agent_id, episode_id, target_schema)
 
             logger.bind(action_log=True).info(
                 "media_ingested",
-                media_type="video",
+                media_type=media_type,
                 agent_id=agent_id,
                 filename=filename,
                 episode_id=episode_id,
                 media_ref=media_ref.relative_path if media_ref else None,
             )
 
+            label = media_type.capitalize()
             return MediaIngestionResult(
                 status="stored",
                 episodes_created=1,
-                message=f"Video '{filename}' processed and stored as episode",
+                message=f"{label} '{filename}' processed and stored as episode",
                 media_ref=media_ref,
             )
         except Exception:
-            logger.opt(exception=True).error("Video ingestion failed for {}", filename)
+            label = media_type.capitalize()
+            logger.opt(exception=True).error("{} ingestion failed for {}", label, filename)
             return MediaIngestionResult(
                 status="failed",
                 episodes_created=0,
-                message=f"Video ingestion failed for '{filename}'",
+                message=f"{label} ingestion failed for '{filename}'",
             )
         finally:
-            if raw_path is not None:
-                with contextlib.suppress(OSError):
-                    os.unlink(raw_path)
+            for p in (raw_path, compressed_path):
+                if p is not None:
+                    with contextlib.suppress(OSError):
+                        os.unlink(p)
 
     @staticmethod
     def _build_episode_text(

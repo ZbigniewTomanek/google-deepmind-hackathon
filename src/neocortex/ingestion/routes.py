@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
@@ -122,6 +124,43 @@ async def ingest_events(
     return await processor.process_events(agent_id, body.events, body.metadata, target_schema=body.target_graph)
 
 
+async def _stream_upload_to_temp(
+    file: UploadFile,
+    max_bytes: int,
+    suffix: str,
+) -> str:
+    """Stream an UploadFile to a temp file, enforcing a size limit.
+
+    Returns the temp file path. Raises HTTPException(413) if the file exceeds
+    max_bytes. Caller is responsible for deleting the temp file.
+    """
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+    try:
+        total = 0
+        chunk_size = 256 * 1024  # 256 KB
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                os.close(fd)
+                os.unlink(tmp_path)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds maximum upload size of {max_bytes // (1024 * 1024)} MB",
+                )
+            os.write(fd, chunk)
+        os.close(fd)
+    except HTTPException:
+        raise
+    except Exception:
+        os.close(fd)
+        os.unlink(tmp_path)
+        raise
+    return tmp_path
+
+
 @router.post("/audio", response_model=MediaIngestionResult)
 async def ingest_audio(
     file: UploadFile,
@@ -144,26 +183,22 @@ async def ingest_audio(
         )
 
     settings = request.app.state.settings
-    max_bytes = settings.media_max_upload_bytes
-    content_bytes = await file.read(max_bytes + 1)
-    if len(content_bytes) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds maximum upload size of {max_bytes // (1024 * 1024)} MB",
-        )
+    suffix = os.path.splitext(file.filename or "upload")[1] or ".bin"
+    raw_path = await _stream_upload_to_temp(file, settings.media_max_upload_bytes, suffix)
 
     parsed_metadata: dict = {}
     if metadata:
         try:
             parsed_metadata = json.loads(metadata)
         except json.JSONDecodeError as exc:
+            os.unlink(raw_path)
             raise HTTPException(status_code=422, detail=f"Invalid metadata JSON: {exc}") from exc
 
     processor = request.app.state.processor
     result = await processor.process_audio(
         agent_id,
         file.filename or "unknown",
-        content_bytes,
+        raw_path,
         content_type,
         parsed_metadata,
         target_schema=target_graph,
@@ -174,7 +209,6 @@ async def ingest_audio(
         agent_id=agent_id,
         filename=file.filename,
         content_type=content_type,
-        size=len(content_bytes),
         status=result.status,
     )
 
@@ -203,26 +237,22 @@ async def ingest_video(
         )
 
     settings = request.app.state.settings
-    max_bytes = settings.media_max_upload_bytes
-    content_bytes = await file.read(max_bytes + 1)
-    if len(content_bytes) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds maximum upload size of {max_bytes // (1024 * 1024)} MB",
-        )
+    suffix = os.path.splitext(file.filename or "upload")[1] or ".bin"
+    raw_path = await _stream_upload_to_temp(file, settings.media_max_upload_bytes, suffix)
 
     parsed_metadata: dict = {}
     if metadata:
         try:
             parsed_metadata = json.loads(metadata)
         except json.JSONDecodeError as exc:
+            os.unlink(raw_path)
             raise HTTPException(status_code=422, detail=f"Invalid metadata JSON: {exc}") from exc
 
     processor = request.app.state.processor
     result = await processor.process_video(
         agent_id,
         file.filename or "unknown",
-        content_bytes,
+        raw_path,
         content_type,
         parsed_metadata,
         target_schema=target_graph,
@@ -233,7 +263,6 @@ async def ingest_video(
         agent_id=agent_id,
         filename=file.filename,
         content_type=content_type,
-        size=len(content_bytes),
         status=result.status,
     )
 

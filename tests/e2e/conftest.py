@@ -1,5 +1,5 @@
-import os
 import struct
+import subprocess
 import wave
 
 import pytest
@@ -25,11 +25,33 @@ def synthetic_mp4(tmp_path_factory) -> str:
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg not installed")
     path = str(tmp_path_factory.mktemp("fixtures") / "test.mp4")
-    os.system(
-        f"ffmpeg -y -f lavfi -i color=black:s=160x120:d=1 "
-        f"-f lavfi -i anullsrc=r=16000:cl=mono -t 1 "
-        f'-c:v libx264 -crf 51 -c:a aac -b:a 32k -shortest "{path}" '
-        f"-loglevel quiet"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:s=160x120:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=16000:cl=mono",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "51",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "32k",
+            "-shortest",
+            path,
+        ],
+        check=True,
+        capture_output=True,
     )
     return path
 

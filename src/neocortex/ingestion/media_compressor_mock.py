@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 
@@ -20,7 +21,7 @@ class MockMediaCompressor:
     async def compress_audio(self, input_path: str, output_path: str) -> CompressedMedia:
         if not output_path.endswith(".ogg"):
             output_path = output_path + ".ogg"
-        shutil.copy2(input_path, output_path)
+        await asyncio.to_thread(shutil.copy2, input_path, output_path)
         size = os.path.getsize(output_path)
         return CompressedMedia(
             path=output_path,
@@ -32,7 +33,7 @@ class MockMediaCompressor:
     async def compress_video(self, input_path: str, output_path: str) -> CompressedMedia:
         if not output_path.endswith(".mp4"):
             output_path = output_path + ".mp4"
-        shutil.copy2(input_path, output_path)
+        await asyncio.to_thread(shutil.copy2, input_path, output_path)
         size = os.path.getsize(output_path)
         return CompressedMedia(
             path=output_path,

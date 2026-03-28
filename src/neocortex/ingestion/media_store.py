@@ -49,7 +49,12 @@ class MediaFileStore:
 
     def resolve(self, relative_path: str) -> str:
         """Return absolute path for a relative media reference."""
-        return os.path.join(self._base_path, relative_path)
+        resolved = os.path.normpath(os.path.join(self._base_path, relative_path))
+        if not resolved.startswith(os.path.normpath(self._base_path) + os.sep) and resolved != os.path.normpath(
+            self._base_path
+        ):
+            raise ValueError(f"Path traversal detected: {relative_path}")
+        return resolved
 
     async def delete(self, relative_path: str) -> bool:
         """Remove a file from the store. Returns True if deleted, False if not found."""

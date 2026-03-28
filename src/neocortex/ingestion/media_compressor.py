@@ -91,7 +91,7 @@ class MediaCompressor:
                 "-crf",
                 "30",
                 "-c:a",
-                "libopus",
+                "aac",
                 "-b:a",
                 "64k",
                 "-ac",
