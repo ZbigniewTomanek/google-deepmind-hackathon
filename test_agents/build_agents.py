@@ -12,7 +12,14 @@ load_dotenv()
 from open_agent_compiler.compiler import compile_agent
 from open_agent_compiler.writers import OpenCodeWriter
 
-from agents import build_chat, build_joke_subagent, build_search_orchestrator, build_task_subagent
+from agents import (
+    build_chat,
+    build_chat_with_memory,
+    build_joke_subagent,
+    build_joke_with_memory,
+    build_search_orchestrator,
+    build_task_subagent,
+)
 from agents.config import build_config
 
 BUILD_DIR = Path(__file__).resolve().parent / "build"
@@ -51,6 +58,8 @@ def compile_and_write() -> Path:
         build_search_orchestrator(config),
         build_task_subagent(config),
         build_joke_subagent(config),
+        build_chat_with_memory(config),
+        build_joke_with_memory(config),
     ]
 
     writer = OpenCodeWriter(output_dir=BUILD_DIR, scripts_dir=SCRIPTS_DIR)
