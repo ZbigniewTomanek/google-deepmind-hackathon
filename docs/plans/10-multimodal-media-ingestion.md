@@ -2,16 +2,17 @@
 
 ## Overview
 
-Extend the ingestion API with audio and video support. Media files are pre-processed through a two-stage pipeline: (1) ffmpeg/ImageMagick compression to create storage-efficient minimized copies, (2) Gemini 3 Flash Preview multimodal inference to generate rich text descriptions. The text description is stored as an episode (feeds into the existing extraction pipeline), while the compressed media file is persisted on the filesystem with a stable reference so agents can access the original content when text alone is insufficient.
+Extend the ingestion API with audio and video support. Media files are pre-processed through a two-stage pipeline: (1) ffmpeg compression to create storage-efficient minimized copies, (2) Gemini 3 Flash Preview multimodal inference to generate rich text descriptions. The text description is stored as an episode (feeds into the existing extraction pipeline), while the compressed media file is persisted on the filesystem with a stable relative-path reference so agents can access the original content when text alone is insufficient.
 
 **Key design decisions:**
 - Media files are **not** stored in PostgreSQL — they live on a configurable filesystem path (`NEOCORTEX_MEDIA_STORE_PATH`, default `./media_store/`)
 - Each media file gets a deterministic path: `{store_path}/{agent_id}/{uuid}.{ext}`
-- The episode's `metadata` dict carries a `media_ref` key with the filesystem path and original filename, enabling agents to locate the source material
+- The episode text embeds structured media metadata (relative path, original filename, content type, etc.) — no `store_episode` protocol changes needed
 - Compression is mandatory before Gemini upload to reduce token cost and storage — audio compressed to 64kbps mono opus, video to 480p CRF-30 h264 with 64kbps audio
-- `IngestionProcessor` protocol gains two new methods: `process_audio` and `process_video`
+- `IngestionProcessor` protocol gains two new methods (`process_audio`, `process_video`) and all existing methods are aligned to include the `target_schema` parameter that the implementation already accepts
 - Mock mode skips compression and Gemini calls, stores a placeholder description
-- ffmpeg is a system dependency (must be installed on host / in Docker image)
+- ffmpeg is a system dependency (must be installed on host)
+- **Known limitation**: no concurrency control on media processing — concurrent uploads each spawn an ffmpeg process + Gemini API call. Acceptable for hackathon scale; add `asyncio.Semaphore` if load becomes a concern
 
 ## Architecture
 
@@ -85,19 +86,18 @@ Create `src/neocortex/ingestion/media_models.py`:
 ```python
 from pydantic import BaseModel
 
+from neocortex.ingestion.models import IngestionResult
+
 class MediaRef(BaseModel):
     """Reference to a stored media file on the filesystem."""
-    path: str              # Absolute path to compressed file
+    relative_path: str     # Path relative to media store root ({agent_id}/{uuid}.{ext})
     original_filename: str # Original upload filename
     content_type: str      # MIME type of original upload
     compressed_size: int   # Size in bytes after compression
     duration_seconds: float | None = None  # Duration if available
 
-class MediaIngestionResult(BaseModel):
-    """Extended result for media ingestion."""
-    status: str            # "stored" | "failed" | "partial"
-    episodes_created: int
-    message: str
+class MediaIngestionResult(IngestionResult):
+    """Extended result for media ingestion — inherits status/episodes_created/message."""
     media_ref: MediaRef | None = None  # Reference to stored media
 ```
 
@@ -110,26 +110,29 @@ class MediaFileStore:
     """Persists compressed media files on the local filesystem.
 
     Directory layout: {base_path}/{agent_id}/{uuid}.{ext}
+    All returned paths in MediaRef are relative to base_path.
     """
 
     def __init__(self, base_path: str) -> None: ...
 
     async def save(
-        self, agent_id: str, data: bytes, extension: str, original_filename: str
+        self, agent_id: str, source_path: str, extension: str,
+        original_filename: str, content_type: str,
+        duration_seconds: float | None = None,
     ) -> MediaRef: ...
         # 1. Ensure {base_path}/{agent_id}/ exists (os.makedirs, exist_ok=True)
         # 2. Generate UUID4 filename
-        # 3. Write bytes to path via aiofiles (or sync write in executor)
-        # 4. Return MediaRef with absolute path
+        # 3. Move source_path to {base_path}/{agent_id}/{uuid}.{ext}
+        #    via shutil.move (wrapped in anyio.to_thread.run_sync)
+        # 4. Get file size via os.path.getsize
+        # 5. Return MediaRef with relative_path="{agent_id}/{uuid}.{ext}"
 
-    async def get_path(self, agent_id: str, file_id: str) -> str | None: ...
-        # Resolve UUID to path, return None if not found
+    def resolve(self, relative_path: str) -> str: ...
+        # Return absolute path: os.path.join(self._base_path, relative_path)
 
-    async def delete(self, path: str) -> bool: ...
-        # Remove file, return success
+    async def delete(self, relative_path: str) -> bool: ...
+        # Remove file at resolve(relative_path), return success
 ```
-
-Use `anyio.to_thread.run_sync` for blocking I/O (consistent with asyncpg patterns in the codebase).
 
 **Verification**: `uv run python -c "from neocortex.ingestion.media_store import MediaFileStore; from neocortex.ingestion.media_models import MediaRef, MediaIngestionResult; print('OK')"`
 
@@ -164,17 +167,13 @@ class MediaCompressor:
         #        -c:a libopus -b:a 64k -ac 1 {output}.mp4
         # Return CompressedMedia(path, size, duration, mime_type)
 
-    async def extract_thumbnail(self, video_path: str, output_path: str) -> str: ...
-        # ffmpeg -i {input} -ss 00:00:01 -frames:v 1 {output}.jpg
-        # Optional: use ImageMagick to further compress thumbnail
-        # convert {output}.jpg -resize 320x240 -quality 75 {output}.jpg
-
     async def probe_duration(self, path: str) -> float: ...
         # ffprobe -v quiet -show_entries format=duration -of csv=p=0 {path}
 
     @staticmethod
-    async def _run_ffmpeg(args: list[str]) -> subprocess.CompletedProcess: ...
-        # Run via anyio.to_thread.run_sync(subprocess.run, ...)
+    async def _run_ffmpeg(args: list[str]) -> asyncio.subprocess.Process: ...
+        # Run via asyncio.create_subprocess_exec(*args, stdout=PIPE, stderr=PIPE)
+        # Await proc.communicate() for output
         # Log command at DEBUG level
         # Raise on non-zero return code with stderr
 ```
@@ -337,24 +336,52 @@ Write tests using `MockMediaDescriptionService`. For integration test (skipped w
 
 ### Steps
 
-#### 4.1 — Extend protocol
+#### 4.1 — Align and extend protocol
 
-Update `src/neocortex/ingestion/protocol.py`:
+Update `src/neocortex/ingestion/protocol.py`.
+
+The existing protocol methods omit `target_schema` even though `EpisodeProcessor` already accepts
+it. Fix all existing signatures to match the implementation, then add the new media methods:
 
 ```python
+from neocortex.ingestion.models import IngestionResult
+from neocortex.ingestion.media_models import MediaIngestionResult
+
+
 class IngestionProcessor(Protocol):
-    # ... existing methods unchanged ...
+    """Abstract interface for ingestion processing backends."""
+
+    async def process_text(
+        self, agent_id: str, text: str, metadata: dict,
+        target_schema: str | None = None,
+    ) -> IngestionResult: ...
+
+    async def process_document(
+        self, agent_id: str, filename: str, content: bytes,
+        content_type: str, metadata: dict,
+        target_schema: str | None = None,
+    ) -> IngestionResult: ...
+
+    async def process_events(
+        self, agent_id: str, events: list[dict], metadata: dict,
+        target_schema: str | None = None,
+    ) -> IngestionResult: ...
 
     async def process_audio(
         self, agent_id: str, filename: str, content: bytes,
-        content_type: str, metadata: dict, target_schema: str | None = None,
+        content_type: str, metadata: dict,
+        target_schema: str | None = None,
     ) -> MediaIngestionResult: ...
 
     async def process_video(
         self, agent_id: str, filename: str, content: bytes,
-        content_type: str, metadata: dict, target_schema: str | None = None,
+        content_type: str, metadata: dict,
+        target_schema: str | None = None,
     ) -> MediaIngestionResult: ...
 ```
+
+No changes needed in `EpisodeProcessor` or `routes.py` — they already pass `target_schema`.
+Existing tests continue to work because `target_schema` defaults to `None`.
 
 #### 4.2 — Implement in EpisodeProcessor
 
@@ -377,38 +404,51 @@ def __init__(
 
 Implement `process_audio`:
 ```
-1. Write raw upload to temp file (tempfile.NamedTemporaryFile)
-2. Compress via media_compressor.compress_audio(temp, output_path)
-3. Save compressed file via media_store.save(agent_id, compressed_bytes, "ogg", filename)
-4. Generate description via media_describer.describe_audio(compressed_path, content_type)
-5. Build episode text: "[Audio: {filename}]\n\n{description.text}\n\n[Media reference: {media_ref.path}]"
+1. Write raw upload bytes to temp file (tempfile.NamedTemporaryFile, suffix matching input type)
+2. Compress via media_compressor.compress_audio(temp_path, compressed_temp_path)
+3. Generate description via media_describer.describe_audio(compressed_temp_path, content_type)
+4. Save compressed file via media_store.save(agent_id, compressed_temp_path, "ogg", filename, ...)
+   — this moves the file into the store; no redundant byte copy
+5. Build episode text with embedded structured metadata (see 4.3 below)
 6. Store episode via _store_episode(agent_id, episode_text, "ingestion_audio", target_schema)
 7. Embed episode via _embed_episode(...)
 8. Enqueue extraction via _enqueue_extraction(...)
 9. Return MediaIngestionResult with media_ref
-10. Clean up temp files in finally block
+10. Clean up temp files in finally block (only the raw upload temp; compressed was moved by store)
 ```
 
-Implement `process_video` (same flow, using `compress_video` and `describe_video`, plus optional `extract_thumbnail`).
+Implement `process_video` (same flow, using `compress_video` and `describe_video`).
 
-If any media service is `None` (mock mode without ffmpeg), fall back to storing raw content reference with a placeholder description.
+If `media_compressor` is `None` (no ffmpeg), return `MediaIngestionResult(status="failed", episodes_created=0, message="ffmpeg not available")`. If `media_describer` is `None`, use `MockMediaDescriptionService` as fallback.
 
-#### 4.3 — Episode metadata enrichment
+#### 4.3 — Embed metadata in episode text (no protocol changes needed)
 
-The episode `metadata` dict for media episodes should include:
+The current `store_episode` protocol has no `metadata` parameter and adding one would require
+changes across the protocol, both implementations, and the DB schema. Instead, embed structured
+metadata directly in the episode text so it is searchable via `recall` and parseable by the
+extraction pipeline:
 
 ```python
-metadata = {
-    **user_metadata,
-    "media_ref": media_ref.model_dump(),  # path, original_filename, content_type, etc.
-    "media_type": "audio" | "video",
-    "duration_seconds": compressed.duration_seconds,
-    "description_model": description.model,
-    "description_tokens": description.token_count,
-}
+episode_text = f"""[Audio: {filename}]
+
+{description.text}
+
+---
+Media metadata:
+- media_ref: {media_ref.relative_path}
+- original_filename: {media_ref.original_filename}
+- media_type: audio
+- content_type: {media_ref.content_type}
+- compressed_size: {media_ref.compressed_size}
+- duration_seconds: {compressed.duration_seconds}
+- description_model: {description.model}
+- description_tokens: {description.token_count}
+"""
 ```
 
-This ensures agents using `recall` can see that the episode originated from media and where to find it.
+This keeps the storage layer unchanged while making media provenance visible to agents via recall.
+Paths are relative to the media store root — use `media_store.resolve(relative_path)` to get
+the absolute path when needed.
 
 **Verification**:
 ```bash
@@ -498,7 +538,13 @@ Update `src/neocortex/ingestion/app.py` lifespan:
 ```python
 # After create_services():
 media_store = MediaFileStore(settings.media_store_path)
-if not settings.mock_db and shutil.which("ffmpeg"):
+
+if settings.mock_db:
+    # Mock mode: no compression, placeholder descriptions
+    media_compressor = None
+    media_describer = MockMediaDescriptionService()
+elif shutil.which("ffmpeg"):
+    # Production with ffmpeg available
     media_compressor = MediaCompressor()
     media_describer = MediaDescriptionService(
         api_key=os.environ.get("GOOGLE_API_KEY", ""),
@@ -506,8 +552,10 @@ if not settings.mock_db and shutil.which("ffmpeg"):
         max_output_tokens=settings.media_description_max_tokens,
     )
 else:
+    # Production without ffmpeg — media endpoints will return 503
+    logger.warning("ffmpeg not found on PATH — media ingestion disabled")
     media_compressor = None
-    media_describer = MockMediaDescriptionService() if settings.mock_db else None
+    media_describer = None
 
 processor = EpisodeProcessor(
     repo=ctx["repo"],
@@ -553,9 +601,10 @@ curl -X POST localhost:8001/ingest/audio \
 #### 6.1 — Unit tests for MediaFileStore
 
 `tests/test_media_store.py`:
-- `test_save_creates_file` — save bytes, verify file exists at returned path
-- `test_save_creates_agent_directory` — verify agent-scoped directory
-- `test_get_path_returns_none_for_missing` — non-existent UUID
+- `test_save_moves_file` — save a temp file, verify it exists at the resolved store path
+- `test_save_creates_agent_directory` — verify agent-scoped directory created
+- `test_save_returns_relative_path` — verify `media_ref.relative_path` is `{agent_id}/{uuid}.{ext}`
+- `test_resolve_returns_absolute` — verify `resolve()` joins base path correctly
 - `test_delete_removes_file` — save then delete, verify gone
 - Use `tmp_path` fixture for isolation
 
@@ -573,9 +622,9 @@ curl -X POST localhost:8001/ingest/audio \
 `tests/test_media_ingestion.py`:
 - Use `InMemoryRepository` + `MockMediaDescriptionService` + real `MediaFileStore` (with `tmp_path`)
 - `test_process_audio_stores_episode` — verify episode created with source_type="ingestion_audio"
-- `test_process_audio_metadata_contains_media_ref` — verify media_ref in metadata
+- `test_process_audio_episode_text_contains_media_ref` — verify relative_path in episode text
 - `test_process_video_stores_episode` — same for video
-- `test_process_audio_without_compressor_falls_back` — verify graceful degradation
+- `test_process_audio_without_compressor_returns_failed` — verify status="failed" when no ffmpeg
 - `test_audio_endpoint_rejects_wrong_content_type` — HTTP 415 via test client
 - `test_video_endpoint_rejects_oversized_file` — HTTP 413 via test client
 
@@ -592,62 +641,41 @@ curl -X POST localhost:8001/ingest/audio \
 
 ---
 
-## Stage 7: Docker and Documentation
+## Stage 7: Documentation
 
-**Goal**: Ensure the media pipeline works in the Docker Compose environment and update documentation.
+**Goal**: Update documentation to reflect the new media ingestion capabilities.
+
+**Prerequisite**: ffmpeg and ffprobe must be installed on the host (assumed available).
 
 ### Steps
 
-#### 7.1 — Update Docker images
-
-Update `docker/mcp/Dockerfile` and `docker/ingestion/Dockerfile` (or the shared base):
-
-```dockerfile
-# Add ffmpeg and ImageMagick to the image
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    imagemagick \
-    && rm -rf /var/lib/apt/lists/*
-```
-
-#### 7.2 — Docker Compose volume for media store
-
-Update `docker-compose.yml`:
-
-```yaml
-services:
-  ingestion:
-    # ... existing config ...
-    volumes:
-      - media_store:/app/media_store
-    environment:
-      - NEOCORTEX_MEDIA_STORE_PATH=/app/media_store
-
-volumes:
-  media_store:
-```
-
-#### 7.3 — Update docs/development.md
+#### 7.1 — Update docs/development.md
 
 Add section on media ingestion:
-- System requirements (ffmpeg, optional ImageMagick)
-- New environment variables
+- System requirements (ffmpeg must be on PATH)
+- New environment variables (`NEOCORTEX_MEDIA_STORE_PATH`, `GOOGLE_API_KEY`)
+- New settings (`media_store_path`, `media_max_upload_bytes`, `media_description_model`, `media_description_max_tokens`)
 - New endpoints with curl examples
-- Media storage path and cleanup considerations
+- Media storage layout and relative path scheme
 - Size limits and supported formats
 
-#### 7.4 — Update CLAUDE.md codebase map
+#### 7.2 — Update CLAUDE.md codebase map
 
-Add new files to the codebase map section and update the ingestion description.
-
-**Verification**:
-```bash
-docker compose build ingestion
-docker compose up -d postgres ingestion
-curl -X POST localhost:8001/ingest/audio -F "file=@test.wav;type=audio/wav"
+Add new files to the codebase map section:
+```
+  ingestion/
+    media_models.py      # MediaRef, MediaIngestionResult, CompressedMedia
+    media_store.py       # Filesystem-based media file store
+    media_compressor.py  # ffmpeg compression service
+    media_description.py # Gemini multimodal description service
+    media_description_mock.py # Mock description service for tests
 ```
 
-**Commit**: `docs(media): update Docker config and documentation for media ingestion`
+Update the ingestion description to mention audio/video support.
+
+**Verification**: Review docs render correctly, no broken references.
+
+**Commit**: `docs(media): update development docs and codebase map for media ingestion`
 
 ---
 
@@ -660,7 +688,7 @@ curl -X POST localhost:8001/ingest/audio -F "file=@test.wav;type=audio/wav"
 1. Run full test suite: `uv run pytest tests/ -v`
 2. Start mock server: `NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion`
 3. Upload audio file → verify episode appears in mock store with description
-4. Upload video file → verify episode appears with description and thumbnail
+4. Upload video file → verify episode appears with description
 5. Verify existing text/document/events endpoints still work unchanged
 6. Verify health endpoint still works
 7. Verify 415 for unsupported media types
@@ -680,7 +708,7 @@ curl -X POST localhost:8001/ingest/audio -F "file=@test.wav;type=audio/wav"
 | 4 | Extend IngestionProcessor + EpisodeProcessor | `PENDING` | |
 | 5 | API endpoints for audio/video | `PENDING` | |
 | 6 | Unit and integration tests | `PENDING` | |
-| 7 | Docker and documentation | `PENDING` | |
+| 7 | Documentation | `PENDING` | |
 | 8 | Final validation | `PENDING` | |
 
 **Last stage completed**: —
