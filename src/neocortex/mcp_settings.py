@@ -62,5 +62,9 @@ class MCPSettings(BaseSettings):
     librarian_model: str = "gemini-3-flash-preview"
     librarian_thinking_effort: ThinkingLevel = "low"
 
+    # Admin
+    bootstrap_admin_id: str = "admin"  # Seeded into agent_registry as admin on startup
+    admin_token: str = "admin-token-neocortex"  # Bootstrap admin dev token
+
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired

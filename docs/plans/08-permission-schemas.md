@@ -901,15 +901,50 @@ test(permissions): E2E smoke tests and development docs update
 
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 1 | Permission data model, service layer & wiring | PENDING | |
-| 2 | GraphRouter permission enforcement & MCP tool support | PENDING | |
-| 3 | Ingestion API permission enforcement & extraction awareness | PENDING | |
-| 4 | Admin REST API | PENDING | |
-| 5 | Integration tests (in-memory) & CLAUDE.md | PENDING | |
-| 6 | E2E smoke tests & development docs | PENDING | |
+| 1 | Permission data model, service layer & wiring | DONE | SQL migration 007, Pydantic models, PermissionChecker protocol, PG + in-memory impls, wired into ServiceContext, 18 unit tests |
+| 2 | GraphRouter permission enforcement & MCP tool support | DONE | Router filters shared schemas by read permission, route_store_to validates write, store_episode_to on protocol/adapter/mock, remember tool gains target_graph, 11 new tests |
+| 3 | Ingestion API permission enforcement & extraction awareness | DONE | target_graph on ingestion models/routes, permission checks (403), EpisodeProcessor routes to target schema, extraction pipeline carries target_schema through task→run_extraction→_persist_payload, MemoryRepository methods accept target_schema, 16 new tests |
+| 4 | Admin REST API | DONE | require_admin dependency, permission CRUD endpoints, agent promote/demote, graph management (501 in mock mode), bootstrap admin token injection, 18 tests |
+| 5 | Integration tests (in-memory) & CLAUDE.md | DONE | Full permission lifecycle test (10 steps), admin lifecycle test, discover filtering test, admin bypass test, 4 extraction target schema tests, mock DB mode verified, CLAUDE.md updated with rule #6 + codebase map |
+| 6 | E2E smoke tests & development docs | DONE | E2E permission lifecycle test (8 steps: create graph, grant, write/deny, read verification, revoke, admin promote/demote, bootstrap guard, cleanup+cascade), dev_tokens.json updated with admin+eve tokens, docs/development.md updated with admin config, API endpoints, target_graph docs, project layout |
 
-Last stage completed: —
-Last updated by: —
+Last stage completed: Stage 6 — E2E smoke tests & development docs
+Last updated by: plan-runner-agent
+
+---
+
+## Post-Implementation Review & Fixes
+
+**Review date:** 2026-03-28
+**Reviewer:** code-review agent
+
+### Issues Found & Fixed
+
+| # | Priority | Issue | Fix |
+|---|----------|-------|-----|
+| 1 | P1 | `_scoped_conn` was `async def` returning a sync context manager, requiring awkward `async with await` at 7 call sites | Converted to `def`, updated all call sites to `async with self._scoped_conn(...)` |
+| 2 | P1 | `GET /admin/permissions` (no filter) had N+1 query: fetched all agents then queried permissions per agent in a loop | Added `list_all_permissions()` to `PermissionChecker` protocol + both implementations (single query in PG) |
+| 3 | P2 | `update_episode_embedding` didn't accept `target_schema` — embeddings for shared-schema episodes silently targeted the wrong schema in PG | Added `target_schema` param to protocol/adapter/mock; threaded from `remember.py` and `episode_processor._embed_episode()` |
+| 4 | P2 | Duplicate `_fetch_types_in_schema_direct` / `_fetch_type_counts_in_schema_direct` methods in adapter (identical to non-`_direct` variants) | Removed duplicates, updated callers to use existing methods |
+| 5 | P2 | Mock `get_episode` ignored `target_schema` (searched flat list regardless) — weaker test fidelity vs PG behavior | Now searches `_schema_episodes[target_schema]` when `target_schema` is set |
+| 6 | P2 | `PermissionGrant.schema_name` accepted any string — no validation at API boundary | Added `field_validator` enforcing `^ncx_[a-z0-9]+__[a-z0-9_]+$` pattern |
+| 7 | — | Pre-existing `e2e_mcp_test.py` assumed all agents can see shared graphs (predates permission system) | Updated to grant read permissions via admin API before discover check |
+
+### Validation Results
+
+**Unit & integration tests (no Docker):**
+- 239 passed, 5 skipped, 0 failures
+- 71 permission-specific tests pass (unit + integration)
+
+**E2E tests (real PostgreSQL):**
+
+| Test | Status | Details |
+|------|--------|---------|
+| `e2e_permission_test.py` | PASSED | 8 steps: create graph, grant, write/deny, read verification, revoke, admin lifecycle, bootstrap guard, cascade cleanup + PG-level verification |
+| `e2e_ingestion_test.py` | PASSED | Auth rejection, text/document/events ingestion, content type validation, data isolation |
+| `e2e_mcp_test.py` | PASSED | Remember/recall isolation, discover graph visibility (with permission grants), PG schema verification |
+
+**Mock DB mode:** Boots correctly with permissions wired (`InMemoryPermissionService`, bootstrap admin seeded).
 
 ---
 

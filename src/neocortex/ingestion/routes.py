@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 
 from neocortex.ingestion.auth import get_agent_id
 from neocortex.ingestion.models import EventsIngestionRequest, IngestionResult, TextIngestionRequest
@@ -19,14 +19,26 @@ _ACCEPTED_CONTENT_TYPES = {
 }
 
 
+async def _check_write_permission(request: Request, agent_id: str, target_graph: str) -> None:
+    """Raise 403 if the agent lacks write access to the target shared graph."""
+    permissions = request.app.state.permissions
+    if not await permissions.can_write_schema(agent_id, target_graph):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Agent '{agent_id}' does not have write access to '{target_graph}'",
+        )
+
+
 @router.post("/text", response_model=IngestionResult)
 async def ingest_text(
     body: TextIngestionRequest,
     request: Request,
     agent_id: Annotated[str, Depends(get_agent_id)],
 ) -> IngestionResult:
+    if body.target_graph:
+        await _check_write_permission(request, agent_id, body.target_graph)
     processor = request.app.state.processor
-    return await processor.process_text(agent_id, body.text, body.metadata)
+    return await processor.process_text(agent_id, body.text, body.metadata, target_schema=body.target_graph)
 
 
 @router.post("/document", response_model=IngestionResult)
@@ -34,8 +46,12 @@ async def ingest_document(
     file: UploadFile,
     request: Request,
     agent_id: Annotated[str, Depends(get_agent_id)],
-    metadata: str | None = None,
+    metadata: str | None = Form(default=None),
+    target_graph: str | None = Form(default=None),
 ) -> IngestionResult:
+    if target_graph:
+        await _check_write_permission(request, agent_id, target_graph)
+
     # Validate content type
     content_type = file.content_type or "application/octet-stream"
     if content_type not in _ACCEPTED_CONTENT_TYPES:
@@ -62,7 +78,12 @@ async def ingest_document(
 
     processor = request.app.state.processor
     return await processor.process_document(
-        agent_id, file.filename or "unknown", content_bytes, content_type, parsed_metadata
+        agent_id,
+        file.filename or "unknown",
+        content_bytes,
+        content_type,
+        parsed_metadata,
+        target_schema=target_graph,
     )
 
 
@@ -72,5 +93,7 @@ async def ingest_events(
     request: Request,
     agent_id: Annotated[str, Depends(get_agent_id)],
 ) -> IngestionResult:
+    if body.target_graph:
+        await _check_write_permission(request, agent_id, body.target_graph)
     processor = request.app.state.processor
-    return await processor.process_events(agent_id, body.events, body.metadata)
+    return await processor.process_events(agent_id, body.events, body.metadata, target_schema=body.target_graph)

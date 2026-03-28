@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from neocortex.admin.routes import router as admin_router
 from neocortex.auth.tokens import load_token_map
 from neocortex.ingestion.episode_processor import EpisodeProcessor
 from neocortex.ingestion.routes import router
@@ -28,7 +29,14 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
         app.state.services_ctx = ctx
         app.state.processor = processor
         app.state.settings = settings
-        app.state.token_map = load_token_map(settings)
+        app.state.permissions = ctx["permissions"]
+        app.state.schema_mgr = ctx.get("schema_mgr")
+
+        token_map = load_token_map(settings)
+        # Ensure bootstrap admin token maps to the bootstrap admin agent_id
+        if settings.admin_token and settings.admin_token not in token_map:
+            token_map[settings.admin_token] = settings.bootstrap_admin_id
+        app.state.token_map = token_map
 
         try:
             yield
@@ -42,5 +50,6 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
         return JSONResponse({"status": "ok", "version": "0.1.0"})
 
     app.include_router(router)
+    app.include_router(admin_router)
 
     return app
