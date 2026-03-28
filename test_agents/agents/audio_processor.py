@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from open_agent_compiler._types import AgentPermissions
+from open_agent_compiler._types import AgentPermissions, ToolPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
 from agents.tools import build_list_input_files, build_transcribe_local_audio
@@ -19,6 +19,8 @@ def build_audio_processor(config):
         .todo("Process audio", "Transcribe local audio file")
         .use_tool("transcribe-local-audio")
         .instructions(
+            "**IMPORTANT: Set bash timeout to 600000 (10 minutes) for transcription commands — "
+            "audio files are large and upload + transcription takes several minutes.**\n\n"
             "Transcribe the local audio file using transcribe-local-audio.\n"
             "Review the transcript and identify key topics, insights, and notable quotes.\n"
             "Note timestamps for the most important segments."
@@ -67,8 +69,13 @@ def build_audio_processor(config):
         )
         .workflow_step(step_1)
         .workflow_step(step_2)
+        .tool_permissions(ToolPermissions(read=True))
         .permissions(AgentPermissions(
-            extra=(("neocortex-audio-proc*", "allow"),),
+            extra=(
+                ("neocortex-audio-proc*", "allow"),
+                ("read", "allow"),
+                ("grep", "allow"),
+            ),
         ))
         .temperature(0.3)
         .build()

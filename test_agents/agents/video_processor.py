@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from open_agent_compiler._types import AgentPermissions
+from open_agent_compiler._types import AgentPermissions, ToolPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
 from agents.tools import build_list_input_files, build_transcribe_local_video, build_video_screenshot
@@ -21,6 +21,8 @@ def build_video_processor(config):
         .use_tool("transcribe-local-video")
         .use_tool("video-screenshot")
         .instructions(
+            "**IMPORTANT: Set bash timeout to 600000 (10 minutes) for transcription commands — "
+            "video files are large and upload + transcription takes several minutes.**\n\n"
             "Transcribe the local video file using transcribe-local-video.\n"
             "Review the transcript for key moments — slides, diagrams, code, or important visuals.\n"
             "Use video-screenshot to extract frames at those timestamps.\n"
@@ -73,8 +75,13 @@ def build_video_processor(config):
         )
         .workflow_step(step_1)
         .workflow_step(step_2)
+        .tool_permissions(ToolPermissions(read=True))
         .permissions(AgentPermissions(
-            extra=(("neocortex-video-proc*", "allow"),),
+            extra=(
+                ("neocortex-video-proc*", "allow"),
+                ("read", "allow"),
+                ("grep", "allow"),
+            ),
         ))
         .temperature(0.3)
         .build()

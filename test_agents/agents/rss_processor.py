@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from open_agent_compiler._types import AgentPermissions
+from open_agent_compiler._types import AgentPermissions, ToolPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
 from agents.tools import build_list_input_files, build_parse_local_rss
@@ -67,8 +67,13 @@ def build_rss_processor(config):
         )
         .workflow_step(step_1)
         .workflow_step(step_2)
+        .tool_permissions(ToolPermissions(read=True))
         .permissions(AgentPermissions(
-            extra=(("neocortex-rss-proc*", "allow"),),
+            extra=(
+                ("neocortex-rss-proc*", "allow"),
+                ("read", "allow"),
+                ("grep", "allow"),
+            ),
         ))
         .temperature(0.3)
         .build()
