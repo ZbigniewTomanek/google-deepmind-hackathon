@@ -1,3 +1,5 @@
+import random
+
 from fastmcp import Context
 from loguru import logger
 
@@ -47,6 +49,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     existing_node_ids = {r.item_id for r in results if r.source_kind == "node"}
     node_results: list[RecallItem] = []
     merged_adjacency: dict[int, list[tuple[int, float]]] = {}
+    traversed_edge_ids: set[int] = set()
 
     # Collect all seeds: Phase 1 node results + Phase 2 search results
     seed_nodes: list[tuple[int, float]] = []
@@ -56,6 +59,11 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
 
     for node, relevance_score in matched_node_tuples:
         neighborhood = await repo.get_node_neighborhood(agent_id=agent_id, node_id=node.id, depth=traversal_depth)
+
+        # Collect edge IDs for reinforcement
+        for entry in neighborhood:
+            for edge in entry["edges"]:
+                traversed_edge_ids.add(edge.id)
 
         # Build adjacency map for spreading activation
         adjacency = neighborhood_to_adjacency(neighborhood, node.id)
@@ -147,6 +155,24 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
         await repo.record_node_access(agent_id, recalled_node_ids)
     if recalled_episode_ids:
         await repo.record_episode_access(agent_id, recalled_episode_ids)
+
+    # Edge reinforcement — strengthen traversed edges (Hebbian learning)
+    if traversed_edge_ids:
+        await repo.reinforce_edges(
+            agent_id,
+            list(traversed_edge_ids),
+            delta=settings.edge_reinforcement_delta,
+            ceiling=settings.edge_weight_ceiling,
+        )
+
+    # Lazy edge decay — 1 in 10 recall calls
+    if random.random() < 0.1:
+        await repo.decay_stale_edges(
+            agent_id,
+            older_than_hours=168.0,
+            decay_factor=0.95,
+            floor=settings.edge_weight_floor,
+        )
 
     logger.bind(action_log=True).info(
         "recall_with_graph_traversal",
