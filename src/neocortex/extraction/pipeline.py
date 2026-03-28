@@ -146,6 +146,12 @@ async def _persist_payload(
 ) -> None:
     """Persist librarian output to the knowledge graph."""
 
+    # Fetch source episode to read importance_hint
+    importance_hint: float | None = None
+    episode = await repo.get_episode(agent_id, episode_id)
+    if episode and episode.metadata:
+        importance_hint = episode.metadata.get("importance_hint")
+
     # Persist any remaining type proposals
     for nt in payload.accepted_node_types:
         await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
@@ -175,6 +181,9 @@ async def _persist_payload(
     name_to_node_id: dict[str, int] = {}
     for i, entity in enumerate(payload.entities):
         node_type = await repo.get_or_create_node_type(agent_id, entity.type_name, target_schema=target_schema)
+        entity_importance = entity.importance
+        if importance_hint is not None:
+            entity_importance = max(entity_importance, importance_hint)
         node = await repo.upsert_node(
             agent_id=agent_id,
             name=entity.name,
@@ -183,6 +192,7 @@ async def _persist_payload(
             properties={**entity.properties, "_source_episode": episode_id},
             embedding=entity_embeddings[i],
             target_schema=target_schema,
+            importance=entity_importance,
         )
         name_to_node_id[entity.name] = node.id
 

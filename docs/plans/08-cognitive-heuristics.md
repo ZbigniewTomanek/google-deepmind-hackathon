@@ -644,11 +644,11 @@ uv run pytest tests/ -v                         # full regression
 |-------|--------|-------|
 | 1. Schema Evolution | DONE | Added columns to schema template, Pydantic models, RecallItem, MCPSettings; bootstrapped E2E test file |
 | 2. ACT-R Base-Level Activation | DONE | Rebalanced weights, added compute_base_activation, 5-signal HybridWeights, access tracking in protocol/adapter/mock, real scoring in mock recall, wired into recall tool |
-| 3. Importance Scoring | TODO | |
+| 3. Importance Scoring | DONE | Added importance to extraction schemas, agent prompts, upsert_node (max semantics), remember() tool, store_episode(), and _persist_payload with importance_hint floor |
 | 4. Spreading Activation | TODO | |
 | 5. Edge Weight Reinforcement | TODO | |
 | 6. Soft-Forget & Consolidation | TODO | |
 | 7. Integration & Verification | TODO | |
 
-Last stage completed: Stage 2 — ACT-R Base-Level Activation
+Last stage completed: Stage 3 — Importance Scoring
 Last updated by: plan-runner-agent

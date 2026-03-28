@@ -13,6 +13,8 @@ class MemoryRepository(Protocol):
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
         """Store a raw episode and return the episode ID."""
 
@@ -77,10 +79,12 @@ class MemoryRepository(Protocol):
         embedding: list[float] | None = None,
         source: str | None = None,
         target_schema: str | None = None,
+        importance: float = 0.5,
     ) -> Node:
         """Upsert by (name, type_id) within the agent's schema.
 
         If a node with the same name AND type_id exists, merge properties and update.
+        Importance uses max semantics — it only goes up.
         Name alone is NOT the uniqueness key — the same name under different types
         creates separate nodes (e.g. 'Serotonin' as Neurotransmitter vs Drug).
         """

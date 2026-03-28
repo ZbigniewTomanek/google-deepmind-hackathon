@@ -65,27 +65,32 @@ class GraphServiceAdapter:
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
-        metadata = {"context": context} if context else {}
+        episode_metadata = metadata or {}
+        if context:
+            episode_metadata["context"] = context
         if self._pool is None or self._router is None:
             episode = await self._graph.create_episode(
                 agent_id=agent_id,
                 content=content,
                 source_type=source_type,
-                metadata=metadata,
+                metadata=episode_metadata,
             )
             return episode.id
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata)
-                   VALUES ($1, $2, $3, $4::jsonb)
+                """INSERT INTO episode (agent_id, content, source_type, metadata, importance)
+                   VALUES ($1, $2, $3, $4::jsonb, $5)
                    RETURNING id""",
                 agent_id,
                 content,
                 source_type,
-                json.dumps(metadata),
+                json.dumps(episode_metadata),
+                importance,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -295,6 +300,7 @@ class GraphServiceAdapter:
         embedding: list[float] | None = None,
         source: str | None = None,
         target_schema: str | None = None,
+        importance: float = 0.5,
     ) -> Node:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
@@ -325,7 +331,7 @@ class GraphServiceAdapter:
         emb_str = str(embedding) if embedding else None
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
-                "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
+                "SELECT id, type_id, name, content, properties, source, importance, created_at, updated_at "
                 "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
                 name,
                 type_id,
@@ -341,13 +347,17 @@ class GraphServiceAdapter:
                         content = COALESCE($1, content),
                         properties = $2::jsonb,
                         embedding = COALESCE($3::vector, embedding),
+                        importance = GREATEST(importance, $5),
                         updated_at = now()
                        WHERE id = $4
-                       RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
+                       RETURNING id, type_id, name, content, properties, source, importance,
+                                 access_count, last_accessed_at, forgotten, forgotten_at,
+                                 created_at, updated_at""",
                     content,
                     merged_json,
                     emb_str,
                     row["id"],
+                    importance,
                 )
                 if updated_row is None:
                     raise RuntimeError("Failed to update node")
@@ -357,15 +367,18 @@ class GraphServiceAdapter:
                 return Node(**d)
             else:
                 new_row = await conn.fetchrow(
-                    """INSERT INTO node (type_id, name, content, properties, embedding, source)
-                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6)
-                       RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
+                    """INSERT INTO node (type_id, name, content, properties, embedding, source, importance)
+                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7)
+                       RETURNING id, type_id, name, content, properties, source, importance,
+                                 access_count, last_accessed_at, forgotten, forgotten_at,
+                                 created_at, updated_at""",
                     type_id,
                     name,
                     content,
                     props_json,
                     emb_str,
                     source,
+                    importance,
                 )
                 if new_row is None:
                     raise RuntimeError("Failed to create node")
