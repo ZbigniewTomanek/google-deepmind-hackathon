@@ -109,11 +109,32 @@ async def _assert_health() -> None:
 
 
 async def step_setup_domain_routing() -> None:
-    """Create shared domain schemas and grant Alice write permissions."""
+    """Verify seed domain schemas are auto-provisioned (Plan 13 Stage 1) and grant Alice write."""
     print("\n=== Step 0: Set up domain routing prerequisites ===")
 
+    # Verify discover_domains returns seed domains (Plan 13 Stage 1 + Stage 4)
+    domains_result = await mcp_call(ALICE_TOKEN, "discover_domains", {})
+    domain_slugs = [d["slug"] for d in domains_result.get("domains", [])]
+    print(f"  discover_domains returned: {domain_slugs}")
+    for expected in DOMAIN_PURPOSES:
+        if expected in domain_slugs:
+            print(f"    [PASS] Seed domain '{expected}' present")
+        else:
+            print(f"    [WARN] Seed domain '{expected}' missing")
+
+    # Verify seed schemas are auto-provisioned (is_shared=true) via discover_graphs
+    graphs_result = await mcp_call(ALICE_TOKEN, "discover_graphs", {})
+    graph_names = [g["schema_name"] for g in graphs_result.get("graphs", [])]
+    shared_graphs = [g for g in graphs_result.get("graphs", []) if g.get("is_shared")]
+    print(f"  discover_graphs returned {len(graph_names)} graphs, {len(shared_graphs)} shared")
+    for schema_name in DOMAIN_SCHEMAS:
+        if schema_name in graph_names:
+            print(f"    [PASS] Seed schema '{schema_name}' auto-provisioned and accessible")
+        else:
+            print(f"    [INFO] Seed schema '{schema_name}' not yet visible — creating via admin")
+
     async with httpx.AsyncClient(base_url=INGESTION_URL, timeout=10.0) as client:
-        # Create shared schemas for each seed domain
+        # Ensure shared schemas exist (idempotent — may already be auto-provisioned)
         for purpose in DOMAIN_PURPOSES:
             resp = await client.post(
                 "/admin/graphs",
@@ -122,9 +143,8 @@ async def step_setup_domain_routing() -> None:
             )
             if resp.status_code == 200:
                 schema = resp.json().get("schema_name", "")
-                print(f"  Created/ensured schema: {schema}")
+                print(f"  Ensured schema: {schema}")
             else:
-                # May already exist — that's fine
                 print(f"  Schema for '{purpose}': {resp.status_code} (may already exist)")
 
         # Grant Alice write permissions to all domain schemas
@@ -402,6 +422,21 @@ async def step_verify_domain_schemas() -> None:
     finally:
         await conn.close()
 
+    # Also verify via MCP discovery tools
+    print("\n  Verifying domain schemas via discover_ontology...")
+    for schema_name in DOMAIN_SCHEMAS:
+        try:
+            ontology = await mcp_call(ALICE_TOKEN, "discover_ontology", {"graph_name": schema_name})
+            stats = ontology.get("stats", {})
+            nt = ontology.get("node_types", [])
+            et = ontology.get("edge_types", [])
+            print(
+                f"  {schema_name} via MCP: {len(nt)} node types, {len(et)} edge types, "
+                f"nodes={stats.get('total_nodes', 0)} edges={stats.get('total_edges', 0)}"
+            )
+        except Exception as e:
+            print(f"  {schema_name} via MCP: error — {e}")
+
 
 # ── Step 3: Verify ontology created ────────────────────────────────
 
@@ -409,7 +444,7 @@ async def step_verify_domain_schemas() -> None:
 async def step_verify_ontology() -> None:
     """Check that node types and edge types were created in the agent's schema."""
     print("\n=== Step 3: Verify ontology ===")
-    result = await mcp_call(ALICE_TOKEN, "discover", {})
+    result = await mcp_call(ALICE_TOKEN, "discover_ontology", {"graph_name": AGENT_SCHEMA})
     node_types = result.get("node_types", [])
     edge_types = result.get("edge_types", [])
     stats = result.get("stats", {})
@@ -422,9 +457,24 @@ async def step_verify_ontology() -> None:
         print(f"    {et['name']} — {et.get('count', 0)} relations")
     print(f"  Stats: {stats}")
 
-    assert len(node_types) > 0, f"No node types created. discover returned: {result}"
-    assert len(edge_types) > 0, f"No edge types created. discover returned: {result}"
+    assert len(node_types) > 0, f"No node types created. discover_ontology returned: {result}"
+    assert len(edge_types) > 0, f"No edge types created. discover_ontology returned: {result}"
     print(f"  [PASS] Ontology populated: " f"{len(node_types)} node types, {len(edge_types)} edge types")
+
+    # Drill into a specific type using discover_details
+    first_nt = node_types[0]["name"]
+    detail_result = await mcp_call(
+        ALICE_TOKEN,
+        "discover_details",
+        {"type_name": first_nt, "graph_name": AGENT_SCHEMA, "kind": "node"},
+    )
+    detail = detail_result.get("type_detail", {})
+    print(
+        f"  discover_details for '{first_nt}': count={detail.get('count', 0)}, "
+        f"samples={detail.get('sample_names', [])}"
+    )
+    assert detail.get("name") == first_nt, f"Unexpected detail name: {detail}"
+    print(f"  [PASS] discover_details returned detail for '{first_nt}'")
 
 
 # ── Step 4: Verify graph data in PostgreSQL ────────────────────────
@@ -620,20 +670,20 @@ async def step_verify_node_importance() -> None:
 
 
 async def step_verify_discover_stats() -> None:
-    """Verify discover returns cognitive stats (forgotten, consolidated, avg_activation)."""
+    """Verify discover_ontology returns cognitive stats (forgotten, consolidated, avg_activation)."""
     print("\n=== Step 9: Verify discover cognitive stats ===")
-    result = await mcp_call(ALICE_TOKEN, "discover", {})
+    result = await mcp_call(ALICE_TOKEN, "discover_ontology", {"graph_name": AGENT_SCHEMA})
     stats = result.get("stats", {})
 
     for key in ("forgotten_nodes", "consolidated_episodes", "avg_activation"):
-        assert key in stats, f"Missing cognitive stat '{key}' in discover: {stats}"
+        assert key in stats, f"Missing cognitive stat '{key}' in discover_ontology: {stats}"
 
     print(f"  forgotten_nodes:       {stats['forgotten_nodes']}")
     print(f"  consolidated_episodes: {stats['consolidated_episodes']}")
     print(f"  avg_activation:        {stats['avg_activation']}")
 
     assert stats["consolidated_episodes"] >= len(SEED_TEXTS), (
-        f"Expected at least {len(SEED_TEXTS)} consolidated episodes in discover stats, "
+        f"Expected at least {len(SEED_TEXTS)} consolidated episodes in discover_ontology stats, "
         f"got {stats['consolidated_episodes']}"
     )
     print("  [PASS] Discover cognitive stats present and consistent")
@@ -645,11 +695,25 @@ async def step_verify_discover_stats() -> None:
 async def step_verify_isolation() -> None:
     """Verify Bob cannot see Alice's extracted graph."""
     print("\n=== Step 6: Cross-agent isolation ===")
-    result = await mcp_call(BOB_TOKEN, "discover", {})
+    bob_graphs_result = await mcp_call(BOB_TOKEN, "discover_graphs", {})
+    bob_graph_names = [g["schema_name"] for g in bob_graphs_result.get("graphs", [])]
 
-    bob_node_types = result.get("node_types", [])
-    bob_stats = result.get("stats", {})
-    bob_nodes = bob_stats.get("total_nodes", 0)
+    # Bob should not see Alice's personal schema
+    bob_has_alice = AGENT_SCHEMA in bob_graph_names
+    print(f"  Bob's graphs: {bob_graph_names}")
+    if bob_has_alice:
+        print("  [WARN] Bob can see Alice's personal schema — checking if data leaked")
+    else:
+        print("  [PASS] Bob cannot see Alice's personal schema")
+
+    # Check Bob's own ontology (should have no medical types from Alice)
+    bob_personal = "ncx_bob__personal"
+    bob_nodes = 0
+    bob_node_types: list = []
+    if bob_personal in bob_graph_names:
+        bob_ontology = await mcp_call(BOB_TOKEN, "discover_ontology", {"graph_name": bob_personal})
+        bob_node_types = bob_ontology.get("node_types", [])
+        bob_nodes = bob_ontology.get("stats", {}).get("total_nodes", 0)
 
     print(f"  Bob's node types: {len(bob_node_types)}")
     print(f"  Bob's total nodes: {bob_nodes}")
