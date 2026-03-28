@@ -21,12 +21,14 @@ app = procrastinate.App(
 async def extract_episode(
     agent_id: str,
     episode_ids: list[int],
+    target_schema: str | None = None,
 ) -> None:
     """Run extraction pipeline for a batch of episodes."""
     logger.info(
         "extract_episode_started",
         agent_id=agent_id,
         episode_ids=episode_ids,
+        target_schema=target_schema,
     )
     from neocortex.extraction.agents import AgentInferenceConfig
     from neocortex.extraction.pipeline import run_extraction
@@ -40,6 +42,7 @@ async def extract_episode(
         embeddings=services["embeddings"],
         agent_id=agent_id,
         episode_ids=episode_ids,
+        target_schema=target_schema,
         ontology_config=AgentInferenceConfig(
             model_name=settings.ontology_model,
             thinking_effort=settings.ontology_thinking_effort,
@@ -57,4 +60,5 @@ async def extract_episode(
         "extract_episode_completed",
         agent_id=agent_id,
         episode_ids=episode_ids,
+        target_schema=target_schema,
     )

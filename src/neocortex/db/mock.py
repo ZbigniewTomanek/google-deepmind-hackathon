@@ -101,8 +101,8 @@ class InMemoryRepository:
 
         return matches[:limit]
 
-    async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
-        del agent_id
+    async def get_node_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
+        del agent_id, target_schema
         return [
             TypeInfo(
                 id=nt.id,
@@ -113,8 +113,8 @@ class InMemoryRepository:
             for nt in sorted(self._node_types.values(), key=lambda t: t.name)
         ]
 
-    async def get_edge_types(self, agent_id: str | None = None) -> list[TypeInfo]:
-        del agent_id
+    async def get_edge_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
+        del agent_id, target_schema
         return [
             TypeInfo(
                 id=et.id,
@@ -145,7 +145,10 @@ class InMemoryRepository:
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
+    async def get_or_create_node_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> NodeType:
+        del target_schema
         if name in self._node_types:
             return self._node_types[name]
         now = datetime.now(UTC)
@@ -154,7 +157,10 @@ class InMemoryRepository:
         self._node_types[name] = nt
         return nt
 
-    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
+    async def get_or_create_edge_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> EdgeType:
+        del target_schema
         if name in self._edge_types:
             return self._edge_types[name]
         now = datetime.now(UTC)
@@ -165,7 +171,8 @@ class InMemoryRepository:
 
     # ── Episode Read ──
 
-    async def get_episode(self, agent_id: str, episode_id: int) -> Episode | None:
+    async def get_episode(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> Episode | None:
+        del target_schema
         for ep in self._episodes:
             if ep["id"] == episode_id and ep["agent_id"] == agent_id:
                 return Episode(
@@ -190,7 +197,9 @@ class InMemoryRepository:
         properties: dict | None = None,
         embedding: list[float] | None = None,
         source: str | None = None,
+        target_schema: str | None = None,
     ) -> Node:
+        del target_schema
         props = properties or {}
         # Look for existing node by (name, type_id)
         for node in self._nodes.values():
@@ -225,7 +234,8 @@ class InMemoryRepository:
         self._nodes[node.id] = node
         return node
 
-    async def find_nodes_by_name(self, agent_id: str, name: str) -> list[Node]:
+    async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
+        del target_schema
         return [n for n in self._nodes.values() if n.name.lower() == name.lower()]
 
     # ── Edge CRUD ──
@@ -238,7 +248,9 @@ class InMemoryRepository:
         type_id: int,
         weight: float = 1.0,
         properties: dict | None = None,
+        target_schema: str | None = None,
     ) -> Edge:
+        del target_schema
         props = properties or {}
         # Look for existing edge by (source_id, target_id, type_id)
         for edge in self._edges.values():
@@ -322,7 +334,8 @@ class InMemoryRepository:
 
     # ── Bulk Queries ──
 
-    async def list_all_node_names(self, agent_id: str) -> list[str]:
+    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
+        del target_schema
         return sorted(n.name for n in self._nodes.values())
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:

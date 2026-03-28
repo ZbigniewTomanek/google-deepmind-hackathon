@@ -31,6 +31,7 @@ async def run_extraction(
     embeddings: EmbeddingService | None,
     agent_id: str,
     episode_ids: list[int],
+    target_schema: str | None = None,
     ontology_config: AgentInferenceConfig | None = None,
     extractor_config: AgentInferenceConfig | None = None,
     librarian_config: AgentInferenceConfig | None = None,
@@ -42,6 +43,7 @@ async def run_extraction(
         embeddings: Embedding service for node vectors (may be None).
         agent_id: Agent whose graph is being populated.
         episode_ids: Episodes to process.
+        target_schema: When set, all reads/writes target this schema instead of the agent's personal graph.
         ontology_config: Inference config for the ontology agent.
         extractor_config: Inference config for the extractor agent.
         librarian_config: Inference config for the librarian agent.
@@ -55,7 +57,7 @@ async def run_extraction(
     librarian_agent = build_librarian_agent(lib_cfg)
 
     for episode_id in episode_ids:
-        episode = await repo.get_episode(agent_id, episode_id)
+        episode = await repo.get_episode(agent_id, episode_id, target_schema=target_schema)
         if not episode:
             logger.warning("episode_not_found", episode_id=episode_id)
             continue
@@ -65,12 +67,13 @@ async def run_extraction(
             "extraction_start",
             episode_id=episode_id,
             agent_id=agent_id,
+            target_schema=target_schema,
             text_len=len(text),
         )
 
-        # 1. Load current ontology from agent's graph
-        node_types = await repo.get_node_types(agent_id)
-        edge_types = await repo.get_edge_types(agent_id)
+        # 1. Load current ontology from the target graph
+        node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
+        edge_types = await repo.get_edge_types(agent_id, target_schema=target_schema)
 
         # 2. Ontology stage
         ontology_result = await ontology_agent.run(
@@ -85,13 +88,13 @@ async def run_extraction(
 
         # 3. Persist new types
         for nt in ontology_result.output.new_node_types:
-            await repo.get_or_create_node_type(agent_id, nt.name, nt.description)
+            await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
         for et in ontology_result.output.new_edge_types:
-            await repo.get_or_create_edge_type(agent_id, et.name, et.description)
+            await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
 
         # Reload types (now includes newly created)
-        node_types = await repo.get_node_types(agent_id)
-        edge_types = await repo.get_edge_types(agent_id)
+        node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
+        edge_types = await repo.get_edge_types(agent_id, target_schema=target_schema)
 
         # 4. Extraction stage
         extraction_result = await extractor_agent.run(
@@ -105,7 +108,7 @@ async def run_extraction(
         )
 
         # 5. Librarian stage
-        known_names = await repo.list_all_node_names(agent_id)
+        known_names = await repo.list_all_node_names(agent_id, target_schema=target_schema)
         librarian_result = await librarian_agent.run(
             "Normalize and deduplicate the extracted data.",
             deps=LibrarianAgentDeps(
@@ -121,12 +124,13 @@ async def run_extraction(
 
         # 6. Persist graph data
         payload = librarian_result.output
-        await _persist_payload(repo, embeddings, agent_id, episode_id, payload)
+        await _persist_payload(repo, embeddings, agent_id, episode_id, payload, target_schema=target_schema)
 
         logger.info(
             "extraction_complete",
             episode_id=episode_id,
             agent_id=agent_id,
+            target_schema=target_schema,
             entities=len(payload.entities),
             relations=len(payload.relations),
         )
@@ -138,14 +142,15 @@ async def _persist_payload(
     agent_id: str,
     episode_id: int,
     payload: LibrarianPayload,
+    target_schema: str | None = None,
 ) -> None:
     """Persist librarian output to the knowledge graph."""
 
     # Persist any remaining type proposals
     for nt in payload.accepted_node_types:
-        await repo.get_or_create_node_type(agent_id, nt.name, nt.description)
+        await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
     for et in payload.accepted_edge_types:
-        await repo.get_or_create_edge_type(agent_id, et.name, et.description)
+        await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
 
     # Batch-embed entity descriptions (single API call instead of N+1)
     entity_embeddings: list[list[float] | None] = [None] * len(payload.entities)
@@ -169,7 +174,7 @@ async def _persist_payload(
     # Persist entities as nodes
     name_to_node_id: dict[str, int] = {}
     for i, entity in enumerate(payload.entities):
-        node_type = await repo.get_or_create_node_type(agent_id, entity.type_name)
+        node_type = await repo.get_or_create_node_type(agent_id, entity.type_name, target_schema=target_schema)
         node = await repo.upsert_node(
             agent_id=agent_id,
             name=entity.name,
@@ -177,6 +182,7 @@ async def _persist_payload(
             content=entity.description,
             properties={**entity.properties, "_source_episode": episode_id},
             embedding=entity_embeddings[i],
+            target_schema=target_schema,
         )
         name_to_node_id[entity.name] = node.id
 
@@ -187,10 +193,10 @@ async def _persist_payload(
         if src_id is None or tgt_id is None:
             # Try finding nodes by name in existing graph
             if src_id is None:
-                src_nodes = await repo.find_nodes_by_name(agent_id, rel.source_name)
+                src_nodes = await repo.find_nodes_by_name(agent_id, rel.source_name, target_schema=target_schema)
                 src_id = src_nodes[0].id if src_nodes else None
             if tgt_id is None:
-                tgt_nodes = await repo.find_nodes_by_name(agent_id, rel.target_name)
+                tgt_nodes = await repo.find_nodes_by_name(agent_id, rel.target_name, target_schema=target_schema)
                 tgt_id = tgt_nodes[0].id if tgt_nodes else None
         if src_id is None or tgt_id is None:
             logger.warning(
@@ -199,7 +205,7 @@ async def _persist_payload(
                 target=rel.target_name,
             )
             continue
-        edge_type = await repo.get_or_create_edge_type(agent_id, rel.relation_type)
+        edge_type = await repo.get_or_create_edge_type(agent_id, rel.relation_type, target_schema=target_schema)
         await repo.upsert_edge(
             agent_id=agent_id,
             source_id=src_id,
@@ -207,4 +213,5 @@ async def _persist_payload(
             type_id=edge_type.id,
             weight=rel.weight,
             properties={**rel.properties, "_source_episode": episode_id},
+            target_schema=target_schema,
         )

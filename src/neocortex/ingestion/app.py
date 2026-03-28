@@ -28,6 +28,7 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
         app.state.services_ctx = ctx
         app.state.processor = processor
         app.state.settings = settings
+        app.state.permissions = ctx["permissions"]
         app.state.token_map = load_token_map(settings)
 
         try:

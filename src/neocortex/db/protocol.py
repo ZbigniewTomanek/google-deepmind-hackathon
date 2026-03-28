@@ -31,10 +31,10 @@ class MemoryRepository(Protocol):
     ) -> list[RecallItem]:
         """Return ranked recall results for an agent."""
 
-    async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
+    async def get_node_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
         """Return available node types."""
 
-    async def get_edge_types(self, agent_id: str | None = None) -> list[TypeInfo]:
+    async def get_edge_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
         """Return available edge types."""
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
@@ -48,16 +48,20 @@ class MemoryRepository(Protocol):
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
+    async def get_or_create_node_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> NodeType:
         """Return existing node type by name or create a new one."""
 
-    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
+    async def get_or_create_edge_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> EdgeType:
         """Return existing edge type by name or create a new one."""
 
     # ── Episode Read ──
 
-    async def get_episode(self, agent_id: str, episode_id: int) -> Episode | None:
-        """Fetch a single episode by ID within the agent's personal schema."""
+    async def get_episode(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> Episode | None:
+        """Fetch a single episode by ID within the agent's schema or a target schema."""
 
     # ── Node CRUD ──
 
@@ -70,6 +74,7 @@ class MemoryRepository(Protocol):
         properties: dict | None = None,
         embedding: list[float] | None = None,
         source: str | None = None,
+        target_schema: str | None = None,
     ) -> Node:
         """Upsert by (name, type_id) within the agent's schema.
 
@@ -78,7 +83,7 @@ class MemoryRepository(Protocol):
         creates separate nodes (e.g. 'Serotonin' as Neurotransmitter vs Drug).
         """
 
-    async def find_nodes_by_name(self, agent_id: str, name: str) -> list[Node]:
+    async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         """Return all nodes matching ``name`` (case-insensitive) across all types."""
 
     # ── Edge CRUD ──
@@ -91,6 +96,7 @@ class MemoryRepository(Protocol):
         type_id: int,
         weight: float = 1.0,
         properties: dict | None = None,
+        target_schema: str | None = None,
     ) -> Edge:
         """Upsert by (source_id, target_id, type_id) within the agent's schema.
 
@@ -122,7 +128,7 @@ class MemoryRepository(Protocol):
 
     # ── Bulk Queries (for extraction pipeline) ──
 
-    async def list_all_node_names(self, agent_id: str) -> list[str]:
+    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
         """Return all node names in the agent's graph."""
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
