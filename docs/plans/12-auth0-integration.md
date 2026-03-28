@@ -66,7 +66,7 @@ and `auth0.md` (gitignored). `.gitignore` was already updated to exclude both fi
 | 3 | Create Auth0 Auth Provider for MCP Server | DONE | Created auth0.py with FastMCP Auth0Provider, added auth0 branch to create_auth() and get_agent_id_from_context() | `feat(auth): add Auth0 provider for MCP server using FastMCP Auth0Provider` |
 | 4 | Update Ingestion API for Auth0 JWT Validation | DONE | Created Auth0JWTVerifier (PyJWT+JWKS), extended get_agent_id() with auth0 JWT branch, added verifier init in app lifespan, added get_auth0_permissions helper | `feat(ingestion): add Auth0 JWT validation for ingestion API` |
 | 5 | Auto-Provision Auth0 Identities into Permissions | DONE | Created provisioning.py, wired ensure_provisioned into MCP tools (remember/recall/discover) and ingestion auth | `feat(auth): auto-provision Auth0 identities into NeoCortex permission system` |
-| 6 | End-to-End Validation | PENDING | | |
+| 6 | End-to-End Validation | DONE | Added 17 tests covering MCPSettings auth0 mode, create_auth() factory, Auth0JWTVerifier, and ensure_agent_provisioned. Verified dev_token/none modes unaffected. | `test(auth): add Auth0 integration validation tests` |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
