@@ -1,0 +1,19 @@
+# macOS override — replaces network_mode: host with port mapping
+# (network_mode: host does not work on Docker for Mac)
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d
+
+services:
+  opencode-web:
+    network_mode: bridge
+    ports:
+      - "4098:4098"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  agent-api:
+    network_mode: bridge
+    ports:
+      - "8003:8003"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

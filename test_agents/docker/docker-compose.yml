@@ -7,6 +7,10 @@
 # No postgres — agents use the NeoCortex MCP server on localhost:8000
 # Start the main project's services first: docker compose up -d postgres neocortex-mcp
 #
+# Usage:
+#   Linux: docker compose up -d
+#   macOS: docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d
+#
 # All opencode state lives inside test_agents/build/:
 #   build/.opencode/agents/  — compiled agent definitions
 #   build/.opencode/data/    — opencode DB, logs, sessions
@@ -34,7 +38,6 @@ services:
     network_mode: host
     volumes:
       - ${PROJECT_ROOT}/test_agents/build:/app
-      - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
       <<: *common-env
     env_file:
@@ -55,7 +58,6 @@ services:
     volumes:
       - ${PROJECT_ROOT}:/workspace
       - ${PROJECT_ROOT}/test_agents/build:/app
-      - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
       <<: *common-env
       OPENCODE_PORT: ${OPENCODE_PORT:-4098}

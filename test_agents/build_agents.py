@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,9 @@ from agents.config import build_config
 
 BUILD_DIR = Path(__file__).resolve().parent / "build"
 SCRIPTS_DIR = Path(__file__).resolve().parent / "agent_scripts"
+
+# Models to whitelist in the provider (only these appear in the model picker)
+WHITELISTED_MODELS = ["glm-4.7", "glm-5"]
 
 
 _BUILD_PYPROJECT = """\
@@ -50,6 +54,18 @@ def _ensure_build_scaffold(build_dir: Path) -> None:
         subprocess.run(["git", "commit", "-m", "project marker"], cwd=build_dir, capture_output=True)
 
 
+def _patch_opencode_json(build_dir: Path) -> None:
+    """Add provider whitelist to opencode.json after compilation."""
+    config_path = build_dir / "opencode.json"
+    if not config_path.exists():
+        return
+
+    config = json.loads(config_path.read_text())
+    for provider in config.get("provider", {}).values():
+        provider["whitelist"] = WHITELISTED_MODELS
+    config_path.write_text(json.dumps(config, indent=2) + "\n")
+
+
 def compile_and_write() -> Path:
     config = build_config()
 
@@ -68,6 +84,7 @@ def compile_and_write() -> Path:
         writer.write(compiled)
 
     _ensure_build_scaffold(BUILD_DIR)
+    _patch_opencode_json(BUILD_DIR)
 
     return BUILD_DIR
 
