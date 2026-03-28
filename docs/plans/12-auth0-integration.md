@@ -63,7 +63,7 @@ and `auth0.md` (gitignored). `.gitignore` was already updated to exclude both fi
 |---|-------|--------|-------|--------|
 | 1 | Auth0 Account & Tenant Setup | DONE | Tenant `dev-vexy1xpbs6te6c53.us.auth0.com`, API + 2 apps + 3 roles + test user created. `.env.auth0` written. OIDC discovery verified. M2M token tested. | — |
 | 2 | Add Auth0 Settings to MCPSettings | DONE | Added `auth0` to auth_mode literal, added 6 Auth0 config fields to MCPSettings | `feat(auth): add Auth0 configuration fields to MCPSettings` |
-| 3 | Create Auth0 Auth Provider for MCP Server | PENDING | | |
+| 3 | Create Auth0 Auth Provider for MCP Server | DONE | Created auth0.py with FastMCP Auth0Provider, added auth0 branch to create_auth() and get_agent_id_from_context() | `feat(auth): add Auth0 provider for MCP server using FastMCP Auth0Provider` |
 | 4 | Update Ingestion API for Auth0 JWT Validation | PENDING | | |
 | 5 | Auto-Provision Auth0 Identities into Permissions | PENDING | | |
 | 6 | End-to-End Validation | PENDING | | |
