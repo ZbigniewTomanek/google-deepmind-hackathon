@@ -27,6 +27,22 @@ score(item) = w_vec * cosine_sim
 
 With graceful degradation: missing signals redistribute weight proportionally (existing pattern).
 
+### Episode vs. Node Scoring
+
+Both episodes and nodes participate in the 5-signal scoring model symmetrically:
+
+| Signal | Nodes | Episodes |
+|--------|-------|----------|
+| vector_sim | embedding cosine similarity | embedding cosine similarity |
+| text_rank | tsvector ts_rank | None (redistributed) |
+| recency | created_at decay | created_at decay |
+| activation | access_count + last_accessed_at | access_count + last_accessed_at |
+| importance | extraction-assigned [0, 1] | default 0.5 (or importance_hint from remember()) |
+
+Episodes get `access_count` and `last_accessed_at` columns (just like nodes), so they build activation through repeated recall. Spreading activation only applies to nodes (graph edges required), but episodes still compete fairly on the other 4 signals.
+
+**Lifecycle**: Episodes start as the "short-term buffer" (recency-dominated). Once extracted into the knowledge graph and consolidated (Stage 6), their score is halved — the graph representation takes over for long-term recall. Unconsolidated episodes remain competitive with nodes.
+
 ### E2E Validation Strategy
 
 A single growing test file `tests/test_cognitive_e2e.py` is bootstrapped in Stage 1 and extended in every subsequent stage. It uses `InMemoryRepository` (no Docker needed), builds a realistic graph through helpers, and validates each heuristic both in isolation and in composition with prior ones.
@@ -44,24 +60,29 @@ uv run pytest tests/test_cognitive_e2e.py -v
 
 ### Steps
 
-1. **Update `migrations/templates/graph_schema.sql`** — add columns to node and episode tables:
+1. **Update `migrations/templates/graph_schema.sql`** — add columns to node, episode, and edge tables:
    - `node.access_count INTEGER DEFAULT 0` — total recall hits (ACT-R `n`)
    - `node.last_accessed_at TIMESTAMPTZ DEFAULT now()` — last recall hit time (ACT-R `t_j`)
    - `node.importance FLOAT DEFAULT 0.5` — utility score [0, 1] (default neutral)
    - `node.forgotten BOOLEAN DEFAULT false` — soft-delete flag
    - `node.forgotten_at TIMESTAMPTZ` — when the node was forgotten
+   - `episode.access_count INTEGER DEFAULT 0` — total recall hits (episodes get activation too)
+   - `episode.last_accessed_at TIMESTAMPTZ DEFAULT now()` — last recall hit time
+   - `episode.importance FLOAT DEFAULT 0.5` — importance hint from remember() or default
    - `episode.consolidated BOOLEAN DEFAULT false` — extraction completed flag
+   - `edge.last_reinforced_at TIMESTAMPTZ DEFAULT now()` — tracks last traversal time (for decay targeting)
    - Add index: `idx_{schema_name}_node_forgotten ON node (forgotten) WHERE forgotten = false` (partial index for fast filtering)
 
 2. **Update `src/neocortex/models.py`** — add fields to Pydantic models:
    - `Node`: add `access_count: int = 0`, `last_accessed_at: datetime`, `importance: float = 0.5`, `forgotten: bool = False`, `forgotten_at: datetime | None = None`
-   - `Episode`: add `consolidated: bool = False`
+   - `Episode`: add `access_count: int = 0`, `last_accessed_at: datetime`, `importance: float = 0.5`, `consolidated: bool = False`
+   - `Edge`: add `last_reinforced_at: datetime` (defaults to `created_at`)
 
 3. **Update `src/neocortex/schemas/memory.py`** — add `activation_score` and `importance` to `RecallItem` for transparency:
    - `activation_score: float | None = None`
    - `importance: float | None = None`
 
-4. **Update `src/neocortex/mcp_settings.py`** — add new settings:
+4. **Update `src/neocortex/mcp_settings.py`** — add new settings (keep existing weight defaults unchanged):
    - `recall_weight_activation: float = 0.25` — weight for base activation signal
    - `recall_weight_importance: float = 0.15` — weight for importance signal
    - `activation_decay_rate: float = 0.5` — ACT-R `d` parameter (memory decay rate)
@@ -72,15 +93,16 @@ uv run pytest tests/test_cognitive_e2e.py -v
    - `edge_reinforcement_delta: float = 0.05` — weight increment on traversal
    - `edge_weight_floor: float = 0.1` — minimum edge weight
    - `edge_weight_ceiling: float = 2.0` — maximum edge weight
-   - Rebalance default weights: `recall_weight_vector: 0.3`, `recall_weight_text: 0.2`, `recall_weight_recency: 0.1` (recency partially subsumed by activation)
+   - **Do NOT rebalance existing weights yet** — `recall_weight_vector`, `recall_weight_text`, `recall_weight_recency` stay at `0.4, 0.35, 0.25`. Weight rebalancing happens in Stage 2 when activation is actually wired in, to avoid changing scoring behavior before the new signals exist.
 
 5. **Bootstrap `tests/test_cognitive_e2e.py`** — create the E2E test file with:
    - Shared fixtures: `repo` (InMemoryRepository), `agent_id`, helper to populate a small graph (3 node types, 5 nodes, 6 edges, 2 episodes)
    - `TestStage1_SchemaFoundation`:
      - `test_node_model_has_cognitive_fields` — instantiate `Node` with new defaults, assert `access_count=0`, `importance=0.5`, `forgotten=False`
-     - `test_episode_model_has_consolidated_field` — instantiate `Episode`, assert `consolidated=False`
+     - `test_episode_model_has_cognitive_fields` — instantiate `Episode`, assert `access_count=0`, `importance=0.5`, `consolidated=False`
+     - `test_edge_model_has_last_reinforced_at` — instantiate `Edge`, assert `last_reinforced_at` is set
      - `test_recall_item_has_cognitive_fields` — instantiate `RecallItem` with `activation_score` and `importance`
-     - `test_settings_have_cognitive_params` — instantiate `MCPSettings`, assert new defaults are present
+     - `test_settings_have_cognitive_params` — instantiate `MCPSettings`, assert new defaults are present and existing weight defaults are unchanged (`0.4, 0.35, 0.25`)
      - `test_mock_repo_upsert_node_with_new_fields` — upsert a node via mock repo, read it back, verify `access_count`, `importance`, `forgotten` fields
 
 ### Verification
@@ -107,7 +129,14 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
 
 ### Steps
 
-1. **Add `compute_base_activation()` to `src/neocortex/scoring.py`**:
+1. **Rebalance default weights** in `src/neocortex/mcp_settings.py` — now that activation is being wired in:
+   - `recall_weight_vector: 0.3` (was 0.4)
+   - `recall_weight_text: 0.2` (was 0.35)
+   - `recall_weight_recency: 0.1` (was 0.25, recency partially subsumed by activation)
+   - `recall_weight_activation: 0.25` (new, from Stage 1)
+   - `recall_weight_importance: 0.15` (new, from Stage 1)
+
+2. **Add `compute_base_activation()` to `src/neocortex/scoring.py`**:
    ```python
    def compute_base_activation(
        access_count: int,
@@ -124,7 +153,7 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
    - Use `ln(T+1)` where T is hours since last access (avoids ln(0))
    - Apply sigmoid normalization to map to [0, 1]: `1 / (1 + exp(-B_i))`
 
-2. **Update `HybridWeights`** in scoring.py — extend to 5 signals:
+3. **Update `HybridWeights`** in scoring.py — extend to 5 signals:
    ```python
    class HybridWeights(NamedTuple):
        vector: float
@@ -134,7 +163,7 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
        importance: float
    ```
 
-3. **Update `compute_hybrid_score()`** — accept activation and importance signals:
+4. **Update `compute_hybrid_score()`** — accept activation and importance signals:
    ```python
    def compute_hybrid_score(
        vector_sim: float | None,
@@ -146,30 +175,47 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
    ) -> float:
    ```
 
-4. **Add access tracking to `MemoryRepository` protocol** (`src/neocortex/db/protocol.py`):
+5. **Add access tracking to `MemoryRepository` protocol** (`src/neocortex/db/protocol.py`):
    ```python
    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
        """Increment access_count and update last_accessed_at for recalled nodes."""
+
+   async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+       """Increment access_count and update last_accessed_at for recalled episodes."""
    ```
 
-5. **Implement `record_node_access()` in `GraphServiceAdapter`** (`src/neocortex/db/adapter.py`):
+6. **Implement `record_node_access()` in `GraphServiceAdapter`** (`src/neocortex/db/adapter.py`):
    ```sql
    UPDATE node SET access_count = access_count + 1, last_accessed_at = now()
    WHERE id = ANY($1::int[])
    ```
 
-6. **Implement in `InMemoryRepository`** (`src/neocortex/db/mock.py`):
-   - Increment `access_count`, set `last_accessed_at = now()` for matching node IDs
+7. **Implement `record_episode_access()` in `GraphServiceAdapter`**:
+   ```sql
+   UPDATE episode SET access_count = access_count + 1, last_accessed_at = now()
+   WHERE id = ANY($1::int[])
+   ```
 
-7. **Update recall SQL in adapter** — SELECT new columns (`access_count`, `last_accessed_at`, `importance`) in node queries so scoring can use them.
+8. **Implement both in `InMemoryRepository`** (`src/neocortex/db/mock.py`):
+   - Increment `access_count`, set `last_accessed_at = now()` for matching node/episode IDs
 
-8. **Update `recall()` in adapter** — compute `base_activation` per result, pass to `compute_hybrid_score()`.
+9. **Upgrade `InMemoryRepository.recall()` to use real scoring** — the current mock returns fixed `score=1.0` for all matches. This must be upgraded to compute actual hybrid scores so E2E tests exercise the real scoring path:
+   - Compute `compute_recency_score(created_at, half_life)` for each result
+   - Compute `compute_base_activation(access_count, last_accessed_at, decay_rate)` for each result
+   - Pass `importance` from node/episode fields
+   - Call `compute_hybrid_score(vector_sim=None, text_rank=None, recency, activation, importance, weights)` for final scoring
+   - Sort results by score descending
 
-9. **Wire access tracking into `recall` tool** (`src/neocortex/tools/recall.py`):
-   - After building final results, collect all returned node IDs
-   - Call `repo.record_node_access(agent_id, node_ids)`
+10. **Update recall SQL in adapter** — SELECT new columns (`access_count`, `last_accessed_at`, `importance`) in both node AND episode queries so scoring can use them.
 
-10. **Fix callers** — update all existing calls to `compute_hybrid_score()` and `HybridWeights` across codebase (adapter recall scoring, any tests) to pass the new parameters. Existing callers pass `activation=None, importance=None` so they degrade gracefully.
+11. **Update `recall()` in adapter** — compute `base_activation` per result (both nodes and episodes), pass to `compute_hybrid_score()`.
+
+12. **Wire access tracking into `recall` tool** (`src/neocortex/tools/recall.py`):
+    - After building final results, collect returned node IDs and episode IDs separately
+    - Call `repo.record_node_access(agent_id, node_ids)` for node results
+    - Call `repo.record_episode_access(agent_id, episode_ids)` for episode results
+
+13. **Fix callers** — update all existing calls to `compute_hybrid_score()` and `HybridWeights` across codebase (adapter recall scoring, any tests) to pass the new parameters. Existing callers pass `activation=None, importance=None` so they degrade gracefully.
 
 ### E2E Validation — add `TestStage2_BaseActivation` to `tests/test_cognitive_e2e.py`:
 - `test_base_activation_zero_access` — node with `access_count=0` returns activation ~0.5 (sigmoid of 0)
@@ -179,7 +225,10 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
 - `test_hybrid_score_five_signals` — all 5 signals provided, verify weighted sum
 - `test_hybrid_score_activation_none_degrades` — activation=None redistributes weight to remaining signals
 - `test_record_node_access_increments` — create node via mock repo, call `record_node_access`, verify `access_count` incremented and `last_accessed_at` updated
-- `test_recall_records_access` — populate graph, recall a query that matches a node, recall again, verify node's `access_count >= 1`
+- `test_record_episode_access_increments` — store episode via mock repo, call `record_episode_access`, verify `access_count` incremented and `last_accessed_at` updated
+- `test_mock_recall_uses_real_scoring` — populate mock repo with 2 nodes (one accessed 50 times recently, one never accessed). Recall and verify scored node ranks higher (not both score=1.0)
+- `test_episode_activation_in_recall` — store 2 episodes. Recall both. Recall again — verify episodes that were recalled have `access_count >= 1` and score higher on second recall
+- `test_recall_records_access` — populate graph with nodes and episodes, recall a query that matches both, verify node's `access_count >= 1` AND matched episode's `access_count >= 1`
 
 ### Verification
 - `uv run pytest tests/test_cognitive_e2e.py::TestStage2_BaseActivation -v` — all pass
@@ -237,7 +286,13 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
    - Store importance in episode metadata: `metadata={"importance_hint": importance}`
    - Pass through to extraction job (extraction pipeline reads from episode metadata)
 
-7. **Update `store_episode()` in protocol + adapter + mock** — accept optional `metadata` dict parameter (currently hardcoded in adapter).
+7. **Update `store_episode()` in protocol + adapter + mock** — accept optional `metadata` dict parameter (currently hardcoded in adapter). When `importance` is provided to `remember()`, also set `episode.importance = importance` directly on the episode record (not just in metadata).
+
+8. **Thread `importance_hint` into extraction pipeline** — in `_persist_payload()` (`src/neocortex/extraction/pipeline.py`):
+   - Fetch the source episode via `repo.get_episode(agent_id, episode_id)`
+   - Read `importance_hint = episode.metadata.get("importance_hint")`
+   - If `importance_hint` is set, use it as a **floor** for extracted entity importance: `entity.importance = max(entity.importance, importance_hint)`
+   - This ensures that a user's explicit importance signal propagates through to the knowledge graph, even if the extractor agent assigns a lower score
 
 ### E2E Validation — add `TestStage3_Importance` to `tests/test_cognitive_e2e.py`:
 - `test_upsert_node_with_importance` — upsert node with importance=0.8, read back, verify importance=0.8
@@ -246,6 +301,7 @@ Simplified from the full sum-of-powers form (computationally efficient, O(1) per
 - `test_importance_in_hybrid_score` — verify `compute_hybrid_score` with importance=0.9 scores higher than importance=0.1 (all other signals equal)
 - `test_importance_boosts_recall_ranking` — populate mock repo with 2 nodes matching same query: one with importance=0.9, other importance=0.1. Recall and verify high-importance node ranks first.
 - `test_extraction_schemas_have_importance` — instantiate `ExtractedEntity` and `NormalizedEntity` with importance field, verify validation (0-1 range, rejects 1.5)
+- `test_importance_hint_floors_extracted_importance` — store episode with `importance_hint=0.8` in metadata. Run `_persist_payload` with an entity whose extractor-assigned importance is 0.4. Verify persisted node has importance=0.8 (hint used as floor). Repeat with extractor importance=0.9 — verify importance stays 0.9 (extractor was higher).
 
 ### Verification
 - `uv run pytest tests/test_cognitive_e2e.py::TestStage3_Importance -v` — all pass
@@ -285,36 +341,35 @@ Collins & Loftus spreading activation: when a node is activated, it transfers a 
    - If a node receives energy from multiple paths, sum them
    - Normalize result to [0, 1] range
 
-2. **Add `get_neighborhood_edges()` to protocol** — bulk fetch edges for a set of nodes:
+2. **Reuse existing `get_node_neighborhood()`** — no new protocol method needed. The existing method already returns edges with weights via BFS. Add a helper to extract the adjacency map:
    ```python
-   async def get_neighborhood_edges(
-       self, agent_id: str, node_ids: list[int], depth: int = 2
+   def neighborhood_to_adjacency(
+       neighborhood: list[dict],  # from get_node_neighborhood()
+       center_node_id: int,
    ) -> dict[int, list[tuple[int, float]]]:
-       """Return adjacency map: node_id -> [(neighbor_id, edge_weight)]."""
+       """Convert get_node_neighborhood() output to adjacency map for spreading activation."""
    ```
+   This avoids a parallel graph traversal method and keeps the protocol surface small.
 
-3. **Implement in adapter** — single SQL query:
-   ```sql
-   WITH RECURSIVE spread AS (
-       SELECT source_id AS node_id, target_id AS neighbor_id, weight, 1 AS depth
-       FROM edge WHERE source_id = ANY($1::int[]) AND ...
-       UNION ALL
-       ...
-   )
-   SELECT node_id, neighbor_id, weight, depth FROM spread WHERE depth <= $2
-   ```
-   Or simpler: two-pass BFS in Python using edge lookups (matching existing `get_node_neighborhood` pattern).
+3. **Integrate into `recall` tool** (`src/neocortex/tools/recall.py`):
 
-4. **Implement in mock** — traverse `_edges` dict for matching node IDs.
+   **Seed selection**: Seeds are the union of:
+   - Phase 1 node results (from `repo.recall()`) — these have real hybrid scores
+   - Phase 2 node results (from `repo.search_nodes()`) — these need relevance scores
 
-5. **Integrate into `recall` tool** (`src/neocortex/tools/recall.py`):
-   - After initial hybrid search + node search, collect seed nodes with scores
-   - Call `repo.get_neighborhood_edges()` for seed node IDs
-   - Call `compute_spreading_activation()` to get bonus map
+   To get Phase 2 relevance scores, update `search_nodes()` to return `list[tuple[Node, float]]` (node + relevance score) instead of `list[Node]`. In the adapter, the relevance score is `ts_rank` or `1 - cosine_distance` (whichever matched). In the mock, use a simple text overlap heuristic. This replaces the current hardcoded `score=0.5` for search_nodes matches (`recall.py:95`).
+
+   After seed selection:
+   - For each seed node, call `repo.get_node_neighborhood()` (already called for graph context)
+   - Convert to adjacency map via `neighborhood_to_adjacency()`
+   - Merge adjacency maps across all seeds
+   - Call `compute_spreading_activation(seeds, adjacency, decay, max_depth)` to get bonus map
    - Add bonus to each result's score: `result.score += w_spreading * bonus`
    - Re-sort results by updated score
 
-6. **Add spreading activation bonus to `RecallItem`** for observability:
+   Note: the neighborhood traversal for spreading activation piggybacks on the existing Phase 2 traversal loop — no extra DB calls needed.
+
+4. **Add spreading activation bonus to `RecallItem`** for observability:
    - `spreading_bonus: float | None = None`
 
 ### E2E Validation — add `TestStage4_SpreadingActivation` to `tests/test_cognitive_e2e.py`:
@@ -325,7 +380,8 @@ Collins & Loftus spreading activation: when a node is activated, it transfers a 
 - `test_spreading_respects_max_depth` — graph: A→B→C→D. max_depth=2. Verify D (3 hops) gets 0 bonus.
 - `test_spreading_with_varying_edge_weights` — graph: A→B(w=2.0), A→C(w=0.1). Verify B bonus >> C bonus.
 - `test_recall_includes_spreading_bonus` — full integration: populate mock repo with a triangle graph (A→B→C→A). Recall a query matching node A. Verify results include B and C with non-zero `spreading_bonus` in RecallItem.
-- `test_get_neighborhood_edges_returns_adjacency` — verify `repo.get_neighborhood_edges()` returns correct structure for a known graph.
+- `test_neighborhood_to_adjacency_conversion` — call `get_node_neighborhood()` for a known graph, convert via `neighborhood_to_adjacency()`, verify correct adjacency map structure.
+- `test_search_nodes_returns_relevance_scores` — call `search_nodes()` on mock repo, verify results include relevance scores (not just Node objects).
 
 ### Verification
 - `uv run pytest tests/test_cognitive_e2e.py::TestStage4_SpreadingActivation -v` — all pass
@@ -352,10 +408,11 @@ Collins & Loftus spreading activation: when a node is activated, it transfers a 
 
 2. **Implement in adapter** — single SQL:
    ```sql
-   UPDATE edge SET weight = LEAST(weight + $2, $3) WHERE id = ANY($1::int[])
+   UPDATE edge SET weight = LEAST(weight + $2, $3), last_reinforced_at = now()
+   WHERE id = ANY($1::int[])
    ```
 
-3. **Implement in mock** — iterate matching edges, apply `min(weight + delta, ceiling)`.
+3. **Implement in mock** — iterate matching edges, apply `min(weight + delta, ceiling)`, set `last_reinforced_at = now()`.
 
 4. **Wire into `recall` tool** — after building graph contexts:
    - Collect all edge IDs from `graph_context.edges` across results
@@ -367,25 +424,32 @@ Collins & Loftus spreading activation: when a node is activated, it transfers a 
      ```python
      async def decay_stale_edges(
          self, agent_id: str, older_than_hours: float = 168.0,
-         decay_factor: float = 0.95, floor: float = 0.1
+         decay_factor: float = 0.95, floor: float = 0.1,
+         force: bool = False,
      ) -> int:
-         """Decay weights of edges not recently reinforced. Returns count of decayed edges."""
+         """Decay weights of edges not recently reinforced. Returns count of decayed edges.
+
+         Uses last_reinforced_at (not created_at) to target edges that haven't
+         been traversed recently. The force parameter bypasses probabilistic
+         gating for deterministic testing.
+         """
      ```
-   - Adapter SQL:
+   - Adapter SQL — uses `last_reinforced_at` to correctly target untouched edges:
      ```sql
      UPDATE edge SET weight = GREATEST(weight * $3, $4)
-     WHERE created_at < now() - interval '$2 hours'
+     WHERE last_reinforced_at < now() - interval '$2 hours'
      AND weight > $4
      ```
-   - Call lazily from recall (e.g., 1 in 10 recall calls, or if >1h since last decay)
+   - Call lazily from recall (1 in 10 recall calls, or if >1h since last decay, or if `force=True`)
 
 ### E2E Validation — add `TestStage5_EdgeReinforcement` to `tests/test_cognitive_e2e.py`:
 - `test_reinforce_edges_increments_weight` — create edge with weight=1.0, call `reinforce_edges([edge_id], delta=0.1)`, verify weight=1.1
 - `test_reinforce_edges_respects_ceiling` — create edge with weight=1.95, reinforce with delta=0.1, ceiling=2.0, verify weight=2.0 (capped)
 - `test_reinforce_edges_multiple` — create 3 edges, reinforce 2 of them, verify only those 2 have increased weight
-- `test_decay_stale_edges_reduces_weight` — create edge with weight=1.5 and old `created_at` (mock time), call `decay_stale_edges()`, verify weight reduced
-- `test_decay_stale_edges_respects_floor` — edge at weight=0.12, floor=0.1, decay_factor=0.5, verify weight stays at floor
-- `test_decay_stale_edges_skips_recent` — create fresh edge, call decay, verify weight unchanged
+- `test_decay_stale_edges_reduces_weight` — create edge with weight=1.5 and old `last_reinforced_at` (mock time), call `decay_stale_edges(force=True)`, verify weight reduced
+- `test_decay_stale_edges_respects_floor` — edge at weight=0.12, floor=0.1, decay_factor=0.5, call with `force=True`, verify weight stays at floor
+- `test_decay_stale_edges_skips_recently_reinforced` — create edge, reinforce it (updates `last_reinforced_at`), call `decay_stale_edges(force=True)`, verify weight unchanged (recently reinforced)
+- `test_decay_targets_last_reinforced_not_created` — create an old edge (old `created_at`) that was recently reinforced. Call decay. Verify weight unchanged (recently reinforced despite old creation time).
 - `test_repeated_recall_strengthens_edges` — populate graph, recall same query 5 times in a loop. After each recall, read back edges that were in graph_context. Verify edge weights monotonically increase across iterations (Hebbian reinforcement).
 - `test_spreading_uses_reinforced_weights` — reinforce an edge to weight=2.0, run spreading activation, verify the reinforced path delivers higher bonus than a weight=1.0 path (spreading activation + reinforcement compose).
 
@@ -450,14 +514,19 @@ Collins & Loftus spreading activation: when a node is activated, it transfers a 
    ```
    Note: use a practical proxy (access_count + staleness) rather than computing base_activation in SQL.
 
-8. **Wire forget sweep into recall tool** (lazy, probabilistic):
-   - On ~1 in 20 recall calls, run forget sweep:
+8. **Wire forget sweep into recall tool** (lazy, probabilistic, with deterministic override):
+   - Add a `force_maintenance: bool = False` parameter to the internal sweep function
+   - On ~1 in 20 recall calls (or always if `force_maintenance=True`), run forget sweep:
      ```python
-     if random.random() < 0.05:
-         forgettable = await repo.identify_forgettable_nodes(agent_id, threshold, floor)
-         if forgettable:
-             await repo.mark_forgotten(agent_id, forgettable)
+     async def _maybe_forget_sweep(repo, agent_id, settings, *, force: bool = False):
+         if force or random.random() < 0.05:
+             forgettable = await repo.identify_forgettable_nodes(
+                 agent_id, settings.forget_activation_threshold, settings.forget_importance_floor
+             )
+             if forgettable:
+                 await repo.mark_forgotten(agent_id, forgettable)
      ```
+   - The `force` parameter enables deterministic testing without relying on randomness
 
 9. **Update `upsert_node()` in adapter** — if upserting a forgotten node, resurrect it:
    ```sql
