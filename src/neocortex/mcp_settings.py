@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic_ai.settings import ThinkingLevel
 from pydantic_settings import BaseSettings
 
 
@@ -52,7 +53,14 @@ class MCPSettings(BaseSettings):
 
     # Extraction pipeline
     extraction_enabled: bool = True
-    extraction_model: str = "gemini-2.5-flash"
+    # Per-agent inference config (env: NEOCORTEX_<AGENT>_MODEL / _THINKING_EFFORT)
+    # Thinking effort: minimal|low|medium|high|xhigh (maps to token budgets)
+    ontology_model: str = "gemini-3-flash-preview"
+    ontology_thinking_effort: ThinkingLevel = "low"
+    extractor_model: str = "gemini-3-flash-preview"
+    extractor_thinking_effort: ThinkingLevel = "low"
+    librarian_model: str = "gemini-3-flash-preview"
+    librarian_thinking_effort: ThinkingLevel = "low"
 
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired

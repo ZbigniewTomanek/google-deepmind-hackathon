@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from neocortex.db.mock import InMemoryRepository
+from neocortex.extraction.agents import AgentInferenceConfig
 from neocortex.extraction.pipeline import _persist_payload, run_extraction
 from neocortex.extraction.schemas import (
     LibrarianPayload,
@@ -19,6 +20,7 @@ from neocortex.extraction.schemas import (
 )
 
 AGENT = "test-agent"
+_TEST_CONFIG = AgentInferenceConfig(use_test_model=True)
 
 
 @pytest.fixture
@@ -227,7 +229,9 @@ async def test_run_extraction_with_test_model(repo: InMemoryRepository) -> None:
         embeddings=None,
         agent_id=AGENT,
         episode_ids=[eid],
-        use_test_model=True,
+        ontology_config=_TEST_CONFIG,
+        extractor_config=_TEST_CONFIG,
+        librarian_config=_TEST_CONFIG,
     )
 
     # TestModel produces structurally valid output — verify flow completed
@@ -248,7 +252,9 @@ async def test_run_extraction_skips_missing_episode(
         embeddings=None,
         agent_id=AGENT,
         episode_ids=[9999],
-        use_test_model=True,
+        ontology_config=_TEST_CONFIG,
+        extractor_config=_TEST_CONFIG,
+        librarian_config=_TEST_CONFIG,
     )
 
     stats = await repo.get_stats(AGENT)
@@ -267,7 +273,9 @@ async def test_run_extraction_multiple_episodes(repo: InMemoryRepository) -> Non
         embeddings=None,
         agent_id=AGENT,
         episode_ids=[eid1, eid2],
-        use_test_model=True,
+        ontology_config=_TEST_CONFIG,
+        extractor_config=_TEST_CONFIG,
+        librarian_config=_TEST_CONFIG,
     )
 
     stats = await repo.get_stats(AGENT)

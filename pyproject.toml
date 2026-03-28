@@ -36,6 +36,11 @@ dev = [
     "pytest-asyncio",
 ]
 
+[tool.uv]
+# Override global exclude-newer (from ~/.config/uv/uv.toml) which filters out
+# recently-published packages needed by this project.
+exclude-newer = "2100-01-01T00:00:00Z"
+
 [tool.black]
 line-length = 120
 target-version = ["py313"]
@@ -67,6 +72,9 @@ select = [
     "SIM",  # flake8-simplify
     "RUF",  # ruff-specific rules
 ]
+
+[tool.ty.src]
+exclude = ["test_agents"]
 
 [tool.ty.environment]
 root = ["src"]
