@@ -41,6 +41,9 @@ dev = [
 # recently-published packages needed by this project.
 exclude-newer = "2100-01-01T00:00:00Z"
 
+[project.scripts]
+neocortex-tui = "neocortex.tui.__main__:main"
+
 [tool.black]
 line-length = 120
 target-version = ["py313"]

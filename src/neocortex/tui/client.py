@@ -62,6 +62,19 @@ class NeoCortexClient:
         )
         return self._parse_result(result)
 
+    async def browse_nodes(self, graph_name: str, type_name: str | None = None, limit: int = 20) -> dict[str, Any]:
+        """Browse actual node instances in a graph."""
+        args: dict[str, Any] = {"graph_name": graph_name, "limit": limit}
+        if type_name:
+            args["type_name"] = type_name
+        result = await self._client.call_tool("browse_nodes", args)
+        return self._parse_result(result)
+
+    async def inspect_node(self, node_name: str, graph_name: str) -> dict[str, Any]:
+        """Inspect a node and its immediate neighborhood."""
+        result = await self._client.call_tool("inspect_node", {"node_name": node_name, "graph_name": graph_name})
+        return self._parse_result(result)
+
     @staticmethod
     def _parse_result(result: Any) -> dict[str, Any]:
         """Parse the MCP tool result into a dict."""

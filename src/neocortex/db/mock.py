@@ -538,6 +538,22 @@ class InMemoryRepository:
 
         return results
 
+    # ── Node Browsing ──
+
+    async def list_nodes_page(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        type_id: int | None = None,
+        limit: int = 20,
+    ) -> list[Node]:
+        del target_schema
+        nodes = [n for n in self._nodes.values() if not n.forgotten]
+        if type_id is not None:
+            nodes = [n for n in nodes if n.type_id == type_id]
+        nodes.sort(key=lambda n: (n.importance, n.access_count), reverse=True)
+        return nodes[:limit]
+
     # ── Bulk Queries ──
 
     async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
