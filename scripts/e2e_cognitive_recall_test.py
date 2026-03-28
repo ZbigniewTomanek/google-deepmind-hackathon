@@ -403,9 +403,9 @@ async def step_consolidation() -> None:
 
 
 async def step_discover_cognitive_stats() -> None:
-    """Verify discover returns complete cognitive stats."""
+    """Verify discover_ontology returns complete cognitive stats."""
     print("\n=== Step 8: Discover cognitive stats ===")
-    result = await mcp_call("discover", {})
+    result = await mcp_call("discover_ontology", {"graph_name": AGENT_SCHEMA})
     stats = result.get("stats", {})
 
     required_keys = (

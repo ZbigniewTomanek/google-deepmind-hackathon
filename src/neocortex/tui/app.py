@@ -102,7 +102,7 @@ class NeoCortexApp(App):
         self._server_url = server_url
         self._token = token
         self._client = NeoCortexClient(base_url=server_url, token=token)
-        self._current_mode = "remember"
+        self._active_panel = "remember"
         self._discover_stack: list[DiscoverLevel] = []
         # Rows indexed by table row position for drill-down
         self._discover_row_data: list[dict] = []
@@ -158,7 +158,7 @@ class NeoCortexApp(App):
         self._show_mode(mode)
 
     def _show_mode(self, mode: str) -> None:
-        self._current_mode = mode
+        self._active_panel = mode
         self.query_one("#remember-area").display = mode == "remember"
         self.query_one("#recall-area").display = mode == "recall"
         self.query_one("#discover-area").display = mode == "discover"
@@ -201,7 +201,7 @@ class NeoCortexApp(App):
 
     def action_discover_back(self) -> None:
         """Pop one level from discover stack (keyboard shortcut 'b')."""
-        if self._current_mode != "discover" or not self._discover_stack:
+        if self._active_panel != "discover" or not self._discover_stack:
             return
         self._discover_stack.pop()
         self._discover_row_data = []
@@ -240,7 +240,7 @@ class NeoCortexApp(App):
     # --- DataTable row selection for drill-down ---
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if self._current_mode != "discover" or not self._discover_stack:
+        if self._active_panel != "discover" or not self._discover_stack:
             return
         current = self._discover_stack[-1]
         row_idx = event.cursor_row
