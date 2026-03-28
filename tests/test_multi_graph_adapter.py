@@ -12,8 +12,15 @@ from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connectio
 from neocortex.graph_router import GraphRouter
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
+from neocortex.permissions.memory_service import InMemoryPermissionService
 from neocortex.schema_manager import SchemaManager
 from neocortex.tools.discover import discover
+
+
+async def _make_admin_permissions() -> InMemoryPermissionService:
+    svc = InMemoryPermissionService(bootstrap_admin_id="admin")
+    await svc.ensure_admin("admin")
+    return svc
 
 
 @dataclass
@@ -67,7 +74,7 @@ async def _insert_concept_node(
 @pytest.mark.asyncio
 async def test_store_episode_writes_to_agent_personal_schema(pg_service) -> None:
     manager = SchemaManager(pg_service)
-    router = GraphRouter(manager, pg_service.pool)
+    router = GraphRouter(manager, pg_service.pool, permissions=await _make_admin_permissions())
     adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
     suffix = uuid4().hex[:8]
     agent_id = f"store-{suffix}"
@@ -97,7 +104,7 @@ async def test_store_episode_writes_to_agent_personal_schema(pg_service) -> None
 @pytest.mark.asyncio
 async def test_recall_merges_results_across_agent_and_shared_graphs(pg_service) -> None:
     manager = SchemaManager(pg_service)
-    router = GraphRouter(manager, pg_service.pool)
+    router = GraphRouter(manager, pg_service.pool, permissions=await _make_admin_permissions())
     adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
     suffix = uuid4().hex[:8]
     agent_id = f"adapter-{suffix}"
@@ -132,7 +139,7 @@ async def test_recall_merges_results_across_agent_and_shared_graphs(pg_service) 
 @pytest.mark.asyncio
 async def test_recall_results_include_graph_name_and_source_kind(pg_service) -> None:
     manager = SchemaManager(pg_service)
-    router = GraphRouter(manager, pg_service.pool)
+    router = GraphRouter(manager, pg_service.pool, permissions=await _make_admin_permissions())
     adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
     suffix = uuid4().hex[:8]
     agent_id = f"provenance-{suffix}"
@@ -160,7 +167,7 @@ async def test_recall_results_include_graph_name_and_source_kind(pg_service) -> 
 @pytest.mark.asyncio
 async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service) -> None:
     manager = SchemaManager(pg_service)
-    router = GraphRouter(manager, pg_service.pool)
+    router = GraphRouter(manager, pg_service.pool, permissions=await _make_admin_permissions())
     adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
     suffix = uuid4().hex[:8]
     agent_id = f"discover-{suffix}"
@@ -215,7 +222,7 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
 @pytest.mark.asyncio
 async def test_schema_isolation_keeps_agent_data_separate(pg_service) -> None:
     manager = SchemaManager(pg_service)
-    router = GraphRouter(manager, pg_service.pool)
+    router = GraphRouter(manager, pg_service.pool, permissions=await _make_admin_permissions())
     adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
     suffix = uuid4().hex[:8]
     agent_a = f"isolation-a-{suffix}"

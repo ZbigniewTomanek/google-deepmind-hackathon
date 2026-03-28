@@ -105,6 +105,7 @@ async def test_remember_enqueues_extraction_job(repo: InMemoryRepository, settin
     mock_job_app.configure_task.return_value.defer_async.assert_called_once_with(
         agent_id="test-agent",
         episode_ids=[result.episode_id],
+        target_schema=None,
     )
 
 

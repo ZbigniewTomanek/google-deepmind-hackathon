@@ -20,6 +20,7 @@ class InMemoryRepository:
 
     def __init__(self) -> None:
         self._episodes: list[EpisodeRecord] = []
+        self._schema_episodes: dict[str, list[EpisodeRecord]] = {}
         self._next_id = 1
         self._node_types: dict[str, NodeType] = {}  # keyed by name
         self._edge_types: dict[str, EdgeType] = {}  # keyed by name
@@ -48,6 +49,28 @@ class InMemoryRepository:
                 "created_at": datetime.now(UTC),
             }
         )
+        return episode_id
+
+    async def store_episode_to(
+        self,
+        agent_id: str,
+        target_schema: str,
+        content: str,
+        context: str | None = None,
+        source_type: str = "mcp",
+    ) -> int:
+        episode_id = self._next_id
+        self._next_id += 1
+        record: EpisodeRecord = {
+            "id": episode_id,
+            "agent_id": agent_id,
+            "content": content,
+            "context": context,
+            "source_type": source_type,
+            "created_at": datetime.now(UTC),
+        }
+        self._episodes.append(record)
+        self._schema_episodes.setdefault(target_schema, []).append(record)
         return episode_id
 
     async def recall(

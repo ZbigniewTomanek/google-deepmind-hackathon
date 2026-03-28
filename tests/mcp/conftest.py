@@ -7,6 +7,7 @@ import pytest_asyncio
 from neocortex.db.mock import InMemoryRepository
 from neocortex.graph_router import GraphRouter
 from neocortex.mcp_settings import MCPSettings
+from neocortex.permissions.memory_service import InMemoryPermissionService
 from neocortex.schema_manager import SchemaManager
 from neocortex.server import create_server
 
@@ -36,4 +37,6 @@ async def schema_manager(pg_service) -> SchemaManager:
 
 @pytest_asyncio.fixture
 async def graph_router(schema_manager: SchemaManager, pg_service) -> GraphRouter:
-    return GraphRouter(schema_manager, pg_service.pool)
+    permissions = InMemoryPermissionService(bootstrap_admin_id="admin")
+    await permissions.ensure_admin("admin")
+    return GraphRouter(schema_manager, pg_service.pool, permissions=permissions)
