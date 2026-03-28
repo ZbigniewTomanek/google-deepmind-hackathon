@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 26pt;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  margin: 0 0 6pt 0;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 14pt;
+  font-weight: 300;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Agent identity box ── */
+.agent-box {
+  position: absolute;
+  border: 1pt solid;
+  border-radius: 4pt;
+  padding: 6pt 14pt 0 14pt;
+}
+
+p.agent-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 11pt;
+  font-weight: 400;
+  margin: 0 0 2pt 0;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+p.agent-detail {
+  font-family: 'Outfit', Arial, sans-serif;
+  font-size: 8pt;
+  font-weight: 300;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── Knowledge graph boxes ── */
+.graph-box {
+  position: absolute;
+  border-radius: 4pt;
+  border: 1pt dotted;
+  padding: 6pt 12pt 0 12pt;
+}
+
+p.graph-name {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 10pt;
+  font-weight: 400;
+  margin: 0 0 2pt 0;
+  letter-spacing: 0.04em;
+}
+
+p.graph-desc {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #6B5B95;
+  font-size: 8pt;
+  font-weight: 300;
+  margin: 0 0 2pt 0;
+}
+
+p.graph-access {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 7pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Section labels ── */
+p.section-label {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 9pt;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  margin: 0 0 8pt 0;
+  text-transform: uppercase;
+}
+
+/* ── Connector lines ── */
+.conn {
+  position: absolute;
+  background: rgba(107, 91, 149, 0.22);
+}
+
+/* ── Bottom annotation ── */
+p.bottom-note {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #6B5B95;
+  font-size: 9pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+</style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div style="position: absolute; left: 50pt; top: 24pt;">
+    <h1>Access Control</h1>
+    <h2>Different agents. Shared knowledge graphs. Permission-controlled.</h2>
+  </div>
+
+  <!-- ═══ AGENT BOXES ═══ -->
+
+  <!-- Work Agent (left) -->
+  <div class="agent-box" style="left: 60pt; top: 80pt; width: 190pt; height: 28pt; border-color: rgba(200, 168, 78, 0.50); background: rgba(200, 168, 78, 0.06);">
+    <p class="agent-label" style="color: #C8A84E;">work-agent</p>
+    <p class="agent-detail" style="color: rgba(200, 168, 78, 0.50);">neocortex-platform project</p>
+  </div>
+
+  <!-- Personal Agent (right) -->
+  <div class="agent-box" style="left: 470pt; top: 80pt; width: 190pt; height: 28pt; border-color: rgba(62, 207, 160, 0.50); background: rgba(62, 207, 160, 0.06);">
+    <p class="agent-label" style="color: #3ECFA0;">personal-agent</p>
+    <p class="agent-detail" style="color: rgba(62, 207, 160, 0.50);">side-project repository</p>
+  </div>
+
+  <!-- ═══ CONNECTORS: agents → graphs ═══ -->
+
+  <!-- Work agent down to private graph -->
+  <div class="conn" style="left: 155pt; top: 116pt; width: 1pt; height: 26pt; background: rgba(200, 168, 78, 0.25);"></div>
+
+  <!-- Work agent diagonal to shared graph -->
+  <!-- Vertical segment -->
+  <div class="conn" style="left: 155pt; top: 116pt; width: 1pt; height: 14pt; background: rgba(200, 168, 78, 0.25);"></div>
+  <!-- Horizontal to center -->
+  <div class="conn" style="left: 155pt; top: 130pt; width: 205pt; height: 1pt; background: rgba(157, 110, 247, 0.18);"></div>
+
+  <!-- Personal agent down to private graphs -->
+  <div class="conn" style="left: 565pt; top: 116pt; width: 1pt; height: 26pt; background: rgba(62, 207, 160, 0.25);"></div>
+
+  <!-- Personal agent diagonal to shared graph -->
+  <div class="conn" style="left: 565pt; top: 116pt; width: 1pt; height: 14pt; background: rgba(62, 207, 160, 0.25);"></div>
+  <div class="conn" style="left: 360pt; top: 130pt; width: 206pt; height: 1pt; background: rgba(157, 110, 247, 0.18);"></div>
+
+  <!-- Shared connector down to shared graph -->
+  <div class="conn" style="left: 360pt; top: 130pt; width: 1pt; height: 48pt; background: rgba(157, 110, 247, 0.22);"></div>
+
+  <!-- ═══ SECTION: PRIVATE GRAPHS ═══ -->
+
+  <!-- Private label (left) -->
+  <p class="section-label" style="position: absolute; left: 60pt; top: 146pt; color: #C8A84E;">Private</p>
+
+  <!-- Work agent private graph -->
+  <div class="graph-box" style="left: 60pt; top: 164pt; width: 190pt; height: 50pt; border-color: rgba(200, 168, 78, 0.40); background: rgba(200, 168, 78, 0.04);">
+    <p class="graph-name" style="color: #C8A84E;">work_context</p>
+    <p class="graph-desc">project decisions, architecture, team docs</p>
+    <p class="graph-access" style="color: rgba(62, 207, 160, 0.6);">read + write</p>
+  </div>
+
+  <!-- Private label (right) -->
+  <p class="section-label" style="position: absolute; left: 470pt; top: 146pt; color: #3ECFA0;">Private</p>
+
+  <!-- Personal agent private graph 1 -->
+  <div class="graph-box" style="left: 470pt; top: 164pt; width: 190pt; height: 50pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.04);">
+    <p class="graph-name" style="color: #3ECFA0;">personal_notes</p>
+    <p class="graph-desc">preferences, habits, personal goals</p>
+    <p class="graph-access" style="color: rgba(62, 207, 160, 0.6);">read + write</p>
+  </div>
+
+  <!-- Personal agent private graph 2 -->
+  <div class="graph-box" style="left: 470pt; top: 228pt; width: 190pt; height: 50pt; border-color: rgba(62, 207, 160, 0.40); background: rgba(62, 207, 160, 0.04);">
+    <p class="graph-name" style="color: #3ECFA0;">hobby_projects</p>
+    <p class="graph-desc">side projects, experiments, learning</p>
+    <p class="graph-access" style="color: rgba(62, 207, 160, 0.6);">read + write</p>
+  </div>
+
+  <!-- ═══ SECTION: SHARED GRAPH ═══ -->
+
+  <!-- Shared label -->
+  <p class="section-label" style="position: absolute; left: 275pt; top: 165pt; color: #9D6EF7;">Shared</p>
+
+  <!-- Shared knowledge graph -->
+  <div class="graph-box" style="left: 275pt; top: 183pt; width: 170pt; height: 62pt; border-color: rgba(157, 110, 247, 0.45); background: rgba(157, 110, 247, 0.05);">
+    <p class="graph-name" style="color: #9D6EF7;">technical_knowledge</p>
+    <p class="graph-desc">frameworks, APIs, patterns, best practices</p>
+    <p class="graph-access" style="color: #C8A84E;">work-agent: read + write</p>
+    <p class="graph-access" style="color: #3ECFA0;">personal-agent: read</p>
+  </div>
+
+  <!-- ═══ EXPLANATION (right of work private) ═══ -->
+
+  <div style="position: absolute; left: 60pt; top: 240pt; width: 190pt;">
+    <p class="graph-desc" style="color: rgba(200, 168, 78, 0.45); font-size: 9pt;">Work agent cannot access personal_notes or hobby_projects.</p>
+  </div>
+
+  <div style="position: absolute; left: 275pt; top: 262pt; width: 170pt;">
+    <p class="graph-desc" style="color: rgba(157, 110, 247, 0.45); font-size: 9pt;">Both agents access shared knowledge. Permissions control read vs write.</p>
+  </div>
+
+  <!-- ═══ BOTTOM ANNOTATION ═══ -->
+  <div style="position: absolute; left: 50pt; bottom: 44pt; right: 50pt;">
+    <p class="bottom-note">graph_permissions table  //  per-agent read/write grants  //  recall fans out only to permitted graphs</p>
+  </div>
+
+</body>
+</html>
