@@ -18,6 +18,8 @@ def build_config():
     api_key = os.environ.get("ZAI_API_KEY", "env:ZAI_API_KEY")
     base_url = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
     mcp_url = os.environ.get("NEOCORTEX_MCP_URL", "http://localhost:8000")
+    chat_token = os.environ.get("NEOCORTEX_CHAT_TOKEN", "chat-agent-token")
+    joke_token = os.environ.get("NEOCORTEX_JOKE_TOKEN", "joke-agent-token")
 
     return (
         ConfigBuilder()
@@ -41,7 +43,19 @@ def build_config():
             )
         )
         .default_model("zai-coding-plan/glm-5")
+        # Original single MCP for existing agents (no auth)
         .mcp_server(name="neocortex", command="npx", args=["mcp-remote", mcp_url])
+        # Per-agent MCP with auth tokens
+        .mcp_server(
+            name="neocortex-chat",
+            command="npx",
+            args=["mcp-remote", mcp_url, "--header", f"Authorization:Bearer {chat_token}"],
+        )
+        .mcp_server(
+            name="neocortex-joke",
+            command="npx",
+            args=["mcp-remote", mcp_url, "--header", f"Authorization:Bearer {joke_token}"],
+        )
         .compaction(auto=True, prune=True)
         .build()
     )
