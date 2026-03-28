@@ -71,7 +71,9 @@ async def test_search_nodes_by_name(repo: InMemoryRepository) -> None:
     nodes = await _build_small_graph(repo)
     results = await repo.search_nodes(AGENT, "Serotonin")
     assert len(results) == 1
-    assert results[0].id == nodes["serotonin"].id
+    node, score = results[0]
+    assert node.id == nodes["serotonin"].id
+    assert score > 0
 
 
 @pytest.mark.asyncio
@@ -79,7 +81,9 @@ async def test_search_nodes_by_content(repo: InMemoryRepository) -> None:
     await _build_small_graph(repo)
     results = await repo.search_nodes(AGENT, "antidepressant")
     assert len(results) == 1
-    assert results[0].name == "Fluoxetine"
+    node, score = results[0]
+    assert node.name == "Fluoxetine"
+    assert score > 0
 
 
 @pytest.mark.asyncio
@@ -102,7 +106,8 @@ async def test_search_nodes_case_insensitive(repo: InMemoryRepository) -> None:
     nodes = await _build_small_graph(repo)
     results = await repo.search_nodes(AGENT, "serotonin")
     assert len(results) == 1
-    assert results[0].id == nodes["serotonin"].id
+    node, _score = results[0]
+    assert node.id == nodes["serotonin"].id
 
 
 # ── get_node_neighborhood (already tested in Stage 1, but verify depth limiting) ──
@@ -180,7 +185,7 @@ async def test_search_nodes_multiple_matches(repo: InMemoryRepository) -> None:
     # Both Depression and Sexual Dysfunction are Condition type
     results = await repo.search_nodes(AGENT, "Dysfunction")
     assert len(results) >= 1
-    names = {r.name for r in results}
+    names = {node.name for node, score in results}
     assert "Sexual Dysfunction" in names
 
 

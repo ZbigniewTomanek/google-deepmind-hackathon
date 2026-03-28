@@ -23,6 +23,8 @@ from neocortex.config import PostgresConfig
 
 BASE_URL = os.environ.get("NEOCORTEX_BASE_URL", "http://127.0.0.1:8000")
 MCP_URL = os.environ.get("NEOCORTEX_MCP_URL", f"{BASE_URL}/mcp")
+INGESTION_BASE_URL = os.environ.get("NEOCORTEX_INGESTION_BASE_URL", "http://127.0.0.1:8001")
+ADMIN_TOKEN = os.environ.get("NEOCORTEX_ADMIN_TOKEN", "admin-token-neocortex")
 ALICE_TOKEN = os.environ.get("NEOCORTEX_ALICE_TOKEN", "alice-token")
 BOB_TOKEN = os.environ.get("NEOCORTEX_BOB_TOKEN", "bob-token")
 
@@ -118,6 +120,17 @@ async def main() -> None:
         raise AssertionError(f"Bob recall did not return his memory: {bob_recall}")
     if any(alice_content in content for content in bob_results):
         raise AssertionError(f"Bob recall leaked Alice memory: {bob_recall}")
+
+    print("Granting read access to shared graph for discover test...")
+    async with httpx.AsyncClient(base_url=INGESTION_BASE_URL, timeout=10.0) as client:
+        for agent in ("alice", "bob"):
+            resp = await client.post(
+                "/admin/permissions",
+                headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+                json={"agent_id": agent, "schema_name": shared_schema, "can_read": True},
+            )
+            if resp.status_code != 200:
+                raise AssertionError(f"Failed to grant read to {agent}: {resp.status_code} {resp.text}")
 
     print("Verifying discover graph visibility...")
     alice_discover = await mcp_call(ALICE_TOKEN, "discover", {})

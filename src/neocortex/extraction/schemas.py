@@ -36,6 +36,7 @@ class ExtractedEntity(BaseModel):
     type_name: str = Field(description="Must match an existing node type name")
     description: str | None = None
     properties: dict = Field(default_factory=dict, description="Scalar facts as key-value pairs")
+    importance: float = Field(default=0.5, ge=0.0, le=1.0, description="How critical is this entity to the domain")
 
 
 class ExtractedRelation(BaseModel):
@@ -62,6 +63,7 @@ class NormalizedEntity(BaseModel):
     type_name: str
     description: str | None = None
     properties: dict = Field(default_factory=dict)
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
     is_new: bool = True  # False if merging with existing
 
 

@@ -238,11 +238,24 @@ class NeoCortexApp(App):
                 neighbors = graph_ctx.get("neighbor_nodes", [])
                 depth = graph_ctx.get("depth", 0)
 
+                # Build cognitive metrics suffix
+                cog_parts = []
+                act = item.get("activation_score")
+                imp = item.get("importance")
+                spread = item.get("spreading_bonus")
+                if act is not None:
+                    cog_parts.append(f"act={act:.2f}")
+                if imp is not None:
+                    cog_parts.append(f"imp={imp:.2f}")
+                if spread is not None and spread > 0:
+                    cog_parts.append(f"spread={spread:.2f}")
+                cog_str = f"  ({', '.join(cog_parts)})" if cog_parts else ""
+
                 lines.append(
                     f"+-  Node: {center.get('name', name)} "
                     f"[{center.get('type', item_type)}] "
                     f"{'.' * max(1, 50 - len(name) - len(item_type))} "
-                    f"score: {score:.3f}"
+                    f"score: {score:.3f}{cog_str}"
                 )
                 if content:
                     short = content[:100] + "..." if len(content) > 100 else content
@@ -278,7 +291,15 @@ class NeoCortexApp(App):
                 # Episode result or node without graph context — compact line
                 if len(content) > 80:
                     content = content[:77] + "..."
-                lines.append(f"  [{score:.3f}] ({kind}) {name} [{item_type}]: {content}")
+                cog_parts = []
+                act = item.get("activation_score")
+                imp = item.get("importance")
+                if act is not None:
+                    cog_parts.append(f"act={act:.2f}")
+                if imp is not None:
+                    cog_parts.append(f"imp={imp:.2f}")
+                cog_str = f" ({', '.join(cog_parts)})" if cog_parts else ""
+                lines.append(f"  [{score:.3f}] ({kind}) {name} [{item_type}]: {content}{cog_str}")
 
         self._show_text_result("\n".join(lines))
 
@@ -316,6 +337,16 @@ class NeoCortexApp(App):
         lines.append(f"  Nodes:    {stats.get('total_nodes', 0)}")
         lines.append(f"  Edges:    {stats.get('total_edges', 0)}")
         lines.append(f"  Episodes: {stats.get('total_episodes', 0)}")
+
+        # Cognitive stats
+        forgotten = stats.get("forgotten_nodes", 0)
+        consolidated = stats.get("consolidated_episodes", 0)
+        avg_act = stats.get("avg_activation", 0.0)
+        if forgotten or consolidated or avg_act:
+            lines.append("\n=== Cognitive ===")
+            lines.append(f"  Forgotten nodes:        {forgotten}")
+            lines.append(f"  Consolidated episodes:  {consolidated}")
+            lines.append(f"  Avg activation (nodes): {avg_act:.4f}")
 
         graphs = result.get("graphs", [])
         if graphs:

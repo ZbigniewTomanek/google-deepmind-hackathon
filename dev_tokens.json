@@ -1,6 +1,8 @@
 {
+  "admin-token-neocortex": "admin",
   "alice-token": "alice",
   "bob-token": "bob",
+  "eve-token": "eve",
   "shared-token": "shared",
   "dev-token-neocortex": "dev-user",
   "chat-agent-token": "chat-agent",
