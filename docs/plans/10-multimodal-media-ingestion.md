@@ -888,11 +888,11 @@ bash scripts/e2e_media.sh
 | 2 | Media compressor (ffmpeg) | `DONE` | MediaCompressor with compress_audio/compress_video/probe_duration, CompressedMedia dataclass, ffmpeg availability check, 6 passing tests |
 | 3 | Gemini media description service | `DONE` | MediaDescriptionService with Gemini Files API upload/poll/generate/cleanup, MockMediaDescriptionService, MediaDescription dataclass, audit logging, 7 passing tests |
 | 4 | Extend IngestionProcessor + EpisodeProcessor | `DONE` | Protocol aligned with target_schema, added process_audio/process_video to protocol and EpisodeProcessor with full compress→describe→store→embed→extract pipeline |
-| 5 | API endpoints for audio/video | `PENDING` | |
+| 5 | API endpoints for audio/video | `DONE` | Added POST /ingest/audio and /ingest/video endpoints with content-type validation, size limits, audit logging; wired media services into app lifespan |
 | 6 | Unit and integration tests | `PENDING` | |
 | 7 | Documentation | `PENDING` | |
 | 8 | E2E validation script and tests | `PENDING` | |
 | 9 | Final validation and cleanup | `PENDING` | |
 
-**Last stage completed**: Stage 4 — Extend IngestionProcessor + EpisodeProcessor
+**Last stage completed**: Stage 5 — API endpoints for audio/video
 **Last updated by**: plan-runner-agent
