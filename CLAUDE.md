@@ -25,6 +25,13 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
   admin/                   # Admin REST API (mounted on ingestion app)
     auth.py                # require_admin dependency
     routes.py              # Permission + graph management endpoints
+  domains/               # Semantic domain routing (upper ontology)
+    models.py            # SemanticDomain, ClassificationResult, RoutingResult
+    protocol.py          # DomainService protocol
+    pg_service.py        # PostgreSQL implementation
+    memory_service.py    # In-memory implementation (tests/mock)
+    classifier.py        # PydanticAI classification agent + mock
+    router.py            # DomainRouter — classify → route → extract
   ingestion/             # FastAPI bulk-ingestion REST API (:8001)
     app.py               # App factory with lifespan (reuses create_services)
     routes.py            # POST /ingest/text, /ingest/document, /ingest/events, /ingest/audio, /ingest/video
@@ -43,7 +50,7 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     __main__.py          # CLI entry point (python -m neocortex.tui)
 
 src/pydantic_agents_playground/  # Standalone POC: 3-agent extraction pipeline (SQLite)
-migrations/init/         # Auto-applied on first Docker start (001-006)
+migrations/init/         # Auto-applied on first Docker start (001-008)
 migrations/templates/    # SQL template for dynamic per-graph schema provisioning
 ```
 
@@ -58,6 +65,8 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex  # Run MCP server with mock DB
 NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion  # Run ingestion API with mock DB
 docker compose up -d postgres                      # Start PostgreSQL
 uv run python -m neocortex                         # Run MCP server with real DB
+./scripts/launch.sh                                # Start all services (PG + MCP + ingestion)
+./scripts/launch.sh --stop                         # Stop background services
 ```
 
 ## Architecture Rules
@@ -86,6 +95,16 @@ Each agent gets isolated schemas named `ncx_{agent_id}__{purpose}` (double under
 **6. Shared schema access requires explicit permissions.**
 `graph_permissions` table controls read/write access per agent per shared schema. `GraphRouter` filters by `can_read`; ingestion validates `can_write`. Admin agents (`is_admin` in `agent_registry`) bypass all permission checks. Bootstrap admin seeded from `NEOCORTEX_BOOTSTRAP_ADMIN_ID` on every startup. `PermissionChecker` protocol has PG and in-memory implementations. Extraction pipeline carries `target_schema` so nodes/edges land in the correct graph.
 
+**7. Domain routing is additive, not replacing.**
+Personal graph extraction continues unchanged. Domain routing adds shared-graph
+extraction jobs alongside personal ones. When `target_graph` is explicitly set,
+domain routing is skipped (explicit beats automatic). The `ontology_domains` table
+maps semantic domains to shared schemas. Classification uses the same Gemini model
+as extraction. New domains auto-provision shared schemas and grant write permissions
+to the originating agent. Note: "ontology" in `domains/` refers to the upper
+ontology (semantic domain categories), distinct from the extraction pipeline's
+ontology agent (node/edge type proposals in `extraction/`).
+
 ## Observability
 
 Structured logging is a first-class concern. All services use loguru via the central `neocortex/logging.py` module.
@@ -104,6 +123,16 @@ Only messages with `action_log=True` appear in `agent_actions.log`. Use this for
 **Log level:** Controlled by `NEOCORTEX_LOG_LEVEL` env var (default `INFO`). Use `DEBUG` for routing decisions and DB operations; `TRACE` for connection-level detail.
 
 **Pydantic AI agents:** Use lifecycle hooks (`pydantic_ai.capabilities.Hooks`) to log model calls and tool executions to the same `agent_actions.log`. See `docs/plans/05-ingestion-api.md` Stage 9 for the full pattern.
+
+## Scripts
+
+- `scripts/launch.sh` — One-command launcher: kills stale processes, starts PostgreSQL + MCP + ingestion in background, waits for health, prints connection info. Use `--stop` to tear down.
+- `scripts/run_e2e.sh` — E2E test harness: starts services, runs a test script, tears down on exit.
+- `.claude/skills/ingesting-data/scripts/ingest.sh` — Curl wrapper for all ingestion and admin endpoints. Run with `--help` for usage.
+
+## Skills
+
+- `.claude/skills/ingesting-data/` — Ingestion skill: supported formats, auth setup, shared graph permissions, domain routing, curl examples. Reference files: `ENDPOINTS.md` (full API), `PERMISSIONS.md` (roles & shared graphs).
 
 ## Key References
 

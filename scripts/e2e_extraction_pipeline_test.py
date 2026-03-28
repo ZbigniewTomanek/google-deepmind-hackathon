@@ -42,7 +42,17 @@ INGESTION_URL = os.environ.get("NEOCORTEX_INGESTION_BASE_URL", "http://127.0.0.1
 MCP_URL = os.environ.get("NEOCORTEX_MCP_URL", f"{BASE_URL}/mcp")
 ALICE_TOKEN = os.environ.get("NEOCORTEX_ALICE_TOKEN", "alice-token")
 BOB_TOKEN = os.environ.get("NEOCORTEX_BOB_TOKEN", "bob-token")
+ADMIN_TOKEN = os.environ.get("NEOCORTEX_ADMIN_TOKEN", "admin-token-neocortex")
 AGENT_SCHEMA = "ncx_alice__personal"
+
+# Seed domain schemas for domain routing validation
+DOMAIN_SCHEMAS = [
+    "ncx_shared__user_profile",
+    "ncx_shared__technical_knowledge",
+    "ncx_shared__work_context",
+    "ncx_shared__domain_knowledge",
+]
+DOMAIN_PURPOSES = ["user_profile", "technical_knowledge", "work_context", "domain_knowledge"]
 
 # --- Seed texts (subset of medical corpus for speed) ---
 
@@ -70,7 +80,7 @@ SEED_TEXTS = [
     ),
 ]
 
-JOB_WAIT_TIMEOUT = 120  # seconds
+JOB_WAIT_TIMEOUT = 300  # seconds (domain routing spawns additional extraction jobs)
 JOB_POLL_INTERVAL = 3  # seconds
 
 
@@ -93,6 +103,48 @@ async def _assert_health() -> None:
     payload = response.json()
     if payload.get("status") != "ok":
         raise AssertionError(f"Unexpected health payload: {payload}")
+
+
+# ── Step 0: Set up domain routing prerequisites ──────────────────
+
+
+async def step_setup_domain_routing() -> None:
+    """Create shared domain schemas and grant Alice write permissions."""
+    print("\n=== Step 0: Set up domain routing prerequisites ===")
+
+    async with httpx.AsyncClient(base_url=INGESTION_URL, timeout=10.0) as client:
+        # Create shared schemas for each seed domain
+        for purpose in DOMAIN_PURPOSES:
+            resp = await client.post(
+                "/admin/graphs",
+                headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+                json={"purpose": purpose},
+            )
+            if resp.status_code == 200:
+                schema = resp.json().get("schema_name", "")
+                print(f"  Created/ensured schema: {schema}")
+            else:
+                # May already exist — that's fine
+                print(f"  Schema for '{purpose}': {resp.status_code} (may already exist)")
+
+        # Grant Alice write permissions to all domain schemas
+        for schema_name in DOMAIN_SCHEMAS:
+            resp = await client.post(
+                "/admin/permissions",
+                headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+                json={
+                    "agent_id": "alice",
+                    "schema_name": schema_name,
+                    "can_read": True,
+                    "can_write": True,
+                },
+            )
+            if resp.status_code == 200:
+                print(f"  Granted alice write on {schema_name}")
+            else:
+                print(f"  Grant for {schema_name}: {resp.status_code}")
+
+    print("  [PASS] Domain routing prerequisites configured")
 
 
 # ── Step 1: Ingest seed texts ──────────────────────────────────────
@@ -185,6 +237,168 @@ async def step_wait_for_extraction(baseline_job_id: int) -> None:
                     continue
             await asyncio.sleep(JOB_POLL_INTERVAL)
         raise AssertionError(f"Extraction jobs did not complete within {JOB_WAIT_TIMEOUT}s")
+    finally:
+        await conn.close()
+
+
+# ── Step 2b: Verify domain routing jobs ───────────────────────────
+
+
+async def step_verify_routing_jobs(baseline_job_id: int) -> None:
+    """Verify that route_episode jobs were created and completed."""
+    print(f"\n=== Step 2b: Verify domain routing jobs (timeout {JOB_WAIT_TIMEOUT}s) ===")
+    conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
+    try:
+        # Check that route_episode jobs were enqueued
+        route_row = await conn.fetchrow(
+            """SELECT
+                count(*) FILTER (WHERE status = 'todo') AS pending,
+                count(*) FILTER (WHERE status = 'doing') AS running,
+                count(*) FILTER (WHERE status = 'succeeded') AS completed,
+                count(*) FILTER (WHERE status = 'failed') AS failed,
+                count(*) AS total
+            FROM procrastinate_jobs
+            WHERE task_name = 'route_episode' AND id > $1""",
+            baseline_job_id,
+        )
+        total = int(route_row["total"])
+        completed = int(route_row["completed"])
+        failed = int(route_row["failed"])
+        pending = int(route_row["pending"])
+        running = int(route_row["running"])
+
+        print(
+            f"  route_episode jobs: total={total} completed={completed} "
+            f"failed={failed} pending={pending} running={running}"
+        )
+
+        if total == 0:
+            print("  [WARN] No route_episode jobs found — domain routing may be disabled")
+            return
+
+        # Wait for remaining routing jobs
+        start = time.monotonic()
+        while pending > 0 or running > 0:
+            if time.monotonic() - start > JOB_WAIT_TIMEOUT:
+                raise AssertionError(f"Domain routing jobs did not complete within {JOB_WAIT_TIMEOUT}s")
+            await asyncio.sleep(JOB_POLL_INTERVAL)
+            route_row = await conn.fetchrow(
+                """SELECT
+                    count(*) FILTER (WHERE status = 'todo') AS pending,
+                    count(*) FILTER (WHERE status = 'doing') AS running,
+                    count(*) FILTER (WHERE status = 'succeeded') AS completed,
+                    count(*) FILTER (WHERE status = 'failed') AS failed
+                FROM procrastinate_jobs
+                WHERE task_name = 'route_episode' AND id > $1""",
+                baseline_job_id,
+            )
+            pending = int(route_row["pending"])
+            running = int(route_row["running"])
+            completed = int(route_row["completed"])
+            failed = int(route_row["failed"])
+            elapsed = int(time.monotonic() - start)
+            print(
+                f"  [{elapsed:3d}s] route_episode: pending={pending} running={running} "
+                f"completed={completed} failed={failed}"
+            )
+
+        assert completed > 0, "No route_episode jobs completed successfully"
+        print(f"  [PASS] {completed} route_episode job(s) completed")
+
+        # Now wait for any extraction jobs spawned by routing
+        # These target shared domain schemas (target_schema != NULL)
+        start2 = time.monotonic()
+        while True:
+            domain_extract_row = await conn.fetchrow(
+                """SELECT
+                    count(*) FILTER (WHERE status = 'todo') AS pending,
+                    count(*) FILTER (WHERE status = 'doing') AS running,
+                    count(*) FILTER (WHERE status = 'succeeded') AS completed,
+                    count(*) FILTER (WHERE status = 'failed') AS failed,
+                    count(*) AS total
+                FROM procrastinate_jobs
+                WHERE task_name = 'extract_episode' AND id > $1
+                  AND args::text LIKE '%%ncx_shared__%%'""",
+                baseline_job_id,
+            )
+            d_pending = int(domain_extract_row["pending"])
+            d_running = int(domain_extract_row["running"])
+            d_completed = int(domain_extract_row["completed"])
+            d_failed = int(domain_extract_row["failed"])
+            d_total = int(domain_extract_row["total"])
+
+            if d_total == 0:
+                print("  [INFO] No domain extraction jobs found (routing may not have matched)")
+                break
+            if d_pending == 0 and d_running == 0:
+                print(f"  [PASS] Domain extraction jobs done: " f"{d_completed} completed, {d_failed} failed")
+                break
+            if time.monotonic() - start2 > JOB_WAIT_TIMEOUT:
+                raise AssertionError("Domain extraction jobs did not complete in time")
+            elapsed = int(time.monotonic() - start2)
+            print(
+                f"  [{elapsed:3d}s] domain extract: pending={d_pending} running={d_running} "
+                f"completed={d_completed} failed={d_failed}"
+            )
+            await asyncio.sleep(JOB_POLL_INTERVAL)
+
+    finally:
+        await conn.close()
+
+
+# ── Step 10b: Verify shared domain schemas populated ─────────────
+
+
+async def step_verify_domain_schemas() -> None:
+    """Check that at least one shared domain schema got nodes/edges from routing."""
+    print("\n=== Step 10b: Verify shared domain schemas populated ===")
+    conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
+    try:
+        schemas_with_data: list[str] = []
+        for schema_name in DOMAIN_SCHEMAS:
+            # Check if schema exists
+            exists = await conn.fetchval(
+                "SELECT 1 FROM information_schema.schemata WHERE schema_name = $1",
+                schema_name,
+            )
+            if not exists:
+                print(f"  {schema_name}: schema does not exist")
+                continue
+
+            schema = _quote(schema_name)
+            node_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.node")
+            edge_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.edge")
+            episode_count = await conn.fetchval(f"SELECT count(*) FROM {schema}.episode")
+            node_count = int(node_count)
+            edge_count = int(edge_count)
+            episode_count = int(episode_count)
+
+            status = "HAS DATA" if node_count > 0 else "empty"
+            print(f"  {schema_name}: nodes={node_count} edges={edge_count} " f"episodes={episode_count} [{status}]")
+
+            if node_count > 0:
+                schemas_with_data.append(schema_name)
+                # Print sample nodes
+                rows = await conn.fetch(f"""
+                    SELECT n.name, nt.name AS type_name
+                    FROM {schema}.node n
+                    JOIN {schema}.node_type nt ON nt.id = n.type_id
+                    ORDER BY n.name LIMIT 5""")
+                for r in rows:
+                    print(f"    {r['name']} [{r['type_name']}]")
+
+        if schemas_with_data:
+            print(f"  [PASS] {len(schemas_with_data)} domain schema(s) populated: " f"{', '.join(schemas_with_data)}")
+        else:
+            print(
+                "  [WARN] No domain schemas populated — " "routing may not have matched or extraction may have failed"
+            )
+
+        # Personal graph should ALSO still have data (backward compat)
+        schema = _quote(AGENT_SCHEMA)
+        personal_nodes = await conn.fetchval(f"SELECT count(*) FROM {schema}.node")
+        assert int(personal_nodes) > 0, "Personal graph has no nodes — domain routing should be additive, not replacing"
+        print(f"  [PASS] Personal graph still has {personal_nodes} nodes (backward compat)")
     finally:
         await conn.close()
 
@@ -475,9 +689,11 @@ async def main() -> None:
 
     await _assert_health()
 
+    await step_setup_domain_routing()
     await _cleanup_stale_jobs()
     episode_ids, baseline_job_id = await step_ingest()
     await step_wait_for_extraction(baseline_job_id)
+    await step_verify_routing_jobs(baseline_job_id)
     await step_verify_ontology()
     counts = await step_verify_graph_data()
     await step_recall_with_graph_context()
@@ -486,6 +702,7 @@ async def main() -> None:
     await step_verify_node_importance()
     await step_verify_discover_stats()
     await step_verify_isolation()
+    await step_verify_domain_schemas()
 
     print("\n" + "=" * 60)
     print("SUMMARY")

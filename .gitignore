@@ -216,3 +216,6 @@ pgdata/
 
 # dir to store ingested media
 media_store/
+
+# process pids
+*.pid
