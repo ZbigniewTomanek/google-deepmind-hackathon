@@ -647,8 +647,8 @@ uv run pytest tests/ -v                         # full regression
 | 3. Importance Scoring | DONE | Added importance to extraction schemas, agent prompts, upsert_node (max semantics), remember() tool, store_episode(), and _persist_payload with importance_hint floor |
 | 4. Spreading Activation | DONE | Added compute_spreading_activation, neighborhood_to_adjacency, spreading_bonus on RecallItem, search_nodes returns (Node, float) tuples, integrated into recall tool |
 | 5. Edge Weight Reinforcement | DONE | Added reinforce_edges and decay_stale_edges to protocol/adapter/mock, wired into recall tool with lazy decay, 9 E2E tests |
-| 6. Soft-Forget & Consolidation | TODO | |
+| 6. Soft-Forget & Consolidation | DONE | Added mark_forgotten, resurrect_node, identify_forgettable_nodes, mark_episode_consolidated to protocol/adapter/mock; forgotten=false filters on recall/search/neighborhood SQL; consolidation penalty (0.5x) on episodes; forget sweep in recall tool; upsert resurrects forgotten nodes; 10 E2E tests |
 | 7. Integration & Verification | TODO | |
 
-Last stage completed: Stage 5 — Edge Weight Reinforcement
+Last stage completed: Stage 6 — Soft-Forget & Episodic Consolidation
 Last updated by: plan-runner-agent

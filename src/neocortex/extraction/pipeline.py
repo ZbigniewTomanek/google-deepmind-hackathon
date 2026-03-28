@@ -196,6 +196,9 @@ async def _persist_payload(
         )
         name_to_node_id[entity.name] = node.id
 
+    # Mark episode as consolidated (extraction completed)
+    await repo.mark_episode_consolidated(agent_id, episode_id)
+
     # Persist relations as edges
     for rel in payload.relations:
         src_id = name_to_node_id.get(rel.source_name)

@@ -23,6 +23,7 @@ class EpisodeRecord(TypedDict, total=False):
     access_count: int
     last_accessed_at: datetime
     importance: float
+    consolidated: bool
 
 
 class InMemoryRepository:
@@ -67,6 +68,7 @@ class InMemoryRepository:
                 "access_count": 0,
                 "last_accessed_at": now,
                 "importance": importance,
+                "consolidated": False,
             }
         )
         return episode_id
@@ -126,6 +128,10 @@ class InMemoryRepository:
                 weights=weights,
             )
 
+            # Consolidated episodes get half the score — graph nodes take priority
+            if episode.get("consolidated", False):
+                score *= 0.5
+
             matches.append(
                 RecallItem(
                     item_id=int(episode["id"]),
@@ -141,8 +147,10 @@ class InMemoryRepository:
                 )
             )
 
-        # Match nodes
+        # Match nodes (exclude forgotten)
         for node in self._nodes.values():
+            if node.forgotten:
+                continue
             name_match = query_lower in node.name.lower()
             content_match = node.content and query_lower in node.content.lower()
             if not (name_match or content_match):
@@ -271,6 +279,7 @@ class InMemoryRepository:
                     access_count=ep.get("access_count", 0),
                     last_accessed_at=ep.get("last_accessed_at"),
                     importance=ep.get("importance", 0.5),
+                    consolidated=ep.get("consolidated", False),
                     created_at=ep.get("created_at", datetime.now(UTC)),
                 )
         return None
@@ -295,6 +304,12 @@ class InMemoryRepository:
         for node in self._nodes.values():
             if node.name.lower() == name.lower() and node.type_id == type_id:
                 merged_props = {**node.properties, **props}
+                now = datetime.now(UTC)
+                # Resurrect forgotten nodes on re-upsert
+                new_forgotten = node.forgotten if not node.forgotten else False
+                new_forgotten_at = node.forgotten_at if not node.forgotten else None
+                new_access_count = node.access_count + 1 if node.forgotten else node.access_count
+                new_last_accessed = now if node.forgotten else node.last_accessed_at
                 updated = Node(
                     id=node.id,
                     type_id=node.type_id,
@@ -304,12 +319,12 @@ class InMemoryRepository:
                     embedding=embedding or node.embedding,
                     source=source or node.source,
                     importance=max(node.importance, importance),
-                    access_count=node.access_count,
-                    last_accessed_at=node.last_accessed_at,
-                    forgotten=node.forgotten,
-                    forgotten_at=node.forgotten_at,
+                    access_count=new_access_count,
+                    last_accessed_at=new_last_accessed,
+                    forgotten=new_forgotten,
+                    forgotten_at=new_forgotten_at,
                     created_at=node.created_at,
-                    updated_at=datetime.now(UTC),
+                    updated_at=now,
                 )
                 self._nodes[node.id] = updated
                 return updated
@@ -389,6 +404,8 @@ class InMemoryRepository:
         query_lower = query.lower()
         matches: list[tuple[Node, float]] = []
         for node in self._nodes.values():
+            if node.forgotten:
+                continue
             name_match = query_lower in node.name.lower()
             content_match = node.content and query_lower in node.content.lower()
             if name_match or content_match:
@@ -417,7 +434,11 @@ class InMemoryRepository:
                     elif edge.target_id == nid and edge.source_id not in visited:
                         neighbor_id = edge.source_id
 
-                    if neighbor_id is not None and neighbor_id in self._nodes:
+                    if (
+                        neighbor_id is not None
+                        and neighbor_id in self._nodes
+                        and not self._nodes[neighbor_id].forgotten
+                    ):
                         visited.add(neighbor_id)
                         next_frontier.append(neighbor_id)
                         results.append(
@@ -438,6 +459,58 @@ class InMemoryRepository:
     async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
         del target_schema
         return sorted(n.name for n in self._nodes.values())
+
+    # ── Soft-Forget ──
+
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+        now = datetime.now(UTC)
+        count = 0
+        for nid in node_ids:
+            node = self._nodes.get(nid)
+            if node is not None and not node.forgotten:
+                self._nodes[nid] = node.model_copy(update={"forgotten": True, "forgotten_at": now})
+                count += 1
+        return count
+
+    async def resurrect_node(self, agent_id: str, node_id: int) -> None:
+        now = datetime.now(UTC)
+        node = self._nodes.get(node_id)
+        if node is not None:
+            self._nodes[node_id] = node.model_copy(
+                update={
+                    "forgotten": False,
+                    "forgotten_at": None,
+                    "access_count": node.access_count + 1,
+                    "last_accessed_at": now,
+                }
+            )
+
+    async def identify_forgettable_nodes(
+        self, agent_id: str, activation_threshold: float, importance_floor: float
+    ) -> list[int]:
+        now = datetime.now(UTC)
+        threshold = now - timedelta(days=7)
+        forgettable = []
+        for node in self._nodes.values():
+            if node.forgotten:
+                continue
+            if node.importance >= importance_floor:
+                continue
+            if node.access_count > 0:
+                continue
+            last_acc = node.last_accessed_at or node.created_at
+            if last_acc >= threshold:
+                continue
+            forgettable.append(node.id)
+        return forgettable
+
+    # ── Episodic Consolidation ──
+
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+        for ep in self._episodes:
+            if ep["id"] == episode_id and ep["agent_id"] == agent_id:
+                ep["consolidated"] = True
+                return
 
     # ── Access Tracking ──
 

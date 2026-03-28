@@ -8,6 +8,19 @@ from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
 from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency
 
 
+async def _maybe_forget_sweep(repo, agent_id: str, settings, *, force: bool = False) -> None:
+    """Probabilistically identify and soft-forget low-activation, low-importance nodes."""
+    if not force and random.random() >= 0.05:
+        return
+    forgettable = await repo.identify_forgettable_nodes(
+        agent_id, settings.forget_activation_threshold, settings.forget_importance_floor
+    )
+    if forgettable:
+        count = await repo.mark_forgotten(agent_id, forgettable)
+        if count:
+            logger.bind(action_log=True).info("forget_sweep", agent_id=agent_id, forgotten_count=count)
+
+
 async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> RecallResult:
     """Recall memories related to a query. Uses hybrid search combining
     semantic similarity, full-text search, and graph traversal.
@@ -173,6 +186,9 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
             decay_factor=0.95,
             floor=settings.edge_weight_floor,
         )
+
+    # Lazy forget sweep — 1 in 20 recall calls
+    await _maybe_forget_sweep(repo, agent_id, settings)
 
     logger.bind(action_log=True).info(
         "recall_with_graph_traversal",

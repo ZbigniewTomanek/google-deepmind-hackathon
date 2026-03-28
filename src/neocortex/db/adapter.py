@@ -348,6 +348,10 @@ class GraphServiceAdapter:
                         properties = $2::jsonb,
                         embedding = COALESCE($3::vector, embedding),
                         importance = GREATEST(importance, $5),
+                        forgotten = false,
+                        forgotten_at = NULL,
+                        access_count = CASE WHEN forgotten THEN access_count + 1 ELSE access_count END,
+                        last_accessed_at = CASE WHEN forgotten THEN now() ELSE last_accessed_at END,
                         updated_at = now()
                        WHERE id = $4
                        RETURNING id, type_id, name, content, properties, source, importance,
@@ -531,9 +535,10 @@ class GraphServiceAdapter:
                                    ELSE 0
                               END AS vector_sim
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
+                       WHERE forgotten = false
+                         AND (tsv @@ plainto_tsquery('english', $1)
                           OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
-                          OR lower(name) ILIKE '%' || $4 || '%' ESCAPE '\\'
+                          OR lower(name) ILIKE '%' || $4 || '%' ESCAPE '\\')
                        ORDER BY GREATEST(
                            COALESCE(ts_rank(tsv, plainto_tsquery('english', $1)), 0),
                            CASE WHEN embedding IS NOT NULL
@@ -554,8 +559,9 @@ class GraphServiceAdapter:
                               created_at, updated_at,
                               ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
-                          OR lower(name) ILIKE '%' || $2 || '%' ESCAPE '\\'
+                       WHERE forgotten = false
+                         AND (tsv @@ plainto_tsquery('english', $1)
+                          OR lower(name) ILIKE '%' || $2 || '%' ESCAPE '\\')
                        ORDER BY ts_rank(tsv, plainto_tsquery('english', $1)) DESC
                        LIMIT $3""",
                     query,
@@ -652,7 +658,7 @@ class GraphServiceAdapter:
 
                         node_row = await conn.fetchrow(
                             "SELECT id, type_id, name, content, properties, source, "
-                            "created_at, updated_at FROM node WHERE id = $1",
+                            "created_at, updated_at FROM node WHERE id = $1 AND forgotten = false",
                             neighbor_id,
                         )
                         if node_row is not None:
@@ -711,6 +717,68 @@ class GraphServiceAdapter:
                 "UPDATE episode SET access_count = access_count + 1, last_accessed_at = now() "
                 "WHERE id = ANY($1::int[])",
                 episode_ids,
+            )
+
+    # ── Soft-Forget ──
+
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+        if not node_ids:
+            return 0
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            result = await conn.execute(
+                "UPDATE node SET forgotten = true, forgotten_at = now() "
+                "WHERE id = ANY($1::int[]) AND forgotten = false",
+                node_ids,
+            )
+        count = int(result.split()[-1]) if result else 0
+        return count
+
+    async def resurrect_node(self, agent_id: str, node_id: int) -> None:
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE node SET forgotten = false, forgotten_at = NULL, "
+                "access_count = access_count + 1, last_accessed_at = now() "
+                "WHERE id = $1",
+                node_id,
+            )
+
+    async def identify_forgettable_nodes(
+        self, agent_id: str, activation_threshold: float, importance_floor: float
+    ) -> list[int]:
+        if self._pool is None or self._router is None:
+            return []
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            rows = await conn.fetch(
+                "SELECT id FROM node "
+                "WHERE forgotten = false "
+                "AND importance < $1 "
+                "AND access_count = 0 "
+                "AND last_accessed_at < now() - interval '7 days'",
+                importance_floor,
+            )
+        return [int(row["id"]) for row in rows]
+
+    # ── Episodic Consolidation ──
+
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE episode SET consolidated = true WHERE id = $1",
+                episode_id,
             )
 
     # ── Edge Reinforcement ──
@@ -968,8 +1036,9 @@ class GraphServiceAdapter:
                               access_count, last_accessed_at, importance,
                               created_at
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
-                          OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
+                       WHERE forgotten = false
+                         AND (tsv @@ plainto_tsquery('english', $1)
+                          OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3))
                        ORDER BY text_rank DESC NULLS LAST
                        LIMIT $4""",
                     query,
@@ -981,6 +1050,7 @@ class GraphServiceAdapter:
                 episode_rows = await conn.fetch(
                     """SELECT id, content, source_type,
                               access_count, last_accessed_at, importance,
+                              consolidated,
                               created_at,
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
@@ -1005,7 +1075,8 @@ class GraphServiceAdapter:
                               access_count, last_accessed_at, importance,
                               created_at
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
+                       WHERE forgotten = false
+                         AND tsv @@ plainto_tsquery('english', $1)
                        ORDER BY text_rank DESC
                        LIMIT $2""",
                     query,
@@ -1015,6 +1086,7 @@ class GraphServiceAdapter:
                 episode_rows = await conn.fetch(
                     """SELECT id, content, source_type,
                               access_count, last_accessed_at, importance,
+                              consolidated,
                               created_at,
                               NULL::double precision AS vector_sim
                        FROM episode
@@ -1090,6 +1162,11 @@ class GraphServiceAdapter:
                 ep_importance,
                 weights,
             )
+
+            # Consolidated episodes get half the score — graph nodes take priority
+            if row.get("consolidated"):
+                score *= 0.5
+
             results.append(
                 RecallItem(
                     item_id=int(row["id"]),
