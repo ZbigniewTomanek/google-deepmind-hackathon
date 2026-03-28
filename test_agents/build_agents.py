@@ -24,7 +24,7 @@ _BUILD_PYPROJECT = """\
 name = "neocortex-test-agents"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.0"]
+dependencies = ["pydantic>=2.0", "open-agent-compiler>=0.1.0"]
 """
 
 
