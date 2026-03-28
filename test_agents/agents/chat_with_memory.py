@@ -55,7 +55,12 @@ def build_chat_with_memory(config):
         .todo("Get joke", "Delegate to joke-with-memory subagent")
         .gate("intent", "joke")
         .subagent("joke-with-memory")
-        .instructions("Invoke joke-with-memory with the user's topic or request.")
+        .instructions(
+            "CRITICAL: You MUST use the Task tool with `subagent_type` set to EXACTLY `joke-with-memory`.\n"
+            "Do NOT use a generic/general subagent — joke-with-memory has its own MCP auth token\n"
+            "and its own isolated memory. Using any other agent type will break memory isolation.\n\n"
+            "Pass the user's joke topic or request as the `prompt` parameter."
+        )
         .mark_done("Get joke")
         .build()
     )
@@ -92,7 +97,9 @@ def build_chat_with_memory(config):
             "2. **Store important facts** — user preferences, personal details, and conversation highlights.\n"
             "3. **Reference memories naturally** — weave recalled information into your responses.\n"
             "4. **Use discover** — explore the knowledge graph to understand what's available.\n\n"
-            "Route joke requests to the joke-with-memory subagent.\n"
+            "Route joke requests to the **joke-with-memory** subagent via the Task tool.\n"
+            "IMPORTANT: Always set `subagent_type` to `joke-with-memory` — never use a generic agent.\n"
+            "Each agent has its own MCP auth token and isolated memory schema.\n\n"
             "If `<CONVERSATION_HISTORY>` tags present, use as prior turns.\n"
             "Connected to NeoCortex MCP (neocortex-chat) for memory (remember/recall/discover)."
         )
