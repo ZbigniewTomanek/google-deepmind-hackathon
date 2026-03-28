@@ -13,6 +13,8 @@ from neocortex.embedding_service import EmbeddingService
 from neocortex.graph_router import GraphRouter
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
+from neocortex.permissions import InMemoryPermissionService, PostgresPermissionService
+from neocortex.permissions.protocol import PermissionChecker
 from neocortex.postgres_service import PostgresService
 from neocortex.schema_manager import SchemaManager
 
@@ -26,6 +28,7 @@ class ServiceContext(TypedDict):
     settings: MCPSettings
     embeddings: EmbeddingService | None
     job_app: procrastinate.App | None
+    permissions: PermissionChecker
 
 
 async def create_services(settings: MCPSettings) -> ServiceContext:
@@ -35,6 +38,8 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     with ``None`` for all PostgreSQL-backed services.
     """
     if settings.mock_db:
+        permissions: PermissionChecker = InMemoryPermissionService(settings.bootstrap_admin_id)
+        await permissions.ensure_admin(settings.bootstrap_admin_id)
         return ServiceContext(
             repo=InMemoryRepository(),
             pg=None,
@@ -44,6 +49,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             settings=settings,
             embeddings=None,
             job_app=None,
+            permissions=permissions,
         )
 
     pg_config = PostgresConfig()
@@ -53,6 +59,8 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     graph = GraphService(pg)
     schema_mgr = SchemaManager(pg)
     await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
+    pg_permissions: PermissionChecker = PostgresPermissionService(pg, settings.bootstrap_admin_id)
+    await pg_permissions.ensure_admin(settings.bootstrap_admin_id)
     router = GraphRouter(schema_mgr, pg.pool)
     repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg, settings=settings)
     embeddings = EmbeddingService(model=settings.embedding_model)
@@ -76,6 +84,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         settings=settings,
         embeddings=embeddings,
         job_app=job_app,
+        permissions=pg_permissions,
     )
 
     # Make services available to Procrastinate task handlers
