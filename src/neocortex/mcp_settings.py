@@ -83,6 +83,12 @@ class MCPSettings(BaseSettings):
     librarian_model: str = "gemini-3-flash-preview"
     librarian_thinking_effort: ThinkingLevel = "low"
 
+    # Domain routing (upper ontology — automatic knowledge routing to shared graphs)
+    domain_routing_enabled: bool = True
+    domain_classifier_model: str = "gemini-3-flash-preview"
+    domain_classifier_thinking_effort: ThinkingLevel = "low"
+    domain_classification_threshold: float = 0.3
+
     # Admin
     bootstrap_admin_id: str = "admin"  # Seeded into agent_registry as admin on startup
     admin_token: str = "admin-token-neocortex"  # Bootstrap admin dev token
