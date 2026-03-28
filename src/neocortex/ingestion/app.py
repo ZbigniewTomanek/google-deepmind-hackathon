@@ -56,6 +56,7 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
             media_store=media_store,
             media_compressor=media_compressor,
             media_describer=media_describer,
+            domain_routing_enabled=settings.domain_routing_enabled,
         )
 
         app.state.services_ctx = ctx

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from neocortex.domains.router import DomainRouter
 
 import procrastinate
 import procrastinate.exceptions
@@ -29,6 +32,7 @@ class ServiceContext(TypedDict):
     embeddings: EmbeddingService | None
     job_app: procrastinate.App | None
     permissions: PermissionChecker
+    domain_router: DomainRouter | None
 
 
 async def create_services(settings: MCPSettings) -> ServiceContext:
@@ -40,6 +44,24 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     if settings.mock_db:
         permissions: PermissionChecker = InMemoryPermissionService(settings.bootstrap_admin_id)
         await permissions.ensure_admin(settings.bootstrap_admin_id)
+
+        domain_router: DomainRouter | None = None
+        if settings.domain_routing_enabled:
+            from neocortex.domains import InMemoryDomainService
+            from neocortex.domains.classifier import MockDomainClassifier
+            from neocortex.domains.router import DomainRouter
+
+            domain_svc = InMemoryDomainService()
+            await domain_svc.seed_defaults()
+            domain_router = DomainRouter(
+                domain_service=domain_svc,
+                classifier=MockDomainClassifier(),
+                schema_mgr=None,
+                permissions=permissions,
+                job_app=None,
+                classification_threshold=settings.domain_classification_threshold,
+            )
+
         return ServiceContext(
             repo=InMemoryRepository(),
             pg=None,
@@ -50,6 +72,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             embeddings=None,
             job_app=None,
             permissions=permissions,
+            domain_router=domain_router,
         )
 
     pg_config = PostgresConfig()
@@ -65,6 +88,20 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg, settings=settings)
     embeddings = EmbeddingService(model=settings.embedding_model)
 
+    # Domain routing services (upper ontology)
+    domain_svc = None
+    domain_classifier = None
+    if settings.domain_routing_enabled:
+        from neocortex.domains import PostgresDomainService
+        from neocortex.domains.classifier import AgentDomainClassifier
+
+        domain_svc = PostgresDomainService(pg)
+        await domain_svc.seed_defaults()
+        domain_classifier = AgentDomainClassifier(
+            model_name=settings.domain_classifier_model,
+            thinking_effort=settings.domain_classifier_thinking_effort,
+        )
+
     # Procrastinate job queue (only when extraction is enabled with real DB)
     job_app: procrastinate.App | None = None
     if settings.extraction_enabled:
@@ -74,6 +111,20 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         await job_app.open_async()
         with contextlib.suppress(procrastinate.exceptions.ConnectorException):
             await job_app.schema_manager.apply_schema_async()
+
+    # Create domain router after job_app (needs it for enqueuing)
+    pg_domain_router: DomainRouter | None = None
+    if settings.domain_routing_enabled and domain_svc is not None and domain_classifier is not None:
+        from neocortex.domains.router import DomainRouter
+
+        pg_domain_router = DomainRouter(
+            domain_service=domain_svc,
+            classifier=domain_classifier,
+            schema_mgr=schema_mgr,
+            permissions=pg_permissions,
+            job_app=job_app,
+            classification_threshold=settings.domain_classification_threshold,
+        )
 
     ctx = ServiceContext(
         repo=repo,
@@ -85,6 +136,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         embeddings=embeddings,
         job_app=job_app,
         permissions=pg_permissions,
+        domain_router=pg_domain_router,
     )
 
     # Make services available to Procrastinate task handlers
