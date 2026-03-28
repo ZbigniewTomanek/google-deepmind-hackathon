@@ -1,10 +1,12 @@
 from fastmcp import FastMCP
 
 from neocortex.tools.discover import (
+    browse_nodes,
     discover_details,
     discover_domains,
     discover_graphs,
     discover_ontology,
+    inspect_node,
 )
 from neocortex.tools.recall import recall
 from neocortex.tools.remember import remember
@@ -17,3 +19,5 @@ def register_tools(mcp: FastMCP) -> None:
     mcp.tool(discover_graphs)
     mcp.tool(discover_ontology)
     mcp.tool(discover_details)
+    mcp.tool(browse_nodes)
+    mcp.tool(inspect_node)

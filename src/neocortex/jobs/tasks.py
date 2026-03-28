@@ -52,13 +52,22 @@ async def extract_episode(
     services = get_services()
     settings = services["settings"]
 
+    # Only pass source_schema when explicitly provided.  The pipeline uses a
+    # sentinel (_UNSET) to distinguish "not provided → read from target_schema"
+    # from "None → read from personal graph".  Passing None unconditionally
+    # would always read from the personal graph even when episodes live in
+    # the target shared schema.
+    extra: dict = {}
+    if source_schema is not None:
+        extra["source_schema"] = source_schema
+
     await run_extraction(
         repo=services["repo"],
         embeddings=services["embeddings"],
         agent_id=agent_id,
         episode_ids=episode_ids,
         target_schema=target_schema,
-        source_schema=source_schema,
+        **extra,
         ontology_config=AgentInferenceConfig(
             model_name=settings.ontology_model,
             thinking_effort=settings.ontology_thinking_effort,

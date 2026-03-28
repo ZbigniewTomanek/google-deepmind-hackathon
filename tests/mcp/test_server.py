@@ -18,4 +18,6 @@ async def test_server_registers_expected_tools(test_server) -> None:
         "discover_graphs",
         "discover_ontology",
         "discover_details",
+        "browse_nodes",
+        "inspect_node",
     ]
