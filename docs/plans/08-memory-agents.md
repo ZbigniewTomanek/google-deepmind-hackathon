@@ -367,11 +367,11 @@ psql -h localhost -U neocortex -d neocortex -c \
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 1. Token & env setup | DONE | Added chat-agent-token and joke-agent-token to dev_tokens.json; added NEOCORTEX_CHAT_TOKEN and NEOCORTEX_JOKE_TOKEN to .env and .env.example |
-| 2. Dual MCP config | TODO | |
+| 2. Dual MCP config | DONE | Added neocortex-chat and neocortex-joke MCP servers with auth headers; kept original neocortex server for existing agents |
 | 3. chat_with_memory agent | TODO | |
 | 4. joke_with_memory subagent | TODO | |
 | 5. Build pipeline registration | TODO | |
 | 6. Validate compiled output | TODO | |
 
-Last stage completed: Stage 1 — Token & env setup
+Last stage completed: Stage 2 — Dual MCP server configuration
 Last updated by: plan-runner-agent
