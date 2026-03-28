@@ -24,7 +24,7 @@ echo
 echo "All 3 running concurrently. Polling..."
 echo
 
-for i in $(seq 1 20); do
+for i in $(seq 1 36); do
   sleep 5
   R1=$(curl -s "${API_URL}/sessions/${ID1}" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
   R2=$(curl -s "${API_URL}/sessions/${ID2}" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
