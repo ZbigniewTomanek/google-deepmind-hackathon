@@ -158,3 +158,22 @@ async def test_ensure_admin_idempotent(svc: InMemoryPermissionService) -> None:
     agents = await svc.list_agents()
     alice_count = sum(1 for a in agents if a.agent_id == "alice")
     assert alice_count == 1
+
+
+@pytest.mark.asyncio
+async def test_shared_schema_readable_without_grant(svc: InMemoryPermissionService) -> None:
+    """Shared schemas are world-readable without explicit grants."""
+    svc.register_shared_schema("ncx_shared__user_profile")
+    assert await svc.can_read_schema("agent_x", "ncx_shared__user_profile") is True
+    # Write still requires explicit grant
+    assert await svc.can_write_schema("agent_x", "ncx_shared__user_profile") is False
+
+
+@pytest.mark.asyncio
+async def test_readable_schemas_includes_shared(svc: InMemoryPermissionService) -> None:
+    """readable_schemas returns shared schemas even without explicit grants."""
+    svc.register_shared_schema("ncx_shared__tech")
+    candidates = ["ncx_shared__tech", "ncx_agent1__personal"]
+    result = await svc.readable_schemas("agent_x", candidates)
+    assert "ncx_shared__tech" in result
+    assert "ncx_agent1__personal" not in result
