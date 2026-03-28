@@ -48,6 +48,9 @@ async def test_discover_with_empty_repo_returns_empty_ontology_and_zero_stats(te
             "total_nodes": 0,
             "total_edges": 0,
             "total_episodes": 0,
+            "forgotten_nodes": 0,
+            "consolidated_episodes": 0,
+            "avg_activation": 0.0,
         },
         "graphs": [],
     }

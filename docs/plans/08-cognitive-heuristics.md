@@ -648,7 +648,7 @@ uv run pytest tests/ -v                         # full regression
 | 4. Spreading Activation | DONE | Added compute_spreading_activation, neighborhood_to_adjacency, spreading_bonus on RecallItem, search_nodes returns (Node, float) tuples, integrated into recall tool |
 | 5. Edge Weight Reinforcement | DONE | Added reinforce_edges and decay_stale_edges to protocol/adapter/mock, wired into recall tool with lazy decay, 9 E2E tests |
 | 6. Soft-Forget & Consolidation | DONE | Added mark_forgotten, resurrect_node, identify_forgettable_nodes, mark_episode_consolidated to protocol/adapter/mock; forgotten=false filters on recall/search/neighborhood SQL; consolidation penalty (0.5x) on episodes; forget sweep in recall tool; upsert resurrects forgotten nodes; 10 E2E tests |
-| 7. Integration & Verification | TODO | |
+| 7. Integration & Verification | DONE | Added cognitive metrics to GraphStats (forgotten_nodes, consolidated_episodes, avg_activation), TUI recall/discover display, 9 composition E2E tests |
 
-Last stage completed: Stage 6 — Soft-Forget & Episodic Consolidation
+Last stage completed: Stage 7 — Full Integration & Composition Verification
 Last updated by: plan-runner-agent

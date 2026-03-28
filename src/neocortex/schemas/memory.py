@@ -53,6 +53,9 @@ class GraphStats(BaseModel):
     total_nodes: int
     total_edges: int
     total_episodes: int
+    forgotten_nodes: int = 0
+    consolidated_episodes: int = 0
+    avg_activation: float = 0.0
 
 
 class DiscoverResult(BaseModel):

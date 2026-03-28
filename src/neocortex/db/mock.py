@@ -212,10 +212,26 @@ class InMemoryRepository:
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         count = sum(1 for e in self._episodes if agent_id is None or e["agent_id"] == agent_id)
+        forgotten_nodes = sum(1 for n in self._nodes.values() if n.forgotten)
+        consolidated_episodes = sum(
+            1
+            for e in self._episodes
+            if (agent_id is None or e["agent_id"] == agent_id) and e.get("consolidated", False)
+        )
+        active_nodes = [n for n in self._nodes.values() if not n.forgotten]
+        if active_nodes:
+            avg_activation = sum(
+                compute_base_activation(n.access_count, n.last_accessed_at or n.created_at) for n in active_nodes
+            ) / len(active_nodes)
+        else:
+            avg_activation = 0.0
         return GraphStats(
             total_nodes=len(self._nodes),
             total_edges=len(self._edges),
             total_episodes=count,
+            forgotten_nodes=forgotten_nodes,
+            consolidated_episodes=consolidated_episodes,
+            avg_activation=round(avg_activation, 4),
         )
 
     async def update_episode_embedding(

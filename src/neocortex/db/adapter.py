@@ -203,11 +203,21 @@ class GraphServiceAdapter:
 
         schemas = await self._router.route_discover(agent_id)
         totals = GraphStats(total_nodes=0, total_edges=0, total_episodes=0)
+        activation_sum = 0.0
+        active_node_count = 0
         for schema_name in schemas:
             schema_stats = await self._get_stats_in_schema(schema_name, agent_id)
             totals.total_nodes += schema_stats.total_nodes
             totals.total_edges += schema_stats.total_edges
             totals.total_episodes += schema_stats.total_episodes
+            totals.forgotten_nodes += schema_stats.forgotten_nodes
+            totals.consolidated_episodes += schema_stats.consolidated_episodes
+            active_in_schema = schema_stats.total_nodes - schema_stats.forgotten_nodes
+            if active_in_schema > 0:
+                activation_sum += schema_stats.avg_activation * active_in_schema
+                active_node_count += active_in_schema
+        if active_node_count > 0:
+            totals.avg_activation = round(activation_sum / active_node_count, 4)
         return totals
 
     async def list_graphs(self, agent_id: str) -> list[str]:
@@ -1284,7 +1294,10 @@ class GraphServiceAdapter:
             row = await conn.fetchrow("""SELECT
                        (SELECT count(*) FROM node) AS total_nodes,
                        (SELECT count(*) FROM edge) AS total_edges,
-                       (SELECT count(*) FROM episode) AS total_episodes""")
+                       (SELECT count(*) FROM episode) AS total_episodes,
+                       (SELECT count(*) FROM node WHERE forgotten = true) AS forgotten_nodes,
+                       (SELECT count(*) FROM episode WHERE consolidated = true) AS consolidated_episodes,
+                       (SELECT coalesce(avg(access_count), 0) FROM node WHERE forgotten = false) AS avg_access_count""")
         if row is None:
             raise RuntimeError(f"Failed to fetch graph stats for schema '{schema_name}'.")
 
@@ -1292,6 +1305,9 @@ class GraphServiceAdapter:
             total_nodes=int(row["total_nodes"]),
             total_edges=int(row["total_edges"]),
             total_episodes=int(row["total_episodes"]),
+            forgotten_nodes=int(row["forgotten_nodes"]),
+            consolidated_episodes=int(row["consolidated_episodes"]),
+            avg_activation=round(float(row["avg_access_count"]), 4),
         )
 
 

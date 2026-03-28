@@ -13,7 +13,7 @@ from neocortex.extraction.schemas import (
 )
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, Episode, Node
-from neocortex.schemas.memory import RecallItem
+from neocortex.schemas.memory import GraphStats, RecallItem
 from neocortex.scoring import (
     HybridWeights,
     compute_base_activation,
@@ -21,6 +21,7 @@ from neocortex.scoring import (
     compute_spreading_activation,
     neighborhood_to_adjacency,
 )
+from neocortex.tools.recall import _maybe_forget_sweep
 
 AGENT_ID = "test-agent"
 
@@ -1003,3 +1004,309 @@ class TestStage6ForgetAndConsolidate:
         results = await repo.recall("Stale Compound", AGENT_ID, limit=10)
         node_ids = {r.item_id for r in results if r.source_kind == "node"}
         assert n_stale.id in node_ids
+
+
+class TestStage7FullComposition:
+    """Verify all six heuristics compose correctly end-to-end."""
+
+    @pytest.mark.asyncio
+    async def test_composition_short_term_recall_favors_recent(self, repo: InMemoryRepository):
+        """Simulate a coding session — store 3 related episodes in quick succession.
+        Recall. Verify recency + high activation dominates ranking.
+        """
+        # Store 3 episodes rapidly (all very recent)
+        ep1 = await repo.store_episode(AGENT_ID, "Debugging serotonin module error in parser")
+        ep2 = await repo.store_episode(AGENT_ID, "Fixed serotonin module import path")
+        ep3 = await repo.store_episode(AGENT_ID, "Tested serotonin module integration")
+
+        # Access them to simulate repeated recall within a session
+        await repo.record_episode_access(AGENT_ID, [ep1, ep2, ep3])
+        await repo.record_episode_access(AGENT_ID, [ep1, ep2, ep3])
+
+        results = await repo.recall("serotonin module", AGENT_ID, limit=10)
+        episode_results = [r for r in results if r.source_kind == "episode"]
+        assert len(episode_results) == 3
+
+        # All should have activation > 0.5 (baseline) since they've been accessed recently
+        for r in episode_results:
+            assert r.activation_score is not None
+            assert r.activation_score > 0.5
+
+    @pytest.mark.asyncio
+    async def test_composition_long_term_knowledge_persists(self, repo: InMemoryRepository):
+        """Create node with high importance + many accesses (old) vs fresh but unimportant node.
+        Verify old-but-important node outranks fresh-but-unimportant one.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+
+        # Old important node with many accesses
+        n_important = await repo.upsert_node(
+            AGENT_ID,
+            "Serotonin Receptor",
+            concept.id,
+            content="Key serotonin receptor for mood regulation",
+            importance=0.9,
+        )
+        old_time = datetime.now(UTC) - timedelta(days=30)
+        repo._nodes[n_important.id] = n_important.model_copy(update={"access_count": 50, "last_accessed_at": old_time})
+
+        # Fresh but unimportant node
+        await repo.upsert_node(
+            AGENT_ID,
+            "Serotonin Tangent",
+            concept.id,
+            content="Minor serotonin side note",
+            importance=0.1,
+        )
+
+        results = await repo.recall("Serotonin", AGENT_ID, limit=10)
+        node_results = [r for r in results if r.source_kind == "node"]
+        assert len(node_results) >= 2
+
+        # High-importance + high-access node should rank first
+        assert node_results[0].name == "Serotonin Receptor"
+        assert node_results[0].importance == 0.9
+
+    @pytest.mark.asyncio
+    async def test_composition_spreading_activation_discovers_hidden(self, repo: InMemoryRepository):
+        """Build a 5-node chain: A→B→C→D→E. Only A matches the query.
+        Verify B and C appear via spreading activation. D and E should NOT (beyond max_depth=2).
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+
+        a = await repo.upsert_node(AGENT_ID, "Serotonin Chain", concept.id, content="Start of serotonin chain")
+        b = await repo.upsert_node(AGENT_ID, "Receptor B", concept.id, content="Intermediate receptor")
+        c = await repo.upsert_node(AGENT_ID, "Pathway C", concept.id, content="Downstream pathway")
+        d = await repo.upsert_node(AGENT_ID, "Target D", concept.id, content="Far target")
+        e = await repo.upsert_node(AGENT_ID, "Effect E", concept.id, content="End effect")
+
+        await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        await repo.upsert_edge(AGENT_ID, b.id, c.id, relates.id, weight=1.0)
+        await repo.upsert_edge(AGENT_ID, c.id, d.id, relates.id, weight=1.0)
+        await repo.upsert_edge(AGENT_ID, d.id, e.id, relates.id, weight=1.0)
+
+        # Only "Serotonin Chain" matches the query directly
+        # Get neighborhood and run spreading activation
+        neighborhood = await repo.get_node_neighborhood(AGENT_ID, a.id, depth=2)
+        adjacency = neighborhood_to_adjacency(neighborhood, a.id)
+        bonus = compute_spreading_activation(
+            seed_nodes=[(a.id, 1.0)],
+            neighborhood=adjacency,
+            decay=0.6,
+            max_depth=2,
+        )
+
+        # B and C should get bonus (1 and 2 hops)
+        assert b.id in bonus
+        assert bonus[b.id] > 0
+        assert c.id in bonus
+        assert bonus[c.id] > 0
+
+        # D and E should NOT appear (beyond max_depth=2 for spreading, and
+        # neighborhood was fetched with depth=2 so D is at hop 3 from A)
+        assert d.id not in bonus
+        assert e.id not in bonus
+
+    @pytest.mark.asyncio
+    async def test_composition_hebbian_trails_emerge(self, repo: InMemoryRepository):
+        """Recall the same query 10 times. After each recall, verify that edges
+        in the traversal path have increasing weights.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
+
+        a = await repo.upsert_node(AGENT_ID, "Serotonin Hub", concept.id, content="Main serotonin hub")
+        b = await repo.upsert_node(AGENT_ID, "Dopamine Hub", concept.id, content="Main dopamine hub")
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+
+        weights = [repo._edges[edge.id].weight]
+        for _ in range(10):
+            neighborhood = await repo.get_node_neighborhood(AGENT_ID, a.id, depth=2)
+            edge_ids = [e.id for entry in neighborhood for e in entry["edges"]]
+            if edge_ids:
+                await repo.reinforce_edges(AGENT_ID, edge_ids, delta=0.05, ceiling=2.0)
+            weights.append(repo._edges[edge.id].weight)
+
+        # Weights should monotonically increase
+        for i in range(1, len(weights)):
+            assert weights[i] >= weights[i - 1], f"Weight at iteration {i} did not increase: {weights}"
+
+        # By iteration 10, the path should be significantly stronger
+        assert weights[-1] > weights[0] + 0.3
+
+    @pytest.mark.asyncio
+    async def test_composition_forget_cycle(self, repo: InMemoryRepository, settings: MCPSettings):
+        """Create 10 nodes with varying importance and access patterns.
+        Run a forget sweep. Verify exactly the right nodes get forgotten.
+        Recall and verify forgotten nodes absent. Re-extract one and verify resurrected.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+
+        # Create a mix of nodes
+        active_nodes = []
+        stale_nodes = []
+        old_time = datetime.now(UTC) - timedelta(days=14)
+
+        for i in range(5):
+            n = await repo.upsert_node(
+                AGENT_ID,
+                f"Active Node {i}",
+                concept.id,
+                content=f"Active content {i}",
+                importance=0.6,
+            )
+            await repo.record_node_access(AGENT_ID, [n.id])
+            active_nodes.append(n)
+
+        for i in range(5):
+            n = await repo.upsert_node(
+                AGENT_ID,
+                f"Stale Unimportant {i}",
+                concept.id,
+                content=f"Stale content {i}",
+                importance=0.1,
+            )
+            repo._nodes[n.id] = n.model_copy(update={"last_accessed_at": old_time})
+            stale_nodes.append(n)
+
+        # Run forget sweep with force=True
+        await _maybe_forget_sweep(repo, AGENT_ID, settings, force=True)
+
+        # Active nodes should NOT be forgotten
+        for n in active_nodes:
+            assert repo._nodes[n.id].forgotten is False
+
+        # Stale unimportant nodes should be forgotten
+        for n in stale_nodes:
+            assert repo._nodes[n.id].forgotten is True
+
+        # Verify forgotten nodes absent from recall
+        results = await repo.recall("Stale Unimportant", AGENT_ID, limit=20)
+        result_ids = {r.item_id for r in results if r.source_kind == "node"}
+        for n in stale_nodes:
+            assert n.id not in result_ids
+
+        # Re-extract one forgotten node (upsert resurrects it)
+        resurrected = await repo.upsert_node(
+            AGENT_ID,
+            stale_nodes[0].name,
+            concept.id,
+            content="Resurrected content",
+            importance=0.1,
+        )
+        assert resurrected.forgotten is False
+        assert resurrected.access_count >= 1
+
+        # Now it should appear in recall again
+        results = await repo.recall(stale_nodes[0].name, AGENT_ID, limit=10)
+        result_ids = {r.item_id for r in results if r.source_kind == "node"}
+        assert stale_nodes[0].id in result_ids
+
+    @pytest.mark.asyncio
+    async def test_composition_consolidation_shifts_to_graph(self, repo: InMemoryRepository):
+        """Store an episode, extract it (mock persist), consolidate it.
+        Recall a query matching both the episode text and extracted nodes.
+        Verify graph nodes rank above the consolidated episode.
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+
+        # Store episode
+        ep_id = await repo.store_episode(AGENT_ID, "Serotonin is critical for mood regulation")
+
+        # Simulate extraction: create a node from the episode content
+        node = await repo.upsert_node(
+            AGENT_ID,
+            "Serotonin",
+            concept.id,
+            content="Serotonin is critical for mood regulation",
+            importance=0.7,
+        )
+
+        # Consolidate the episode
+        await repo.mark_episode_consolidated(AGENT_ID, ep_id)
+
+        results = await repo.recall("Serotonin", AGENT_ID, limit=10)
+        assert len(results) >= 2
+
+        # Find node result and episode result
+        node_result = next((r for r in results if r.source_kind == "node" and r.item_id == node.id), None)
+        episode_result = next((r for r in results if r.source_kind == "episode" and r.item_id == ep_id), None)
+        assert node_result is not None
+        assert episode_result is not None
+
+        # Graph node should outrank the consolidated episode
+        assert node_result.score > episode_result.score
+
+    def test_composition_graceful_degradation_no_activation(self):
+        """Recall with activation=None and importance=None in hybrid scoring.
+        Verify it falls back to vector+text+recency (3-signal mode) without errors.
+        """
+        weights = HybridWeights(vector=0.3, text=0.2, recency=0.1, activation=0.25, importance=0.15)
+
+        # All signals present
+        score_full = compute_hybrid_score(
+            vector_sim=0.8,
+            text_rank=0.7,
+            recency=0.6,
+            activation=0.5,
+            importance=0.4,
+            weights=weights,
+        )
+
+        # Only vector + text + recency (activation and importance None)
+        score_degraded = compute_hybrid_score(
+            vector_sim=0.8,
+            text_rank=0.7,
+            recency=0.6,
+            activation=None,
+            importance=None,
+            weights=weights,
+        )
+
+        assert score_degraded > 0
+        # Degraded should redistribute weights — result should differ but still be valid
+        assert score_degraded != score_full
+        # With only recency+vector+text, the redistributed weights should yield a valid [0,1] score
+        assert 0 < score_degraded <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_composition_cognitive_metrics_in_recall_items(self, repo: InMemoryRepository):
+        """Recall and verify every RecallItem for node-sourced results has
+        activation_score and importance populated (not None).
+        """
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter", importance=0.8)
+        await repo.upsert_node(AGENT_ID, "Serotonin Receptor", concept.id, content="Binds serotonin", importance=0.6)
+
+        results = await repo.recall("Serotonin", AGENT_ID, limit=10)
+        node_results = [r for r in results if r.source_kind == "node"]
+        assert len(node_results) >= 2
+
+        for r in node_results:
+            assert r.activation_score is not None, f"Node {r.name} missing activation_score"
+            assert r.importance is not None, f"Node {r.name} missing importance"
+            assert 0 <= r.activation_score <= 1.0
+            assert 0 <= r.importance <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_cognitive_stats_in_discover(self, repo: InMemoryRepository):
+        """Verify discover stats include cognitive metrics."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+
+        # Create some nodes (some will be forgotten)
+        n1 = await repo.upsert_node(AGENT_ID, "Active Node", concept.id, importance=0.8)
+        n2 = await repo.upsert_node(AGENT_ID, "Forgotten Node", concept.id, importance=0.1)
+        await repo.record_node_access(AGENT_ID, [n1.id])
+        await repo.mark_forgotten(AGENT_ID, [n2.id])
+
+        # Create an episode and consolidate it
+        ep_id = await repo.store_episode(AGENT_ID, "Test episode")
+        await repo.mark_episode_consolidated(AGENT_ID, ep_id)
+
+        stats = await repo.get_stats(AGENT_ID)
+        assert isinstance(stats, GraphStats)
+        assert stats.total_nodes == 2
+        assert stats.forgotten_nodes == 1
+        assert stats.consolidated_episodes == 1
+        assert stats.avg_activation > 0  # At least one active node with access
