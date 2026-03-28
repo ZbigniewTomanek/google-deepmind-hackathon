@@ -28,9 +28,10 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
         media_store = MediaFileStore(settings.media_store_path)
 
         if settings.mock_db:
+            from neocortex.ingestion.media_compressor_mock import MockMediaCompressor
             from neocortex.ingestion.media_description_mock import MockMediaDescriptionService
 
-            media_compressor = None
+            media_compressor = MockMediaCompressor()
             media_describer = MockMediaDescriptionService()
         elif shutil.which("ffmpeg"):
             from neocortex.ingestion.media_compressor import MediaCompressor

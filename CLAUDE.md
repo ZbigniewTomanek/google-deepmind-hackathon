@@ -34,6 +34,7 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     media_models.py      # MediaRef, MediaIngestionResult, CompressedMedia
     media_store.py       # Filesystem-based media file store
     media_compressor.py  # ffmpeg compression service (audio→opus, video→h264)
+    media_compressor_mock.py # Mock compressor for tests (no ffmpeg needed)
     media_description.py # Gemini multimodal description service
     media_description_mock.py # Mock description service for tests
   tui/                   # Developer TUI for interactive MCP server testing
