@@ -84,6 +84,7 @@ class MCPSettings(BaseSettings):
     librarian_thinking_effort: ThinkingLevel = "low"
 
     # Domain routing (upper ontology — automatic knowledge routing to shared graphs)
+    # Note: requires extraction_enabled=True (domain routing uses the job queue)
     domain_routing_enabled: bool = True
     domain_classifier_model: str = "gemini-3-flash-preview"
     domain_classifier_thinking_effort: ThinkingLevel = "low"

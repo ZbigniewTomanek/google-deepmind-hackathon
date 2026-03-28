@@ -33,8 +33,8 @@ class AgentDomainClassifier:
         model_name: str = "gemini-3-flash-preview",
         thinking_effort: ThinkingLevel = "low",
     ) -> None:
-        self._model_name = model_name
-        self._thinking_effort = thinking_effort
+        self._model = GoogleModel(model_name)
+        self._model_settings = ModelSettings(thinking=thinking_effort)
 
     async def classify(self, text: str, domains: list[SemanticDomain]) -> ClassificationResult:
         domain_lines = "\n".join(f"- {d.slug}: {d.name}\n  {d.description}" for d in domains)
@@ -52,15 +52,13 @@ class AgentDomainClassifier:
             "Classify the following knowledge text. Return matched domains with confidence scores."
         )
 
-        model = GoogleModel(self._model_name)
-        model_settings = ModelSettings(thinking=self._thinking_effort)
         agent: Agent[None, ClassificationResult] = Agent(  # ty: ignore[invalid-assignment]
-            model,
+            self._model,
             output_type=ClassificationResult,
             system_prompt=prompt,
         )
 
-        result = await agent.run(text, model_settings=model_settings)
+        result = await agent.run(text, model_settings=self._model_settings)
         logger.debug(
             "classification_result",
             matched_count=len(result.output.matched_domains),

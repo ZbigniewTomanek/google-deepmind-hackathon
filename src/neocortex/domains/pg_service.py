@@ -68,9 +68,9 @@ class PostgresDomainService:
         return result != "DELETE 0"
 
     async def seed_defaults(self) -> None:
-        from neocortex.domains.memory_service import _SEED_DOMAINS
+        from neocortex.domains.models import SEED_DOMAINS
 
-        for d in _SEED_DOMAINS:
+        for d in SEED_DOMAINS:
             await self._pg.execute(
                 "INSERT INTO ontology_domains"
                 " (slug, name, description, schema_name, seed)"

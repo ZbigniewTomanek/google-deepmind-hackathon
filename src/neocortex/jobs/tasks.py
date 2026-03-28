@@ -22,13 +22,24 @@ async def extract_episode(
     agent_id: str,
     episode_ids: list[int],
     target_schema: str | None = None,
+    source_schema: str | None = None,
 ) -> None:
-    """Run extraction pipeline for a batch of episodes."""
+    """Run extraction pipeline for a batch of episodes.
+
+    Args:
+        agent_id: Agent whose graph is being populated.
+        episode_ids: Episodes to process.
+        target_schema: Schema to write extracted nodes/edges to.
+        source_schema: Schema to read episodes from (defaults to target_schema).
+                       Used by domain routing where episodes live in the personal
+                       graph but results go to a shared domain schema.
+    """
     logger.info(
         "extract_episode_started",
         agent_id=agent_id,
         episode_ids=episode_ids,
         target_schema=target_schema,
+        source_schema=source_schema,
     )
     from neocortex.extraction.agents import AgentInferenceConfig
     from neocortex.extraction.pipeline import run_extraction
@@ -43,6 +54,7 @@ async def extract_episode(
         agent_id=agent_id,
         episode_ids=episode_ids,
         target_schema=target_schema,
+        source_schema=source_schema,
         ontology_config=AgentInferenceConfig(
             model_name=settings.ontology_model,
             thinking_effort=settings.ontology_thinking_effort,
