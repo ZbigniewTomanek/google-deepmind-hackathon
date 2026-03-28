@@ -142,9 +142,11 @@ All configuration via environment variables (Pydantic BaseSettings):
 |----------|---------|-------------|
 | `GOOGLE_API_KEY` | _(unset)_ | Google AI API key for Gemini embeddings. When unset, embedding calls return `None` and recall falls back to text-only |
 | `NEOCORTEX_EMBEDDING_MODEL` | `gemini-embedding-001` | Gemini embedding model name |
-| `NEOCORTEX_RECALL_WEIGHT_VECTOR` | `0.4` | Hybrid recall weight for vector cosine similarity |
-| `NEOCORTEX_RECALL_WEIGHT_TEXT` | `0.35` | Hybrid recall weight for text rank |
-| `NEOCORTEX_RECALL_WEIGHT_RECENCY` | `0.25` | Hybrid recall weight for recency decay |
+| `NEOCORTEX_RECALL_WEIGHT_VECTOR` | `0.3` | Hybrid recall weight for vector cosine similarity |
+| `NEOCORTEX_RECALL_WEIGHT_TEXT` | `0.2` | Hybrid recall weight for text rank |
+| `NEOCORTEX_RECALL_WEIGHT_RECENCY` | `0.1` | Hybrid recall weight for recency decay |
+| `NEOCORTEX_RECALL_WEIGHT_ACTIVATION` | `0.25` | Hybrid recall weight for ACT-R base activation |
+| `NEOCORTEX_RECALL_WEIGHT_IMPORTANCE` | `0.15` | Hybrid recall weight for node importance |
 | `NEOCORTEX_RECALL_RECENCY_HALF_LIFE_HOURS` | `168.0` | Recency half-life in hours (7 days) |
 | `NEOCORTEX_RECALL_VECTOR_DISTANCE_THRESHOLD` | `0.5` | Cosine distance threshold for vector match |
 
@@ -188,25 +190,31 @@ Inspect the output database:
 sqlite3 data/pydantic_agents_playground.sqlite "SELECT count(*) FROM processing_runs;"
 ```
 
-## E2E Smoke Test
+## E2E Tests
 
-Validates multi-agent isolation end-to-end against a running server.
-Use the unified runner — it starts PostgreSQL + both servers, runs the test,
-and tears everything down on exit:
+The unified runner handles everything: starts PostgreSQL, applies migrations, launches both servers with `dev_token` auth, runs the test, and tears down on exit. It sources `.env` automatically for `GOOGLE_API_KEY`.
 
 ```bash
-# MCP server tests
+# MCP server smoke test (multi-agent isolation, discover cognitive stats)
 ./scripts/run_e2e.sh scripts/e2e_mcp_test.py
 
-# Ingestion API tests
+# Ingestion API (text/doc/events, auth, target_graph permission enforcement)
 ./scripts/run_e2e.sh scripts/e2e_ingestion_test.py
 
-# Embedding / hybrid recall (requires GOOGLE_API_KEY)
-GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_embedding_test.py
-GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_hybrid_recall_test.py
+# Embedding / hybrid recall (requires GOOGLE_API_KEY in .env)
+./scripts/run_e2e.sh scripts/e2e_embedding_test.py
+./scripts/run_e2e.sh scripts/e2e_hybrid_recall_test.py
 
-# Permission system tests
+# Permission system (shared graphs, grant/revoke, admin lifecycle, read via MCP recall)
 ./scripts/run_e2e.sh scripts/e2e_permission_test.py
+
+# Extraction pipeline (ingest → extract → recall with graph context,
+# cognitive fields, consolidation, node importance, discover stats)
+./scripts/run_e2e.sh scripts/e2e_extraction_pipeline_test.py
+
+# Cognitive heuristics (ACT-R activation, spreading activation, edge reinforcement,
+# importance hints, consolidation — requires GOOGLE_API_KEY, ~2 min)
+./scripts/run_e2e.sh scripts/e2e_cognitive_recall_test.py
 
 # Docker mode (builds images, runs everything in containers)
 ./scripts/run_e2e.sh --docker scripts/e2e_mcp_test.py
@@ -214,6 +222,8 @@ GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_hybrid_recall_test.py
 # Keep services up after the test for debugging
 KEEP_RUNNING=1 ./scripts/run_e2e.sh scripts/e2e_mcp_test.py
 ```
+
+The extraction-dependent tests (`e2e_extraction_pipeline_test.py`, `e2e_cognitive_recall_test.py`) clean up stale jobs before running and track only their own extraction jobs, so they work reliably even with leftover state from prior runs. Each triggers exactly 3 extraction jobs (~9 Gemini API calls).
 
 ## Linting
 

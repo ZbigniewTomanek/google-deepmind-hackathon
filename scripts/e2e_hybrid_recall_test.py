@@ -165,11 +165,22 @@ async def test_discover() -> None:
     print(f"  Stats: {stats}")
     print(f"  Graphs: {graphs}")
 
-    episode_count = stats.get("episode_count", stats.get("episodes", 0))
+    episode_count = stats.get("total_episodes", 0)
     if isinstance(episode_count, (int, float)) and episode_count > 0:
         print(f"  [PASS] Discover reports {episode_count} episodes")
     else:
-        print(f"  [WARN] Could not verify episode count from stats: {stats}")
+        raise AssertionError(f"Expected total_episodes > 0 in stats: {stats}")
+
+    # Cognitive heuristics stats should be present
+    for key in ("forgotten_nodes", "consolidated_episodes", "avg_activation"):
+        if key not in stats:
+            raise AssertionError(f"Missing cognitive stat '{key}' in discover stats: {stats}")
+    print(
+        f"  [PASS] Cognitive stats present: "
+        f"forgotten={stats['forgotten_nodes']}, "
+        f"consolidated={stats['consolidated_episodes']}, "
+        f"avg_activation={stats['avg_activation']}"
+    )
 
 
 async def main() -> None:

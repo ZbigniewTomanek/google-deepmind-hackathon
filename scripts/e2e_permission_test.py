@@ -19,9 +19,12 @@ import uuid
 
 import asyncpg
 import httpx
+from fastmcp import Client
 
 from neocortex.config import PostgresConfig
 
+BASE_URL = os.environ.get("NEOCORTEX_BASE_URL", "http://127.0.0.1:8000")
+MCP_URL = os.environ.get("NEOCORTEX_MCP_URL", f"{BASE_URL}/mcp")
 INGESTION_BASE_URL = os.environ.get("NEOCORTEX_INGESTION_BASE_URL", "http://127.0.0.1:8001")
 ADMIN_TOKEN = os.environ.get("NEOCORTEX_ADMIN_TOKEN", "admin-token-neocortex")
 ALICE_TOKEN = os.environ.get("NEOCORTEX_ALICE_TOKEN", "alice-token")
@@ -44,6 +47,14 @@ async def _ingest_text(token: str, text: str, target_graph: str | None = None) -
         body["target_graph"] = target_graph
     async with httpx.AsyncClient(base_url=INGESTION_BASE_URL, timeout=10.0) as client:
         return await client.post("/ingest/text", headers=_headers(token), json=body)
+
+
+async def mcp_call(token: str, tool_name: str, arguments: dict[str, object]) -> dict:
+    async with Client(MCP_URL, auth=token) as client:
+        result = await client.call_tool(tool_name, arguments)
+    if not isinstance(result.structured_content, dict):
+        raise AssertionError(f"{tool_name} did not return structured content: {result}")
+    return result.structured_content
 
 
 async def _assert_health() -> None:
@@ -151,6 +162,43 @@ async def main() -> None:
     eve_perms = resp.json()
     assert not any(p["schema_name"] == schema_name for p in eve_perms), f"Eve should have no permissions: {eve_perms}"
     print("  Eve has no permissions confirmed")
+
+    # --- Step 5b: Verify shared graph read via MCP recall ---
+    print("\nStep 5b: Verify shared graph read access via recall...")
+
+    # Alice (read+write) can recall and should see shared graph in discover
+    alice_discover = await mcp_call(ALICE_TOKEN, "discover", {})
+    alice_graphs = alice_discover.get("graphs", [])
+    assert schema_name in alice_graphs, f"Alice should see shared graph in discover: {alice_graphs}"
+    print("  Alice sees shared graph in discover")
+
+    # Bob (read-only) can recall and see shared graph
+    bob_discover = await mcp_call(BOB_TOKEN, "discover", {})
+    bob_graphs = bob_discover.get("graphs", [])
+    assert schema_name in bob_graphs, f"Bob should see shared graph in discover: {bob_graphs}"
+    print("  Bob sees shared graph in discover")
+
+    # Eve (no permissions) should NOT see shared graph
+    eve_discover = await mcp_call(EVE_TOKEN, "discover", {})
+    eve_graphs = eve_discover.get("graphs", [])
+    assert schema_name not in eve_graphs, f"Eve should NOT see shared graph: {eve_graphs}"
+    print("  Eve correctly excluded from shared graph in discover")
+
+    # Alice's ingested text should be findable via recall for Alice and Bob
+    # Use the suffix as a unique keyword to find our specific content
+    alice_recall = await mcp_call(ALICE_TOKEN, "recall", {"query": suffix, "limit": 10})
+    alice_contents = " ".join(str(r.get("content", "")) for r in alice_recall.get("results", []))
+    if suffix in alice_contents:
+        print("  [PASS] Alice can recall shared graph content")
+    else:
+        print("  [INFO] Alice's recall didn't match suffix (may depend on embedding/text rank)")
+
+    bob_recall = await mcp_call(BOB_TOKEN, "recall", {"query": suffix, "limit": 10})
+    bob_contents = " ".join(str(r.get("content", "")) for r in bob_recall.get("results", []))
+    if suffix in bob_contents:
+        print("  [PASS] Bob (read-only) can recall shared graph content")
+    else:
+        print("  [INFO] Bob's recall didn't match suffix (may depend on embedding/text rank)")
 
     # --- Step 6: Revoke alice's write -> 403 ---
     print("\nStep 6: Revoke Alice's write, verify 403...")

@@ -70,8 +70,7 @@ cleanup() {
         docker compose -f "$PROJECT_DIR/docker-compose.yml" down --timeout 5 2>/dev/null || true
         log "Stopped docker compose services."
     else
-        docker compose -f "$PROJECT_DIR/docker-compose.yml" stop postgres --timeout 5 2>/dev/null || true
-        log "Stopped PostgreSQL container."
+        log "PostgreSQL container left running (use 'docker compose stop postgres' to stop)."
     fi
 
     exit "$exit_code"
@@ -105,6 +104,29 @@ wait_for_postgres() {
     fail "PostgreSQL did not become ready within ${MAX_WAIT}s."
 }
 
+apply_migrations() {
+    log "Applying any missing migrations..."
+    local migration_dir="$PROJECT_DIR/migrations/init"
+    for f in "$migration_dir"/*.sql; do
+        local name
+        name="$(basename "$f")"
+        # Check if already applied (using _migration table if it exists)
+        local already_applied
+        already_applied=$(docker compose exec -T postgres psql -U neocortex -d neocortex -tAc \
+            "SELECT 1 FROM _migration WHERE name = '$name' LIMIT 1;" 2>/dev/null || echo "")
+        if [[ "$already_applied" == "1" ]]; then
+            continue
+        fi
+        log "  Applying $name..."
+        docker compose exec -T postgres psql -U neocortex -d neocortex -f "/docker-entrypoint-initdb.d/$name" >/dev/null 2>&1 \
+            || docker compose exec -T -e PGPASSWORD=neocortex postgres psql -U neocortex -d neocortex < "$f" 2>&1
+        # Record it
+        docker compose exec -T postgres psql -U neocortex -d neocortex -c \
+            "INSERT INTO _migration (name) VALUES ('$name') ON CONFLICT DO NOTHING;" >/dev/null 2>&1 || true
+        ok "  Applied $name"
+    done
+}
+
 # --- parse args ------------------------------------------------------------
 
 while [[ $# -gt 0 ]]; do
@@ -136,14 +158,34 @@ log "Mode: $MODE | Test: $TEST_SCRIPT"
 if [[ "$MODE" == "docker" ]]; then
     # ---------- Docker mode: everything via docker compose ------------------
     log "Starting all services via docker compose..."
-    docker compose up -d --build
+    docker compose up -d --build 2>&1 || true
     wait_for_healthy "$MCP_BASE_URL/health" "$MAX_WAIT"
     wait_for_healthy "$INGESTION_BASE_URL/health" "$MAX_WAIT"
 else
     # ---------- Local mode: PG in Docker, servers as local processes --------
-    log "Starting PostgreSQL via docker compose..."
-    docker compose up -d postgres
+    log "Ensuring PostgreSQL is running via docker compose..."
+    docker compose up -d postgres 2>&1 || {
+        log "Container conflict — removing stale container and retrying..."
+        docker rm -f neocortex-postgres 2>/dev/null || true
+        docker compose up -d postgres 2>&1
+    }
     wait_for_postgres
+    apply_migrations
+
+    # Kill any existing servers on our ports
+    for port in 8000 8001; do
+        existing_pid=$(lsof -ti ":$port" 2>/dev/null || true)
+        if [[ -n "$existing_pid" ]]; then
+            log "Killing existing process on port $port (PID $existing_pid)..."
+            kill "$existing_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    done
+
+    # Source .env if present (for GOOGLE_API_KEY etc.)
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+        set -a; source "$PROJECT_DIR/.env"; set +a
+    fi
 
     log "Starting NeoCortex MCP server (port 8000)..."
     NEOCORTEX_AUTH_MODE=dev_token \
@@ -161,6 +203,11 @@ else
 
     wait_for_healthy "$MCP_BASE_URL/health" "$MAX_WAIT"
     wait_for_healthy "$INGESTION_BASE_URL/health" "$MAX_WAIT"
+fi
+
+# Ensure .env is sourced for test scripts (GOOGLE_API_KEY, etc.)
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a; source "$PROJECT_DIR/.env"; set +a
 fi
 
 log "Running E2E test: $TEST_SCRIPT"
