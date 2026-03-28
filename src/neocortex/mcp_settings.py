@@ -58,6 +58,7 @@ class MCPSettings(BaseSettings):
     # Spreading activation
     spreading_activation_decay: float = 0.6
     spreading_activation_max_depth: int = 2
+    spreading_activation_bonus_weight: float = 0.1
 
     # Soft-forget thresholds
     forget_activation_threshold: float = 0.05

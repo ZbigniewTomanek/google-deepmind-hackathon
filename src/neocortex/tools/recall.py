@@ -8,6 +8,18 @@ from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
 from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency
 
 
+async def _maybe_decay_edges(repo, agent_id: str, settings, *, force: bool = False) -> None:
+    """Probabilistically decay weights of stale edges (1 in 10 calls, or forced)."""
+    if not force and random.random() >= 0.1:
+        return
+    await repo.decay_stale_edges(
+        agent_id,
+        older_than_hours=168.0,
+        decay_factor=0.95,
+        floor=settings.edge_weight_floor,
+    )
+
+
 async def _maybe_forget_sweep(repo, agent_id: str, settings, *, force: bool = False) -> None:
     """Probabilistically identify and soft-forget low-activation, low-importance nodes."""
     if not force and random.random() >= 0.05:
@@ -155,7 +167,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
             if r.source_kind == "node" and r.item_id in bonus_map:
                 bonus = bonus_map[r.item_id]
                 r.spreading_bonus = bonus
-                r.score += bonus * 0.1  # Moderate contribution to avoid dominating
+                r.score += bonus * settings.spreading_activation_bonus_weight
 
     # Re-sort by updated score
     all_results.sort(key=lambda item: item.score, reverse=True)
@@ -179,13 +191,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
         )
 
     # Lazy edge decay — 1 in 10 recall calls
-    if random.random() < 0.1:
-        await repo.decay_stale_edges(
-            agent_id,
-            older_than_hours=168.0,
-            decay_factor=0.95,
-            floor=settings.edge_weight_floor,
-        )
+    await _maybe_decay_edges(repo, agent_id, settings)
 
     # Lazy forget sweep — 1 in 20 recall calls
     await _maybe_forget_sweep(repo, agent_id, settings)

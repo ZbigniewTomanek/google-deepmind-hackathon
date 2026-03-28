@@ -99,6 +99,7 @@ class InMemoryRepository:
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
     ) -> list[RecallItem]:
         query_lower = query.lower()
+        # Must stay in sync with MCPSettings defaults
         weights = HybridWeights(vector=0.3, text=0.2, recency=0.1, activation=0.25, importance=0.15)
         half_life = 168.0  # 7 days
         matches: list[RecallItem] = []
@@ -363,7 +364,7 @@ class InMemoryRepository:
 
     async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         del target_schema
-        return [n for n in self._nodes.values() if n.name.lower() == name.lower()]
+        return [n for n in self._nodes.values() if n.name.lower() == name.lower() and not n.forgotten]
 
     # ── Edge CRUD ──
 
@@ -474,7 +475,7 @@ class InMemoryRepository:
 
     async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
         del target_schema
-        return sorted(n.name for n in self._nodes.values())
+        return sorted(n.name for n in self._nodes.values() if not n.forgotten)
 
     # ── Soft-Forget ──
 
