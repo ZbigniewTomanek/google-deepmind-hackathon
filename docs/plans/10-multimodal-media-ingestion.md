@@ -886,7 +886,7 @@ bash scripts/e2e_media.sh
 |-------|-------------|--------|-------|
 | 1 | Settings, models, media file store | `DONE` | Added 4 settings to MCPSettings, MediaRef/MediaIngestionResult models, MediaFileStore with save/resolve/delete |
 | 2 | Media compressor (ffmpeg) | `DONE` | MediaCompressor with compress_audio/compress_video/probe_duration, CompressedMedia dataclass, ffmpeg availability check, 6 passing tests |
-| 3 | Gemini media description service | `PENDING` | |
+| 3 | Gemini media description service | `DONE` | MediaDescriptionService with Gemini Files API upload/poll/generate/cleanup, MockMediaDescriptionService, MediaDescription dataclass, audit logging, 7 passing tests |
 | 4 | Extend IngestionProcessor + EpisodeProcessor | `PENDING` | |
 | 5 | API endpoints for audio/video | `PENDING` | |
 | 6 | Unit and integration tests | `PENDING` | |
@@ -894,5 +894,5 @@ bash scripts/e2e_media.sh
 | 8 | E2E validation script and tests | `PENDING` | |
 | 9 | Final validation and cleanup | `PENDING` | |
 
-**Last stage completed**: Stage 2 — Media compressor (ffmpeg)
+**Last stage completed**: Stage 3 — Gemini media description service
 **Last updated by**: plan-runner-agent
