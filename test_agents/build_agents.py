@@ -13,13 +13,17 @@ from open_agent_compiler.compiler import compile_agent
 from open_agent_compiler.writers import OpenCodeWriter
 
 from agents import (
+    build_audio_processor,
     build_chat,
+    build_chat_with_extractions,
     build_chat_with_memory,
     build_joke_subagent,
     build_joke_with_memory,
-    build_research_agent,
+    build_research_orchestrator,
+    build_rss_processor,
     build_search_orchestrator,
     build_task_subagent,
+    build_video_processor,
 )
 from agents.config import build_config
 
@@ -32,7 +36,7 @@ _BUILD_PYPROJECT = """\
 name = "neocortex-test-agents"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.0", "open-agent-compiler>=0.1.2"]
+dependencies = ["pydantic>=2.0", "open-agent-compiler>=0.1.2", "feedparser>=6.0"]
 """
 
 
@@ -61,7 +65,11 @@ def compile_and_write() -> Path:
         build_joke_subagent(config),
         build_chat_with_memory(config),
         build_joke_with_memory(config),
-        build_research_agent(config),
+        build_research_orchestrator(config),
+        build_video_processor(config),
+        build_audio_processor(config),
+        build_rss_processor(config),
+        build_chat_with_extractions(config),
     ]
 
     writer = OpenCodeWriter(output_dir=BUILD_DIR, scripts_dir=SCRIPTS_DIR)
