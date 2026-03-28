@@ -27,10 +27,16 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     routes.py              # Permission + graph management endpoints
   ingestion/             # FastAPI bulk-ingestion REST API (:8001)
     app.py               # App factory with lifespan (reuses create_services)
-    routes.py            # POST /ingest/text, /ingest/document, /ingest/events
+    routes.py            # POST /ingest/text, /ingest/document, /ingest/events, /ingest/audio, /ingest/video
     protocol.py          # IngestionProcessor protocol
     episode_processor.py # Stores episodes + enqueues extraction jobs
     stub_processor.py    # Backward-compat shim → episode_processor
+    media_models.py      # MediaRef, MediaIngestionResult, CompressedMedia
+    media_store.py       # Filesystem-based media file store
+    media_compressor.py  # ffmpeg compression service (audio→opus, video→h264)
+    media_compressor_mock.py # Mock compressor for tests (no ffmpeg needed)
+    media_description.py # Gemini multimodal description service
+    media_description_mock.py # Mock description service for tests
   tui/                   # Developer TUI for interactive MCP server testing
     app.py               # Textual App with remember/recall/discover modes
     client.py            # MCP client using streamable-HTTP transport

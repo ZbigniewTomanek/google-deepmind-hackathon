@@ -87,5 +87,11 @@ class MCPSettings(BaseSettings):
     bootstrap_admin_id: str = "admin"  # Seeded into agent_registry as admin on startup
     admin_token: str = "admin-token-neocortex"  # Bootstrap admin dev token
 
+    # Media ingestion
+    media_store_path: str = "./media_store"  # Root dir for compressed media files
+    media_max_upload_bytes: int = 100 * 1024 * 1024  # 100 MB upload limit
+    media_description_model: str = "gemini-3-flash-preview"  # Model for multimodal description
+    media_description_max_tokens: int = 8192  # Max output tokens for description
+
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired

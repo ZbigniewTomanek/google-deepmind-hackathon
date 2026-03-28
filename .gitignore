@@ -213,3 +213,6 @@ data/
 
 # Docker volumes (should not be committed)
 pgdata/
+
+# dir to store ingested media
+media_store/
