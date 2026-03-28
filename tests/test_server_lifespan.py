@@ -22,7 +22,7 @@ async def test_server_lifespan_provisions_shared_graph_and_agent_personal_graph(
     for schema_name in (personal_schema, shared_schema):
         await cleanup_manager.drop_graph(schema_name)
 
-    settings = MCPSettings(auth_mode="none", mock_db=False)
+    settings = MCPSettings(auth_mode="none", mock_db=False, domain_routing_enabled=False)
     server = create_server(settings)
 
     try:
