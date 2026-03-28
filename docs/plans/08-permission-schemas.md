@@ -901,15 +901,15 @@ test(permissions): E2E smoke tests and development docs update
 
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 1 | Permission data model, service layer & wiring | PENDING | |
+| 1 | Permission data model, service layer & wiring | DONE | SQL migration 007, Pydantic models, PermissionChecker protocol, PG + in-memory impls, wired into ServiceContext, 18 unit tests |
 | 2 | GraphRouter permission enforcement & MCP tool support | PENDING | |
 | 3 | Ingestion API permission enforcement & extraction awareness | PENDING | |
 | 4 | Admin REST API | PENDING | |
 | 5 | Integration tests (in-memory) & CLAUDE.md | PENDING | |
 | 6 | E2E smoke tests & development docs | PENDING | |
 
-Last stage completed: —
-Last updated by: —
+Last stage completed: Stage 1 — Permission data model, service layer & wiring
+Last updated by: plan-runner-agent
 
 ---
 
