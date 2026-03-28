@@ -27,6 +27,8 @@ class RecallItem(BaseModel):
     content: str
     item_type: str
     score: float = Field(..., description="Hybrid relevance score")
+    activation_score: float | None = None
+    importance: float | None = None
     source: str | None = None
     source_kind: Literal["node", "episode"]
     graph_name: str | None = None
