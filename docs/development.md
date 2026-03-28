@@ -279,6 +279,10 @@ The unified runner handles everything: starts PostgreSQL, applies migrations, la
 # importance hints, consolidation — requires GOOGLE_API_KEY, ~2 min)
 ./scripts/run_e2e.sh scripts/e2e_cognitive_recall_test.py
 
+# Media ingestion (real ffmpeg compression + Gemini description, uploads 2-min
+# MP3/MP4 demo clips, verifies episodes in DB and compressed files on disk)
+./scripts/run_e2e.sh scripts/e2e_media_ingestion_test.py
+
 # Docker mode (builds images, runs everything in containers)
 ./scripts/run_e2e.sh --docker scripts/e2e_mcp_test.py
 
