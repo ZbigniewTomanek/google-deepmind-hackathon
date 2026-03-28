@@ -40,7 +40,8 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
         auth=auth,
         instructions=(
             "NeoCortex is an agent memory system. Use 'remember' to store knowledge, "
-            "'recall' to retrieve it, and 'discover' to explore what types of knowledge exist."
+            "'recall' to retrieve it, and the discover_* tools to explore what knowledge exists: "
+            "discover_domains → discover_graphs → discover_ontology → discover_details."
         ),
         lifespan=app_lifespan,
     )

@@ -59,6 +59,7 @@ class OntologyAgentDeps:
     episode_text: str
     existing_node_types: list[str]  # names only
     existing_edge_types: list[str]
+    domain_hint: str | None = None  # e.g. "Technical Knowledge: Programming languages, ..."
 
 
 def build_ontology_agent(
@@ -82,9 +83,19 @@ def build_ontology_agent(
 
     @agent.instructions
     async def inject_context(ctx: RunContext[OntologyAgentDeps]) -> str:
+        parts: list[str] = []
+        if ctx.deps.domain_hint:
+            parts.extend(
+                [
+                    f"Domain context: {ctx.deps.domain_hint}",
+                    "Propose types that are semantically appropriate for this domain.",
+                    "Do NOT reuse types from unrelated domains even if they exist.",
+                    "",
+                ]
+            )
         existing_nt = "\n".join(f"- {n}" for n in ctx.deps.existing_node_types) or "- none"
         existing_et = "\n".join(f"- {n}" for n in ctx.deps.existing_edge_types) or "- none"
-        return "\n".join(
+        parts.extend(
             [
                 "Text to analyze:",
                 ctx.deps.episode_text,
@@ -101,6 +112,7 @@ def build_ontology_agent(
                 "- Avoid one-off or overly specific types.",
             ]
         )
+        return "\n".join(parts)
 
     return agent  # ty: ignore[invalid-return-type]
 
@@ -113,6 +125,7 @@ class ExtractorAgentDeps:
     episode_text: str
     node_types: list[str]
     edge_types: list[str]
+    domain_hint: str | None = None
 
 
 def build_extractor_agent(
@@ -141,9 +154,18 @@ def build_extractor_agent(
 
     @agent.instructions
     async def inject_context(ctx: RunContext[ExtractorAgentDeps]) -> str:
+        parts: list[str] = []
+        if ctx.deps.domain_hint:
+            parts.extend(
+                [
+                    f"Domain context: {ctx.deps.domain_hint}",
+                    "Extract entities and relations appropriate for this domain.",
+                    "",
+                ]
+            )
         nt_list = "\n".join(f"- {n}" for n in ctx.deps.node_types) or "- none"
         et_list = "\n".join(f"- {n}" for n in ctx.deps.edge_types) or "- none"
-        return "\n".join(
+        parts.extend(
             [
                 "Text to extract from:",
                 ctx.deps.episode_text,
@@ -160,6 +182,7 @@ def build_extractor_agent(
                 "- Include evidence text in relation properties when possible.",
             ]
         )
+        return "\n".join(parts)
 
     return agent  # ty: ignore[invalid-return-type]
 

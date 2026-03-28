@@ -38,6 +38,14 @@ class PostgresPermissionService:
     async def can_read_schema(self, agent_id: str, schema_name: str) -> bool:
         if await self.is_admin(agent_id):
             return True
+        # Shared schemas are world-readable
+        row = await self._pg.fetchrow(
+            "SELECT 1 FROM graph_registry WHERE schema_name = $1 AND is_shared = true",
+            schema_name,
+        )
+        if row is not None:
+            return True
+        # Fall back to explicit grant
         row = await self._pg.fetchrow(
             "SELECT 1 FROM graph_permissions WHERE agent_id = $1 AND schema_name = $2 AND can_read = TRUE",
             agent_id,
@@ -60,13 +68,21 @@ class PostgresPermissionService:
             return set()
         if await self.is_admin(agent_id):
             return set(candidates)
-        rows = await self._pg.fetch(
+        # Shared schemas are world-readable
+        shared_rows = await self._pg.fetch(
+            "SELECT schema_name FROM graph_registry" " WHERE schema_name = ANY($1) AND is_shared = true",
+            candidates,
+        )
+        result = {row["schema_name"] for row in shared_rows}
+        # Union with explicitly granted schemas
+        granted_rows = await self._pg.fetch(
             "SELECT schema_name FROM graph_permissions"
             " WHERE agent_id = $1 AND schema_name = ANY($2) AND can_read = TRUE",
             agent_id,
             candidates,
         )
-        return {row["schema_name"] for row in rows}
+        result.update(row["schema_name"] for row in granted_rows)
+        return result
 
     async def grant(
         self,

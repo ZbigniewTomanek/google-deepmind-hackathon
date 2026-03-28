@@ -42,17 +42,25 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     with ``None`` for all PostgreSQL-backed services.
     """
     if settings.mock_db:
-        permissions: PermissionChecker = InMemoryPermissionService(settings.bootstrap_admin_id)
-        await permissions.ensure_admin(settings.bootstrap_admin_id)
+        mem_permissions = InMemoryPermissionService(settings.bootstrap_admin_id)
+        await mem_permissions.ensure_admin(settings.bootstrap_admin_id)
+        permissions: PermissionChecker = mem_permissions
 
         domain_router: DomainRouter | None = None
         if settings.domain_routing_enabled:
             from neocortex.domains import InMemoryDomainService
             from neocortex.domains.classifier import MockDomainClassifier
+            from neocortex.domains.models import SEED_DOMAINS
             from neocortex.domains.router import DomainRouter
 
             domain_svc = InMemoryDomainService()
             await domain_svc.seed_defaults()
+
+            # Register seed domain schemas as shared in the in-memory permission service
+            for domain in SEED_DOMAINS:
+                if domain.schema_name:
+                    mem_permissions.register_shared_schema(domain.schema_name)
+
             domain_router = DomainRouter(
                 domain_service=domain_svc,
                 classifier=MockDomainClassifier(),
@@ -94,9 +102,16 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     if settings.domain_routing_enabled:
         from neocortex.domains import PostgresDomainService
         from neocortex.domains.classifier import AgentDomainClassifier
+        from neocortex.domains.models import SEED_DOMAINS
 
         domain_svc = PostgresDomainService(pg)
         await domain_svc.seed_defaults()
+
+        # Provision PG schemas for seed domains
+        for domain in SEED_DOMAINS:
+            if domain.schema_name:
+                await schema_mgr.create_graph(agent_id="shared", purpose=domain.slug, is_shared=True)
+
         domain_classifier = AgentDomainClassifier(
             model_name=settings.domain_classifier_model,
             thinking_effort=settings.domain_classifier_thinking_effort,

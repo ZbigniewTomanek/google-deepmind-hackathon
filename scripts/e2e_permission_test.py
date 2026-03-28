@@ -166,23 +166,25 @@ async def main() -> None:
     # --- Step 5b: Verify shared graph read via MCP recall ---
     print("\nStep 5b: Verify shared graph read access via recall...")
 
-    # Alice (read+write) can recall and should see shared graph in discover
-    alice_discover = await mcp_call(ALICE_TOKEN, "discover", {})
-    alice_graphs = alice_discover.get("graphs", [])
-    assert schema_name in alice_graphs, f"Alice should see shared graph in discover: {alice_graphs}"
-    print("  Alice sees shared graph in discover")
+    # Alice (read+write) can recall and should see shared graph in discover_graphs
+    alice_discover = await mcp_call(ALICE_TOKEN, "discover_graphs", {})
+    alice_graphs = [g["schema_name"] for g in alice_discover.get("graphs", [])]
+    assert schema_name in alice_graphs, f"Alice should see shared graph in discover_graphs: {alice_graphs}"
+    print("  Alice sees shared graph in discover_graphs")
 
     # Bob (read-only) can recall and see shared graph
-    bob_discover = await mcp_call(BOB_TOKEN, "discover", {})
-    bob_graphs = bob_discover.get("graphs", [])
-    assert schema_name in bob_graphs, f"Bob should see shared graph in discover: {bob_graphs}"
-    print("  Bob sees shared graph in discover")
+    bob_discover = await mcp_call(BOB_TOKEN, "discover_graphs", {})
+    bob_graphs = [g["schema_name"] for g in bob_discover.get("graphs", [])]
+    assert schema_name in bob_graphs, f"Bob should see shared graph in discover_graphs: {bob_graphs}"
+    print("  Bob sees shared graph in discover_graphs")
 
-    # Eve (no permissions) should NOT see shared graph
-    eve_discover = await mcp_call(EVE_TOKEN, "discover", {})
-    eve_graphs = eve_discover.get("graphs", [])
-    assert schema_name not in eve_graphs, f"Eve should NOT see shared graph: {eve_graphs}"
-    print("  Eve correctly excluded from shared graph in discover")
+    # Eve (no explicit permissions) CAN see shared graphs (is_shared=true makes them
+    # world-readable for discovery), but she still cannot write to them.
+    eve_discover = await mcp_call(EVE_TOKEN, "discover_graphs", {})
+    eve_graphs = [g["schema_name"] for g in eve_discover.get("graphs", [])]
+    assert schema_name in eve_graphs, f"Eve should see shared graph in discover_graphs (is_shared=true): {eve_graphs}"
+    print("  Eve can see shared graph in discover_graphs (is_shared=true, world-readable)")
+    # Eve still cannot write — verified in Step 4 above (403 on ingest)
 
     # Alice's ingested text should be findable via recall for Alice and Bob
     # Use the suffix as a unique keyword to find our specific content

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
-from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
+from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import (
     HybridWeights,
     compute_base_activation,
@@ -254,6 +254,71 @@ class InMemoryRepository:
     async def list_graphs(self, agent_id: str) -> list[str]:
         del agent_id
         return []
+
+    async def get_stats_for_schema(self, agent_id: str, schema_name: str) -> GraphStats:
+        del agent_id, schema_name
+        return await self.get_stats()
+
+    async def get_type_detail(self, agent_id: str, type_name: str, graph_name: str, kind: str) -> TypeDetail | None:
+        del agent_id, graph_name
+        if kind == "node":
+            for nt in self._node_types.values():
+                if nt.name == type_name:
+                    count = sum(1 for n in self._nodes.values() if n.type_id == nt.id)
+                    connected = set()
+                    for e in self._edges.values():
+                        src = self._nodes.get(e.source_id)
+                        tgt = self._nodes.get(e.target_id)
+                        if (src and src.type_id == nt.id) or (tgt and tgt.type_id == nt.id):
+                            for et in self._edge_types.values():
+                                if et.id == e.type_id:
+                                    connected.add(et.name)
+                    samples = sorted(
+                        (n.name for n in self._nodes.values() if n.type_id == nt.id),
+                    )[:5]
+                    return TypeDetail(
+                        id=nt.id,
+                        name=nt.name,
+                        description=nt.description,
+                        count=count,
+                        connected_edge_types=sorted(connected),
+                        sample_names=samples,
+                    )
+        elif kind == "edge":
+            for et in self._edge_types.values():
+                if et.name == type_name:
+                    count = sum(1 for e in self._edges.values() if e.type_id == et.id)
+                    connected = set()
+                    for e in self._edges.values():
+                        if e.type_id == et.id:
+                            src = self._nodes.get(e.source_id)
+                            tgt = self._nodes.get(e.target_id)
+                            if src:
+                                for nt in self._node_types.values():
+                                    if nt.id == src.type_id:
+                                        connected.add(nt.name)
+                            if tgt:
+                                for nt in self._node_types.values():
+                                    if nt.id == tgt.type_id:
+                                        connected.add(nt.name)
+                    samples = []
+                    for e in self._edges.values():
+                        if e.type_id == et.id:
+                            src = self._nodes.get(e.source_id)
+                            tgt = self._nodes.get(e.target_id)
+                            if src and tgt:
+                                samples.append(f"{src.name}→{tgt.name}")
+                            if len(samples) >= 5:
+                                break
+                    return TypeDetail(
+                        id=et.id,
+                        name=et.name,
+                        description=et.description,
+                        count=count,
+                        connected_edge_types=sorted(connected),
+                        sample_names=samples,
+                    )
+        return None
 
     # ── Type Management ──
 
