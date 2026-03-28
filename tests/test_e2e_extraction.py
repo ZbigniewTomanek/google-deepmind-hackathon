@@ -221,9 +221,11 @@ async def test_e2e_recall_search_nodes(repo: InMemoryRepository) -> None:
     eid1 = await repo.store_episode(AGENT, "Serotonin is a neurotransmitter")
     await _persist_payload(repo, None, AGENT, eid1, _medical_payload_1())
 
-    nodes = await repo.search_nodes(AGENT, "Serotonin")
-    assert len(nodes) >= 1
-    assert nodes[0].name == "Serotonin"
+    results = await repo.search_nodes(AGENT, "Serotonin")
+    assert len(results) >= 1
+    node, score = results[0]
+    assert node.name == "Serotonin"
+    assert score > 0
 
 
 @pytest.mark.asyncio

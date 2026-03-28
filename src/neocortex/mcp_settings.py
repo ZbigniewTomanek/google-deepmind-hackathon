@@ -40,13 +40,34 @@ class MCPSettings(BaseSettings):
     embedding_model: str = "gemini-embedding-001"
 
     # Hybrid recall weights (normalized at scoring time, so any ratio works)
-    recall_weight_vector: float = 0.4
-    recall_weight_text: float = 0.35
-    recall_weight_recency: float = 0.25
+    recall_weight_vector: float = 0.3
+    recall_weight_text: float = 0.2
+    recall_weight_recency: float = 0.1
     recall_recency_half_life_hours: float = 168.0  # 7 days
     # Vector distance threshold: cosine distance below this counts as a match.
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
     recall_vector_distance_threshold: float = 0.5
+
+    # Cognitive heuristic weights (wired in Stage 2+)
+    recall_weight_activation: float = 0.25
+    recall_weight_importance: float = 0.15
+
+    # ACT-R activation parameters
+    activation_decay_rate: float = 0.5
+
+    # Spreading activation
+    spreading_activation_decay: float = 0.6
+    spreading_activation_max_depth: int = 2
+    spreading_activation_bonus_weight: float = 0.1
+
+    # Soft-forget thresholds
+    forget_activation_threshold: float = 0.05
+    forget_importance_floor: float = 0.3
+
+    # Edge reinforcement
+    edge_reinforcement_delta: float = 0.05
+    edge_weight_floor: float = 0.1
+    edge_weight_ceiling: float = 2.0
 
     # Graph traversal
     recall_traversal_depth: int = 2  # hops from matched node
@@ -61,6 +82,10 @@ class MCPSettings(BaseSettings):
     extractor_thinking_effort: ThinkingLevel = "low"
     librarian_model: str = "gemini-3-flash-preview"
     librarian_thinking_effort: ThinkingLevel = "low"
+
+    # Admin
+    bootstrap_admin_id: str = "admin"  # Seeded into agent_registry as admin on startup
+    admin_token: str = "admin-token-neocortex"  # Bootstrap admin dev token
 
     # Feature flags
     mock_db: bool = True  # Use in-memory mock until PG is wired
