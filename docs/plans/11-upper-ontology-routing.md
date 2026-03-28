@@ -92,7 +92,7 @@ src/neocortex/domains/
 | 3 | Domain Router & Auto-Provisioning | DONE | DomainRouter with classify→permission→provision→extract flow, _sanitize_slug, 9 tests passing | `feat(domains): add domain router with auto-provisioning and permission-aware routing` |
 | 4 | Pipeline Integration | DONE | route_episode task, services.py wiring (mock+PG), remember tool routing enqueue, EpisodeProcessor routing, existing tests updated | `feat(domains): integrate domain routing into remember tool and ingestion pipeline` |
 | 5 | Integration Tests | DONE | 10 tests: full routing pipeline (3), domain provisioning (2), pipeline integration (5 — remember + ingestion wiring) | `test(domains): add integration tests for domain routing pipeline` |
-| 6 | E2E Validation & Documentation | PENDING | | |
+| 6 | E2E Validation & Documentation | DONE | Full test suite green (379 pass), MCP+ingestion startup clean, CLAUDE.md updated with domains module + rule #7 + migration ref | `docs(domains): add E2E validation, update CLAUDE.md, and finalize plan 11` |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
