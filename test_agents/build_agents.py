@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,6 +19,18 @@ BUILD_DIR = Path(__file__).resolve().parent / "build"
 SCRIPTS_DIR = Path(__file__).resolve().parent / "agent_scripts"
 
 
+def _ensure_git_marker(build_dir: Path) -> None:
+    """Ensure build/ has a git repo so opencode detects it as a project root."""
+    if (build_dir / ".git").exists():
+        return
+    build_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=build_dir, capture_output=True)
+    gitignore = build_dir / ".gitignore"
+    gitignore.write_text("*\n")
+    subprocess.run(["git", "add", "-f", ".gitignore"], cwd=build_dir, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "project marker"], cwd=build_dir, capture_output=True)
+
+
 def compile_and_write() -> Path:
     config = build_config()
 
@@ -32,6 +45,8 @@ def compile_and_write() -> Path:
     for agent_def in agents:
         compiled = compile_agent(agent_def, target="opencode")
         writer.write(compiled)
+
+    _ensure_git_marker(BUILD_DIR)
 
     return BUILD_DIR
 
