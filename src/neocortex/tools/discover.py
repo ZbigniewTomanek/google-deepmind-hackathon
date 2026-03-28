@@ -3,12 +3,16 @@ from loguru import logger
 
 from neocortex.auth.dependencies import ensure_provisioned, get_agent_id_from_context
 from neocortex.schemas.memory import (
+    BrowseNodesResult,
     DiscoverDetailsResult,
     DiscoverDomainsResult,
     DiscoverGraphsResult,
     DiscoverOntologyResult,
     DomainInfo,
     GraphSummary,
+    InspectNodeResult,
+    NeighborEdge,
+    NodeSummary,
 )
 
 
@@ -164,3 +168,182 @@ async def discover_details(
         kind=kind,
     )
     return DiscoverDetailsResult(graph_name=graph_name, type_detail=detail)
+
+
+async def browse_nodes(
+    graph_name: str,
+    type_name: str | None = None,
+    limit: int = 20,
+    ctx: Context | None = None,
+) -> BrowseNodesResult:
+    """Browse actual node instances in a graph, optionally filtered by type.
+    Returns node names, content snippets, importance scores, and access counts.
+
+    Args:
+        graph_name: The schema name of the graph to browse.
+        type_name: Optional node type name to filter by.
+        limit: Maximum number of nodes to return (default 20).
+    """
+    if ctx is None:
+        raise RuntimeError("FastMCP context is required for browse_nodes().")
+
+    repo = ctx.lifespan_context["repo"]
+    agent_id = get_agent_id_from_context(ctx)
+
+    # Resolve type_id if type_name is provided
+    type_id: int | None = None
+    node_types = await repo.get_node_types(agent_id=agent_id, target_schema=graph_name)
+    type_map = {t.name: t for t in node_types}
+
+    if type_name:
+        ti = type_map.get(type_name)
+        if ti is not None:
+            type_id = ti.id
+
+    nodes = await repo.list_nodes_page(
+        agent_id=agent_id,
+        target_schema=graph_name,
+        type_id=type_id,
+        limit=limit,
+    )
+
+    # Build type_id -> type_name lookup
+    id_to_name = {t.id: t.name for t in node_types}
+
+    summaries = [
+        NodeSummary(
+            id=n.id,
+            name=n.name,
+            type_name=id_to_name.get(n.type_id, "unknown"),
+            content=(n.content[:200] if n.content else None),
+            importance=n.importance,
+            access_count=n.access_count,
+        )
+        for n in nodes
+    ]
+
+    logger.bind(action_log=True).info(
+        "tool_call",
+        tool="browse_nodes",
+        agent_id=agent_id,
+        graph_name=graph_name,
+        type_name=type_name,
+        count=len(summaries),
+    )
+    return BrowseNodesResult(
+        graph_name=graph_name,
+        type_name=type_name,
+        nodes=summaries,
+        total=len(summaries),
+    )
+
+
+async def inspect_node(
+    node_name: str,
+    graph_name: str,
+    ctx: Context | None = None,
+) -> InspectNodeResult:
+    """Inspect a specific node and its immediate neighborhood (connected nodes and edges).
+    Shows the node's content, importance, and all relationships with neighbor nodes.
+
+    Args:
+        node_name: The name of the node to inspect.
+        graph_name: The schema name of the graph containing the node.
+    """
+    if ctx is None:
+        raise RuntimeError("FastMCP context is required for inspect_node().")
+
+    repo = ctx.lifespan_context["repo"]
+    agent_id = get_agent_id_from_context(ctx)
+
+    # Find the node
+    found = await repo.find_nodes_by_name(agent_id=agent_id, name=node_name, target_schema=graph_name)
+    if not found:
+        logger.bind(action_log=True).info(
+            "tool_call",
+            tool="inspect_node",
+            agent_id=agent_id,
+            graph_name=graph_name,
+            node_name=node_name,
+            found=False,
+        )
+        return InspectNodeResult(
+            graph_name=graph_name,
+            node=NodeSummary(id=0, name=node_name, type_name="unknown"),
+            edges=[],
+            neighbor_nodes=[],
+        )
+
+    node = found[0]
+
+    # Build type lookups
+    node_types = await repo.get_node_types(agent_id=agent_id, target_schema=graph_name)
+    edge_types = await repo.get_edge_types(agent_id=agent_id, target_schema=graph_name)
+    nt_map = {t.id: t.name for t in node_types}
+    et_map = {t.id: t.name for t in edge_types}
+
+    node_summary = NodeSummary(
+        id=node.id,
+        name=node.name,
+        type_name=nt_map.get(node.type_id, "unknown"),
+        content=(node.content[:200] if node.content else None),
+        importance=node.importance,
+        access_count=node.access_count,
+    )
+
+    # Get neighborhood (depth=1 for immediate connections)
+    neighborhood = await repo.get_node_neighborhood(agent_id=agent_id, node_id=node.id, depth=1)
+
+    neighbor_edges: list[NeighborEdge] = []
+    neighbor_summaries: list[NodeSummary] = []
+
+    for entry in neighborhood[:20]:  # Cap at 20 neighbors
+        neighbor_node = entry["node"]
+        edges = entry.get("edges", [])
+
+        neighbor_summaries.append(
+            NodeSummary(
+                id=neighbor_node.id,
+                name=neighbor_node.name,
+                type_name=nt_map.get(neighbor_node.type_id, "unknown"),
+                content=(neighbor_node.content[:100] if neighbor_node.content else None),
+                importance=neighbor_node.importance,
+                access_count=neighbor_node.access_count,
+            )
+        )
+
+        for edge in edges:
+            # Determine direction
+            if edge.source_id == node.id:
+                src_name, src_type = node.name, nt_map.get(node.type_id, "unknown")
+                tgt_name, tgt_type = neighbor_node.name, nt_map.get(neighbor_node.type_id, "unknown")
+            else:
+                src_name, src_type = neighbor_node.name, nt_map.get(neighbor_node.type_id, "unknown")
+                tgt_name, tgt_type = node.name, nt_map.get(node.type_id, "unknown")
+
+            neighbor_edges.append(
+                NeighborEdge(
+                    source_name=src_name,
+                    source_type=src_type,
+                    target_name=tgt_name,
+                    target_type=tgt_type,
+                    edge_type=et_map.get(edge.type_id, "unknown"),
+                    weight=edge.weight,
+                )
+            )
+
+    logger.bind(action_log=True).info(
+        "tool_call",
+        tool="inspect_node",
+        agent_id=agent_id,
+        graph_name=graph_name,
+        node_name=node_name,
+        edges=len(neighbor_edges),
+        neighbors=len(neighbor_summaries),
+    )
+    return InspectNodeResult(
+        graph_name=graph_name,
+        node=node_summary,
+        edges=neighbor_edges,
+        neighbor_nodes=neighbor_summaries,
+    )

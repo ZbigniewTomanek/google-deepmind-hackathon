@@ -95,3 +95,34 @@ async def test_discover_details_returns_not_found_for_missing_type(test_server) 
     assert data["graph_name"] == "ncx_test__personal"
     assert data["type_detail"]["name"] == "NonExistent"
     assert data["type_detail"]["id"] == 0
+
+
+@pytest.mark.asyncio
+async def test_browse_nodes_returns_empty_for_empty_repo(test_server) -> None:
+    async with Client(test_server) as client:
+        result = await client.call_tool(
+            "browse_nodes",
+            {"graph_name": "ncx_test__personal"},
+        )
+
+    assert result.is_error is False
+    data = result.structured_content
+    assert data["graph_name"] == "ncx_test__personal"
+    assert data["nodes"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_inspect_node_returns_empty_for_missing_node(test_server) -> None:
+    async with Client(test_server) as client:
+        result = await client.call_tool(
+            "inspect_node",
+            {"node_name": "NonExistent", "graph_name": "ncx_test__personal"},
+        )
+
+    assert result.is_error is False
+    data = result.structured_content
+    assert data["graph_name"] == "ncx_test__personal"
+    assert data["node"]["name"] == "NonExistent"
+    assert data["edges"] == []
+    assert data["neighbor_nodes"] == []
