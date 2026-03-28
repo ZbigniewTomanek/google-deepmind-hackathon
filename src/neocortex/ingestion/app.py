@@ -71,6 +71,14 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
             token_map[settings.admin_token] = settings.bootstrap_admin_id
         app.state.token_map = token_map
 
+        if settings.auth_mode == "auth0":
+            from neocortex.ingestion.auth0_jwt import Auth0JWTVerifier
+
+            app.state.auth0_verifier = Auth0JWTVerifier(
+                domain=settings.auth0_domain,
+                audience=settings.auth0_audience,
+            )
+
         try:
             yield
         finally:

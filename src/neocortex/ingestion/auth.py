@@ -29,9 +29,37 @@ async def get_agent_id(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing authorization token")
 
+    # Auth0 mode: validate JWT
+    if settings.auth_mode == "auth0":
+        verifier = request.app.state.auth0_verifier
+        try:
+            claims = verifier.verify(credentials.credentials)
+            sub = claims.get("sub")
+            if not sub:
+                raise HTTPException(status_code=401, detail="Token missing sub claim")
+            return str(sub)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
+
+    # Dev-token mode: static lookup
     token_map: dict[str, str] = request.app.state.token_map
     agent_id = token_map.get(credentials.credentials)
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return agent_id
+
+
+def get_auth0_permissions(request: Request, credentials: HTTPAuthorizationCredentials) -> list[str]:
+    """Extract Auth0 permissions from the JWT. Returns empty list for non-auth0 modes."""
+    settings: MCPSettings = request.app.state.settings
+    if settings.auth_mode != "auth0":
+        return []
+    verifier = request.app.state.auth0_verifier
+    try:
+        claims = verifier.verify(credentials.credentials)
+        return claims.get("permissions", [])
+    except Exception:
+        return []
