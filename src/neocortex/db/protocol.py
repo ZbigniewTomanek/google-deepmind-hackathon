@@ -140,6 +140,17 @@ class MemoryRepository(Protocol):
         Returns list of ``{node: Node, edges: list[Edge], distance: int}``.
         """
 
+    # ── Node Browsing ──
+
+    async def list_nodes_page(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        type_id: int | None = None,
+        limit: int = 20,
+    ) -> list[Node]:
+        """Return a page of nodes, optionally filtered by type."""
+
     # ── Bulk Queries (for extraction pipeline) ──
 
     async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:

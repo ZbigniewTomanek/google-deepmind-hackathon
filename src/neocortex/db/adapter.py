@@ -703,6 +703,52 @@ class GraphServiceAdapter:
             results.append((Node(**d), relevance))
         return results
 
+    # ── Node Browsing ──
+
+    async def list_nodes_page(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        type_id: int | None = None,
+        limit: int = 20,
+    ) -> list[Node]:
+        if target_schema is None and (self._pool is None or self._router is None):
+            nodes = await self._graph.list_nodes(limit=10000)
+            filtered = [n for n in nodes if not n.forgotten]
+            if type_id is not None:
+                filtered = [n for n in filtered if n.type_id == type_id]
+            filtered.sort(key=lambda n: (n.importance, n.access_count), reverse=True)
+            return filtered[:limit]
+
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        if type_id is not None:
+            query = (
+                "SELECT id, type_id, name, content, properties, source, importance, "
+                "access_count, forgotten, created_at, updated_at "
+                "FROM node WHERE forgotten = false AND type_id = $1 "
+                "ORDER BY importance DESC, access_count DESC LIMIT $2"
+            )
+            params: tuple = (type_id, limit)
+        else:
+            query = (
+                "SELECT id, type_id, name, content, properties, source, importance, "
+                "access_count, forgotten, created_at, updated_at "
+                "FROM node WHERE forgotten = false "
+                "ORDER BY importance DESC, access_count DESC LIMIT $1"
+            )
+            params = (limit,)
+
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            rows = await conn.fetch(query, *params)
+
+        results = []
+        for row in rows:
+            d = dict(row)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append(Node(**d))
+        return results
+
     # ── Graph Traversal ──
 
     async def get_node_neighborhood(self, agent_id: str, node_id: int, depth: int = 2) -> list[dict]:

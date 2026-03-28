@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -15,13 +16,38 @@ from neocortex.tui.client import NeoCortexClient
 
 MODE_OPTIONS = [("Remember", "remember"), ("Recall", "recall"), ("Discover", "discover")]
 
+# Consistent color palette for type names
+_TYPE_COLORS = [
+    "cyan",
+    "green",
+    "yellow",
+    "magenta",
+    "blue",
+    "red",
+    "bright_cyan",
+    "bright_green",
+    "bright_yellow",
+    "bright_magenta",
+]
+
+
+def _color_for_type(type_name: str) -> str:
+    """Return a consistent color for a given type name."""
+    return _TYPE_COLORS[hash(type_name) % len(_TYPE_COLORS)]
+
+
+def _importance_bar(value: float, width: int = 10) -> str:
+    """Render a mini bar for importance/activation values (0.0-1.0)."""
+    filled = round(value * width)
+    return "█" * filled + "░" * (width - filled)
+
 
 @dataclass
 class DiscoverLevel:
     """A single level in the discover navigation stack."""
 
     name: str  # breadcrumb label
-    kind: str  # "landing", "domains", "graphs", "ontology", "details"
+    kind: str  # "landing", "domains", "graphs", "ontology", "details", "nodes", "neighborhood"
     data: dict = field(default_factory=dict)  # level-specific data
 
 
@@ -137,9 +163,10 @@ class NeoCortexApp(App):
                         with Horizontal(id="discover-buttons"):
                             yield Button("Domains", variant="primary", id="discover-domains-btn")
                             yield Button("Graphs", variant="primary", id="discover-graphs-btn")
+                            yield Button("Browse Nodes", variant="success", id="discover-browse-btn")
                             yield Button("Back", variant="default", id="discover-back-btn")
                 with VerticalScroll(id="results-area"):
-                    yield DataTable(id="results-table")
+                    yield DataTable(id="results-table", cursor_type="row")
                     yield Static("", id="results-text")
         yield Footer()
 
@@ -148,6 +175,7 @@ class NeoCortexApp(App):
         table = self.query_one("#results-table", DataTable)
         table.display = False
         self.query_one("#discover-back-btn", Button).display = False
+        self.query_one("#discover-browse-btn", Button).display = False
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "mode-select":
@@ -195,9 +223,14 @@ class NeoCortexApp(App):
 
         # Show Domains/Graphs buttons only at landing
         at_landing = len(self._discover_stack) == 0
+        current_kind = self._discover_stack[-1].kind if self._discover_stack else "landing"
         self.query_one("#discover-domains-btn", Button).display = at_landing
         self.query_one("#discover-graphs-btn", Button).display = at_landing
         self.query_one("#discover-back-btn", Button).display = not at_landing
+        # Browse Nodes button visible only at details level (node types)
+        self.query_one("#discover-browse-btn", Button).display = (
+            current_kind == "details" and self._discover_stack[-1].data.get("kind") == "node"
+        )
 
     def action_discover_back(self) -> None:
         """Pop one level from discover stack (keyboard shortcut 'b')."""
@@ -222,6 +255,10 @@ class NeoCortexApp(App):
             self._show_ontology_table(level.data)
         elif level.kind == "details":
             self._show_details_text(level.data)
+        elif level.kind == "nodes":
+            self._show_nodes_table(level.data)
+        elif level.kind == "neighborhood":
+            self._show_neighborhood(level.data)
 
     # --- Button handlers ---
 
@@ -236,6 +273,13 @@ class NeoCortexApp(App):
             self._do_discover_graphs()
         elif event.button.id == "discover-back-btn":
             self.action_discover_back()
+        elif event.button.id == "discover-browse-btn" and self._discover_stack:
+            current = self._discover_stack[-1]
+            if current.kind == "details":
+                graph_name = current.data.get("graph_name", "")
+                type_name = current.data.get("type_name", "")
+                if graph_name and type_name:
+                    self._do_browse_nodes(graph_name, type_name)
 
     # --- DataTable row selection for drill-down ---
 
@@ -261,6 +305,12 @@ class NeoCortexApp(App):
             graph_name = current.data.get("graph_name", "")
             if type_name and graph_name:
                 self._do_discover_details(type_name, graph_name, kind)
+        elif current.kind == "nodes":
+            # Drill into node neighborhood
+            node_name = row.get("name", "")
+            graph_name = current.data.get("graph_name", "")
+            if node_name and graph_name:
+                self._do_inspect_node(node_name, graph_name)
 
     # --- Remember ---
 
@@ -390,9 +440,48 @@ class NeoCortexApp(App):
             self._show_text_result(f"Error: {e}")
             self._set_status(f"Error: {type(e).__name__}")
 
+    @work(exclusive=True)
+    async def _do_browse_nodes(self, graph_name: str, type_name: str) -> None:
+        self._set_status(f"Browsing {type_name} nodes...")
+        try:
+            async with self._client as client:
+                result = await client.browse_nodes(graph_name, type_name=type_name, limit=30)
+            nodes = result.get("nodes", [])
+            data = {"graph_name": graph_name, "type_name": type_name, "nodes": nodes}
+            level = DiscoverLevel(name=f"{type_name} nodes", kind="nodes", data=data)
+            self._discover_stack.append(level)
+            self._update_discover_ui()
+            self._show_nodes_table(data)
+            self._set_status(f"{len(nodes)} node(s)")
+        except Exception as e:
+            self._show_text_result(f"Error: {e}")
+            self._set_status(f"Error: {type(e).__name__}")
+
+    @work(exclusive=True)
+    async def _do_inspect_node(self, node_name: str, graph_name: str) -> None:
+        self._set_status(f"Inspecting {node_name}...")
+        try:
+            async with self._client as client:
+                result = await client.inspect_node(node_name, graph_name)
+            data = {
+                "graph_name": graph_name,
+                "node": result.get("node", {}),
+                "edges": result.get("edges", []),
+                "neighbor_nodes": result.get("neighbor_nodes", []),
+            }
+            level = DiscoverLevel(name=node_name, kind="neighborhood", data=data)
+            self._discover_stack.append(level)
+            self._update_discover_ui()
+            self._show_neighborhood(data)
+            n_edges = len(data["edges"])
+            self._set_status(f"{node_name}: {n_edges} relationship(s)")
+        except Exception as e:
+            self._show_text_result(f"Error: {e}")
+            self._set_status(f"Error: {type(e).__name__}")
+
     # --- Rendering helpers ---
 
-    def _show_text_result(self, text: str) -> None:
+    def _show_text_result(self, text: str | Text) -> None:
         table = self.query_one("#results-table", DataTable)
         table.display = False
         result_text = self.query_one("#results-text", Static)
@@ -429,17 +518,23 @@ class NeoCortexApp(App):
             return
         table = self.query_one("#results-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("Schema", "Purpose", "Shared", "Nodes", "Edges", "Episodes")
+        table.add_columns("Schema", "Purpose", "Shared", "Nodes", "Edges", "Episodes", "Avg Act.")
         self._discover_row_data = graphs
         for g in graphs:
             stats = g.get("stats", {})
+            nodes = stats.get("total_nodes", 0)
+            edges = stats.get("total_edges", 0)
+            episodes = stats.get("total_episodes", 0)
+            avg_act = stats.get("avg_activation", 0.0)
+            shared = g.get("is_shared", False)
             table.add_row(
                 g.get("schema_name", ""),
                 g.get("purpose", ""),
-                "yes" if g.get("is_shared") else "no",
-                str(stats.get("total_nodes", 0)),
-                str(stats.get("total_edges", 0)),
-                str(stats.get("total_episodes", 0)),
+                "shared" if shared else "personal",
+                f"{_importance_bar(min(nodes / max(nodes, 1), 1.0), 5)} {nodes}",
+                f"{_importance_bar(min(edges / max(edges, 1), 1.0), 5)} {edges}",
+                f"{_importance_bar(min(episodes / max(episodes, 1), 1.0), 5)} {episodes}",
+                f"{_importance_bar(avg_act, 5)} {avg_act:.2f}",
             )
         self._show_table_result()
 
@@ -460,14 +555,14 @@ class NeoCortexApp(App):
             name = nt.get("name", "?") if isinstance(nt, dict) else str(nt)
             desc = nt.get("description", "") if isinstance(nt, dict) else ""
             count = nt.get("count", 0) if isinstance(nt, dict) else 0
-            table.add_row("node", name, (desc or "")[:50], str(count))
+            table.add_row("● node", name, (desc or "")[:50], str(count))
             self._discover_row_data.append({"name": name, "kind": "node"})
 
         for et in edge_types:
             name = et.get("name", "?") if isinstance(et, dict) else str(et)
             desc = et.get("description", "") if isinstance(et, dict) else ""
             count = et.get("count", 0) if isinstance(et, dict) else 0
-            table.add_row("edge", name, (desc or "")[:50], str(count))
+            table.add_row("─ edge", name, (desc or "")[:50], str(count))
             self._discover_row_data.append({"name": name, "kind": "edge"})
 
         # Show stats below table
@@ -486,41 +581,259 @@ class NeoCortexApp(App):
         detail = data.get("detail", {})
         kind = data.get("kind", "node")
         graph = data.get("graph_name", "?")
+        name = detail.get("name", "?")
+        count = detail.get("count", 0)
+        color = _color_for_type(name)
 
-        lines = [
-            f"=== {kind.title()} Type: {detail.get('name', '?')} ===",
-            f"Graph: {graph}",
-            f"ID: {detail.get('id', '?')}",
-            f"Count: {detail.get('count', 0)}",
-            "",
-        ]
+        t = Text()
+        # Header panel
+        title = f" {kind.title()} Type: {name} "
+        t.append(f"╭─{title}{'─' * max(0, 56 - len(title))}╮\n")
+        t.append("│  ", style="dim")
+        t.append("Graph: ", style="bold")
+        t.append(f"{graph:<50}", style="dim cyan")
+        t.append("│\n", style="dim")
+        t.append("│  ", style="dim")
+        t.append("Instances: ", style="bold")
+        t.append(f"{count:<45}", style="bright_white")
+        t.append("│\n", style="dim")
 
         desc = detail.get("description")
         if desc:
-            lines.append(f"Description: {desc}")
-            lines.append("")
+            t.append("│  ", style="dim")
+            t.append("Description: ", style="bold")
+            desc_trunc = desc[:43] if len(desc) > 43 else desc
+            t.append(f"{desc_trunc:<43}", style="italic")
+            t.append("│\n", style="dim")
 
+        t.append(f"│{'':58}│\n", style="dim")
+
+        # Connected types
         connected = detail.get("connected_edge_types", [])
         if connected:
-            lines.append(f"Connected edge types ({len(connected)}):")
-            for et in connected:
-                lines.append(f"  - {et}")
-            lines.append("")
+            label = "Connected edge types:" if kind == "node" else "Connected node types:"
+            t.append("│  ", style="dim")
+            t.append(label, style="bold")
+            t.append(f"{'':<{56 - len(label)}}", style="dim")
+            t.append("│\n", style="dim")
+            for i, ct in enumerate(connected):
+                prefix = "└── " if i == len(connected) - 1 else "├── "
+                ct_color = _color_for_type(ct)
+                t.append("│    ", style="dim")
+                t.append(prefix, style="dim")
+                t.append(ct, style=ct_color)
+                padding = 52 - len(prefix) - len(ct)
+                t.append(f"{'':<{max(0, padding)}}", style="dim")
+                t.append("│\n", style="dim")
+            t.append(f"│{'':58}│\n", style="dim")
 
+        # Samples
         samples = detail.get("sample_names", [])
         if samples:
-            lines.append(f"Sample names ({len(samples)}):")
-            for s in samples:
-                lines.append(f"  - {s}")
+            t.append("│  ", style="dim")
+            t.append("Samples: ", style="bold")
+            sample_str = ", ".join(samples[:5])
+            if len(sample_str) > 47:
+                sample_str = sample_str[:44] + "..."
+            t.append(sample_str, style=color)
+            padding = 49 - len(sample_str)
+            t.append(f"{'':<{max(0, padding)}}", style="dim")
+            t.append("│\n", style="dim")
+            t.append(f"│{'':58}│\n", style="dim")
 
-        self._show_text_result("\n".join(lines))
+        if kind == "node" and count > 0:
+            t.append("│  ", style="dim")
+            t.append("▸ Press ", style="dim italic")
+            t.append("Browse Nodes", style="bold green")
+            t.append(" to explore instances", style="dim italic")
+            t.append(f"{'':<18}", style="dim")
+            t.append("│\n", style="dim")
+
+        t.append(f"╰{'─' * 58}╯\n")
+
+        self._show_text_result(t)
+
+    def _show_nodes_table(self, data: dict) -> None:
+        """Render a table of actual node instances."""
+        nodes = data.get("nodes", [])
+        type_name = data.get("type_name", "")
+
+        if not nodes:
+            self._show_text_result(f"No {type_name} nodes found.")
+            return
+
+        table = self.query_one("#results-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns("Name", "Content", "Importance", "Accesses")
+
+        self._discover_row_data = []
+        for n in nodes:
+            name = n.get("name", "?") if isinstance(n, dict) else str(n)
+            content = n.get("content", "") if isinstance(n, dict) else ""
+            importance = n.get("importance", 0.5) if isinstance(n, dict) else 0.5
+            access_count = n.get("access_count", 0) if isinstance(n, dict) else 0
+
+            content_short = (content or "")[:60]
+            if content and len(content) > 60:
+                content_short += "..."
+
+            imp_bar = f"{_importance_bar(importance, 8)} {importance:.2f}"
+
+            table.add_row(name, content_short, imp_bar, str(access_count))
+            self._discover_row_data.append({"name": name})
+
+        self._show_table_result()
+
+    def _show_neighborhood(self, data: dict) -> None:
+        """Render a visual node neighborhood graph."""
+        node = data.get("node", {})
+        edges = data.get("edges", [])
+
+        node_name = node.get("name", "?")
+        node_type = node.get("type_name", "?")
+        content = node.get("content", "")
+        importance = node.get("importance", 0.5)
+        access_count = node.get("access_count", 0)
+        color = _color_for_type(node_type)
+
+        t = Text()
+
+        # ── Node info panel ──
+        title = f" {node_name} "
+        t.append(f"╭─{title}{'─' * max(0, 56 - len(title))}╮\n")
+
+        t.append("│  ", style="dim")
+        t.append("Type: ", style="bold")
+        t.append(node_type, style=color)
+        padding = 52 - len(node_type)
+        t.append(f"{'':<{max(0, padding)}}", style="dim")
+        t.append("│\n", style="dim")
+
+        if content:
+            content_display = content[:52] if len(content) > 52 else content
+            t.append("│  ", style="dim")
+            t.append("Content: ", style="bold")
+            t.append(content_display, style="italic")
+            padding = 49 - len(content_display)
+            t.append(f"{'':<{max(0, padding)}}", style="dim")
+            t.append("│\n", style="dim")
+
+        t.append("│  ", style="dim")
+        t.append("Importance: ", style="bold")
+        imp_str = f"{_importance_bar(importance, 10)} {importance:.2f}"
+        t.append(imp_str)
+        access_str = f"   Accesses: {access_count}"
+        t.append(access_str)
+        padding = 46 - len(imp_str) - len(access_str)
+        t.append(f"{'':<{max(0, padding)}}", style="dim")
+        t.append("│\n", style="dim")
+
+        t.append(f"╰{'─' * 58}╯\n\n")
+
+        # ── Relationships ──
+        if not edges:
+            t.append("  No relationships found.\n", style="dim italic")
+            self._show_text_result(t)
+            return
+
+        n_edges = len(edges)
+        overflow = 0
+        display_edges = edges
+        if n_edges > 20:
+            display_edges = edges[:20]
+            overflow = n_edges - 20
+
+        t.append(f"  Relationships ({n_edges}):\n\n", style="bold")
+
+        # Separate outgoing and incoming
+        outgoing = []
+        incoming = []
+        for e in display_edges:
+            src = e.get("source_name", "?") if isinstance(e, dict) else "?"
+            if src == node_name:
+                outgoing.append(e)
+            else:
+                incoming.append(e)
+
+        all_display = outgoing + incoming
+        name_pad = len(node_name)
+
+        for i, e in enumerate(all_display):
+            is_last = i == len(all_display) - 1
+            src_name = e.get("source_name", "?") if isinstance(e, dict) else "?"
+            tgt_name = e.get("target_name", "?") if isinstance(e, dict) else "?"
+            src_type = e.get("source_type", "?") if isinstance(e, dict) else "?"
+            tgt_type = e.get("target_type", "?") if isinstance(e, dict) else "?"
+            edge_type = e.get("edge_type", "?") if isinstance(e, dict) else "?"
+            weight = e.get("weight", 1.0) if isinstance(e, dict) else 1.0
+
+            et_color = _color_for_type(edge_type)
+
+            if i == 0:
+                # First line shows the center node name
+                connector = "┌" if not is_last else "─"
+                t.append(f"  {'':>{name_pad}}", style="dim")
+                t.append(f" {connector}──", style="dim")
+            elif is_last:
+                t.append(f"  {'':>{name_pad}}", style="dim")
+                t.append(" └──", style="dim")
+            else:
+                t.append(f"  {'':>{name_pad}}", style="dim")
+                t.append(" ├──", style="dim")
+
+            if src_name == node_name:
+                # Outgoing
+                other_name = tgt_name
+                other_type = tgt_type
+                other_color = _color_for_type(other_type)
+                t.append("[", style="dim")
+                t.append(edge_type, style=f"bold {et_color}")
+                t.append("]", style="dim")
+                t.append("──▸ ", style="dim")
+                t.append(other_name, style=f"bold {other_color}")
+                t.append(f" ({other_type})", style="dim")
+            else:
+                # Incoming
+                other_name = src_name
+                other_type = src_type
+                other_color = _color_for_type(other_type)
+                t.append("[", style="dim")
+                t.append(edge_type, style=f"bold {et_color}")
+                t.append("]", style="dim")
+                t.append("◂── ", style="dim")
+                t.append(other_name, style=f"bold {other_color}")
+                t.append(f" ({other_type})", style="dim")
+
+            if weight != 1.0:
+                t.append(f" w={weight:.2f}", style="dim italic")
+
+            t.append("\n")
+
+            # Vertical connector between rows
+            if not is_last:
+                t.append(f"  {'':>{name_pad}}", style="dim")
+                t.append(" │\n", style="dim")
+
+        # Show center node label
+        if all_display:
+            t.append("\n")
+            t.append("  Center: ", style="dim")
+            t.append(node_name, style=f"bold {color}")
+            t.append(f" [{node_type}]\n", style="dim")
+
+        if overflow > 0:
+            t.append(f"\n  (+{overflow} more relationships)\n", style="dim italic")
+
+        self._show_text_result(t)
 
     def _show_recall_results(self, results: list, total: int, query: str) -> None:
         if not results:
             self._show_text_result(f"No results found for: {query}")
             return
 
-        lines: list[str] = [f"=== Recall: {total} results for '{query}' ===\n"]
+        t = Text()
+        t.append(f"  Recall: {total} results for ", style="bold")
+        t.append(f"'{query}'\n\n", style="bold cyan")
 
         for item in results:
             score = item.get("score", 0)
@@ -537,6 +850,8 @@ class NeoCortexApp(App):
                 neighbors = graph_ctx.get("neighbor_nodes", [])
                 depth = graph_ctx.get("depth", 0)
 
+                type_color = _color_for_type(item_type)
+
                 # Build cognitive metrics suffix
                 cog_parts = []
                 act = item.get("activation_score")
@@ -550,15 +865,18 @@ class NeoCortexApp(App):
                     cog_parts.append(f"spread={spread:.2f}")
                 cog_str = f"  ({', '.join(cog_parts)})" if cog_parts else ""
 
-                lines.append(
-                    f"+-  Node: {center.get('name', name)} "
-                    f"[{center.get('type', item_type)}] "
-                    f"{'.' * max(1, 50 - len(name) - len(item_type))} "
-                    f"score: {score:.3f}{cog_str}"
-                )
+                # Header line
+                t.append("  ╭─ ", style="dim")
+                t.append(center.get("name", name), style=f"bold {type_color}")
+                t.append(f" [{center.get('type', item_type)}]", style="dim")
+                dots = "·" * max(1, 40 - len(name) - len(item_type))
+                t.append(f" {dots} ", style="dim")
+                t.append(f"score: {score:.3f}", style="bold")
+                t.append(f"{cog_str}\n", style="dim italic")
+
                 if content:
-                    short = content[:100] + "..." if len(content) > 100 else content
-                    lines.append(f"|  {short}")
+                    short = content[:90] + "..." if len(content) > 90 else content
+                    t.append(f"  │  {short}\n", style="dim")
 
                 # Build a lookup for neighbor names/types
                 neighbor_map = {n.get("id"): n for n in neighbors}
@@ -566,26 +884,42 @@ class NeoCortexApp(App):
 
                 for i, edge in enumerate(edges):
                     is_last = i == len(edges) - 1
-                    branch = "`--" if is_last else "|--"
+                    branch = "└──" if is_last else "├──"
                     rel_type = edge.get("type", "?")
                     src_id = edge.get("source")
                     tgt_id = edge.get("target")
-                    # Determine the "other" node
+                    rel_color = _color_for_type(rel_type)
+
                     if src_id == center_id:
                         other = neighbor_map.get(tgt_id, {})
-                        arrow = f"--[{rel_type}]--> {other.get('name', '?')} [{other.get('type', '?')}]"
+                        other_color = _color_for_type(other.get("type", "?"))
+                        t.append(f"  │  {branch} ", style="dim")
+                        t.append(f"[{rel_type}]", style=f"bold {rel_color}")
+                        t.append(" ──▸ ", style="dim")
+                        t.append(other.get("name", "?"), style=f"bold {other_color}")
+                        t.append(f" [{other.get('type', '?')}]", style="dim")
                     else:
                         other = neighbor_map.get(src_id, {})
-                        arrow = f"<--[{rel_type}]-- {other.get('name', '?')} [{other.get('type', '?')}]"
+                        other_color = _color_for_type(other.get("type", "?"))
+                        t.append(f"  │  {branch} ", style="dim")
+                        t.append(other.get("name", "?"), style=f"bold {other_color}")
+                        t.append(f" [{other.get('type', '?')}]", style="dim")
+                        t.append(" ──", style="dim")
+                        t.append(f"[{rel_type}]", style=f"bold {rel_color}")
+                        t.append(" ──▸", style="dim")
+
                     weight = edge.get("weight")
-                    weight_str = f" (w={weight:.2f})" if weight is not None else ""
-                    lines.append(f"|  {branch} {arrow}{weight_str}")
+                    if weight is not None:
+                        t.append(f" (w={weight:.2f})", style="dim italic")
+                    t.append("\n")
 
                 if not edges and neighbors:
-                    lines.append(f"|  (no direct edges, {len(neighbors)} neighbor(s) at depth {depth})")
+                    t.append(
+                        f"  │  (no direct edges, {len(neighbors)} neighbor(s) at depth {depth})\n",
+                        style="dim italic",
+                    )
 
-                lines.append(f"+{'─' * 58}")
-                lines.append("")
+                t.append(f"  ╰{'─' * 58}\n\n")
             else:
                 # Episode result or node without graph context — compact line
                 if len(content) > 80:
@@ -598,6 +932,13 @@ class NeoCortexApp(App):
                 if imp is not None:
                     cog_parts.append(f"imp={imp:.2f}")
                 cog_str = f" ({', '.join(cog_parts)})" if cog_parts else ""
-                lines.append(f"  [{score:.3f}] ({kind}) {name} [{item_type}]: {content}{cog_str}")
 
-        self._show_text_result("\n".join(lines))
+                t.append(f"  [{score:.3f}] ", style="bold")
+                t.append(f"({kind}) ", style="dim")
+                type_color = _color_for_type(item_type)
+                t.append(name, style=f"bold {type_color}")
+                t.append(f" [{item_type}]: ", style="dim")
+                t.append(content)
+                t.append(f"{cog_str}\n", style="dim italic")
+
+        self._show_text_result(t)

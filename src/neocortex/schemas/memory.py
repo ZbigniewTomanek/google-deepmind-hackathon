@@ -112,3 +112,38 @@ class DiscoverOntologyResult(BaseModel):
 class DiscoverDetailsResult(BaseModel):
     graph_name: str
     type_detail: TypeDetail
+
+
+# --- Node Browsing Models ---
+
+
+class NodeSummary(BaseModel):
+    id: int
+    name: str
+    type_name: str
+    content: str | None = None
+    importance: float = 0.5
+    access_count: int = 0
+
+
+class BrowseNodesResult(BaseModel):
+    graph_name: str
+    type_name: str | None = None
+    nodes: list[NodeSummary]
+    total: int
+
+
+class NeighborEdge(BaseModel):
+    source_name: str
+    source_type: str
+    target_name: str
+    target_type: str
+    edge_type: str
+    weight: float = 1.0
+
+
+class InspectNodeResult(BaseModel):
+    graph_name: str
+    node: NodeSummary
+    edges: list[NeighborEdge]
+    neighbor_nodes: list[NodeSummary]
