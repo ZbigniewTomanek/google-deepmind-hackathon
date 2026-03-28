@@ -22,46 +22,44 @@ body {
   overflow: hidden;
 }
 
-/* Top rule — Gemini blue */
+/* ── Horizontal rules ── */
 .rule-top {
   position: absolute;
-  top: 48pt;
+  top: 44pt;
   left: 80pt;
   right: 80pt;
   height: 1pt;
-  background: #9D6EF7;
+  background: rgba(157, 110, 247, 0.4);
 }
-
-/* Bottom rule */
 .rule-bottom {
   position: absolute;
-  bottom: 64pt;
+  bottom: 52pt;
   left: 80pt;
   right: 80pt;
   height: 1pt;
-  background: #9D6EF7;
+  background: rgba(157, 110, 247, 0.4);
 }
 
-/* Decorative dots — faint blue graph nodes */
-.hex-dot {
+/* ── Rule terminator nodes ── */
+.rule-dot {
   position: absolute;
-  width: 3pt;
-  height: 3pt;
+  width: 7pt;
+  height: 7pt;
   border-radius: 50%;
-  background: #0D1B3E;
+  background: rgba(157, 110, 247, 0.35);
 }
 
-.hex-dot.bright {
-  background: #162D5A;
+/* ── Graph nodes ── */
+.node {
+  position: absolute;
+  border-radius: 50%;
 }
 
-.hex-dot.glow {
-  background: #1E3F78;
-}
-
+/* ── Typography ── */
 .title-block {
   text-align: center;
   z-index: 1;
+  margin-top: -12pt;
 }
 
 h1 {
@@ -70,17 +68,31 @@ h1 {
   font-size: 44pt;
   font-weight: 400;
   letter-spacing: 0.35em;
-  margin: 0 0 10pt 0;
+  margin: 0 0 14pt 0;
   text-transform: uppercase;
 }
 
 .subtitle {
   font-family: 'Outfit', Arial, sans-serif;
   color: #9D6EF7;
-  font-size: 16pt;
+  font-size: 17pt;
   font-weight: 300;
   margin: 0;
   letter-spacing: 0.06em;
+}
+
+.team-line {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #C8A84E;
+  font-size: 11pt;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  position: absolute;
+  bottom: 86pt;
+  left: 0;
+  right: 0;
+  text-align: center;
 }
 
 .event-line {
@@ -88,10 +100,10 @@ h1 {
   color: #6B5B95;
   font-size: 10pt;
   font-weight: 400;
-  margin: 0;
   letter-spacing: 0.08em;
+  margin: 0;
   position: absolute;
-  bottom: 78pt;
+  bottom: 66pt;
   left: 0;
   right: 0;
   text-align: center;
@@ -100,33 +112,56 @@ h1 {
 </head>
 <body>
 
-  <!-- Blue framing rules -->
+  <!-- ── Horizontal rules ── -->
   <div class="rule-top"></div>
   <div class="rule-bottom"></div>
 
-  <!-- Scattered graph-node dots -->
-  <div class="hex-dot" style="top: 80pt; left: 110pt;"></div>
-  <div class="hex-dot bright" style="top: 88pt; left: 148pt;"></div>
-  <div class="hex-dot" style="top: 72pt; left: 186pt;"></div>
-  <div class="hex-dot glow" style="top: 115pt; left: 125pt;"></div>
-  <div class="hex-dot" style="top: 128pt; left: 92pt;"></div>
-  <div class="hex-dot bright" style="top: 135pt; left: 165pt;"></div>
-  <div class="hex-dot" style="top: 95pt; left: 525pt;"></div>
-  <div class="hex-dot bright" style="top: 105pt; left: 560pt;"></div>
-  <div class="hex-dot glow" style="top: 88pt; left: 598pt;"></div>
-  <div class="hex-dot" style="top: 140pt; left: 540pt;"></div>
-  <div class="hex-dot bright" style="top: 148pt; left: 578pt;"></div>
-  <div class="hex-dot" style="top: 132pt; left: 615pt;"></div>
-  <div class="hex-dot" style="top: 270pt; left: 105pt;"></div>
-  <div class="hex-dot bright" style="top: 282pt; left: 140pt;"></div>
-  <div class="hex-dot glow" style="top: 268pt; left: 178pt;"></div>
-  <div class="hex-dot" style="top: 295pt; left: 535pt;"></div>
-  <div class="hex-dot bright" style="top: 305pt; left: 572pt;"></div>
-  <div class="hex-dot" style="top: 288pt; left: 608pt;"></div>
-  <div class="hex-dot glow" style="top: 190pt; left: 65pt;"></div>
-  <div class="hex-dot" style="top: 200pt; left: 640pt;"></div>
-  <div class="hex-dot bright" style="top: 220pt; left: 78pt;"></div>
-  <div class="hex-dot" style="top: 235pt; left: 630pt;"></div>
+  <!-- Rule terminators -->
+  <div class="rule-dot" style="top: 41pt; left: 76.5pt;"></div>
+  <div class="rule-dot" style="top: 41pt; right: 76.5pt;"></div>
+  <div class="rule-dot" style="bottom: 49pt; left: 76.5pt;"></div>
+  <div class="rule-dot" style="bottom: 49pt; right: 76.5pt;"></div>
+
+  <!-- ═══════════════════════════════════════════════════
+       GRAPH NODES — tight pairs & triplets imply edges
+       ═══════════════════════════════════════════════════ -->
+
+  <!-- LEFT UPPER TRIPLET — the primary anchor cluster -->
+  <div class="node" style="left: 86pt;  top: 80pt;  width: 11pt; height: 11pt; background: rgba(62, 207, 160, 0.50); box-shadow: 0 0 12px 4px rgba(62, 207, 160, 0.18);"></div>
+  <div class="node" style="left: 113pt; top: 70pt;  width: 5pt;  height: 5pt;  background: rgba(157, 110, 247, 0.40);"></div>
+  <div class="node" style="left: 108pt; top: 100pt; width: 6pt;  height: 6pt;  background: rgba(200, 168, 78, 0.35);"></div>
+
+  <!-- LEFT MID PAIR -->
+  <div class="node" style="left: 60pt;  top: 170pt; width: 7pt;  height: 7pt;  background: rgba(157, 110, 247, 0.30); box-shadow: 0 0 8px 3px rgba(157, 110, 247, 0.10);"></div>
+  <div class="node" style="left: 78pt;  top: 186pt; width: 4pt;  height: 4pt;  background: rgba(62, 207, 160, 0.22);"></div>
+
+  <!-- LEFT LOWER PAIR -->
+  <div class="node" style="left: 82pt;  top: 272pt; width: 8pt;  height: 8pt;  background: rgba(62, 207, 160, 0.30); box-shadow: 0 0 8px 3px rgba(62, 207, 160, 0.10);"></div>
+  <div class="node" style="left: 106pt; top: 265pt; width: 4pt;  height: 4pt;  background: rgba(107, 91, 149, 0.25);"></div>
+
+  <!-- RIGHT UPPER QUAD — secondary anchor cluster -->
+  <div class="node" style="left: 615pt; top: 78pt;  width: 10pt; height: 10pt; background: rgba(157, 110, 247, 0.45); box-shadow: 0 0 12px 4px rgba(157, 110, 247, 0.16);"></div>
+  <div class="node" style="left: 640pt; top: 70pt;  width: 5pt;  height: 5pt;  background: rgba(62, 207, 160, 0.35);"></div>
+  <div class="node" style="left: 598pt; top: 100pt; width: 5pt;  height: 5pt;  background: rgba(200, 168, 78, 0.30);"></div>
+  <div class="node" style="left: 642pt; top: 96pt;  width: 4pt;  height: 4pt;  background: rgba(107, 91, 149, 0.28);"></div>
+
+  <!-- RIGHT MID PAIR -->
+  <div class="node" style="left: 650pt; top: 168pt; width: 6pt;  height: 6pt;  background: rgba(62, 207, 160, 0.28); box-shadow: 0 0 8px 3px rgba(62, 207, 160, 0.08);"></div>
+  <div class="node" style="left: 638pt; top: 186pt; width: 4pt;  height: 4pt;  background: rgba(157, 110, 247, 0.20);"></div>
+
+  <!-- RIGHT LOWER -->
+  <div class="node" style="left: 624pt; top: 275pt; width: 7pt;  height: 7pt;  background: rgba(107, 91, 149, 0.25); box-shadow: 0 0 6px 2px rgba(107, 91, 149, 0.08);"></div>
+  <div class="node" style="left: 645pt; top: 282pt; width: 4pt;  height: 4pt;  background: rgba(62, 207, 160, 0.18);"></div>
+
+  <!-- DUST — barely-there depth particles -->
+  <div class="node" style="left: 46pt;  top: 225pt; width: 3pt;  height: 3pt;  background: rgba(62, 207, 160, 0.10);"></div>
+  <div class="node" style="left: 672pt; top: 220pt; width: 3pt;  height: 3pt;  background: rgba(157, 110, 247, 0.10);"></div>
+  <div class="node" style="left: 168pt; top: 138pt; width: 3pt;  height: 3pt;  background: rgba(107, 91, 149, 0.08);"></div>
+  <div class="node" style="left: 548pt; top: 135pt; width: 3pt;  height: 3pt;  background: rgba(107, 91, 149, 0.08);"></div>
+  <div class="node" style="left: 200pt; top: 305pt; width: 2pt;  height: 2pt;  background: rgba(200, 168, 78, 0.07);"></div>
+  <div class="node" style="left: 520pt; top: 310pt; width: 2pt;  height: 2pt;  background: rgba(62, 207, 160, 0.07);"></div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
 
   <!-- Main content -->
   <div class="title-block">
@@ -134,6 +169,7 @@ h1 {
     <p class="subtitle">Structured Memory for AI Agents</p>
   </div>
 
+  <p class="team-line">Zbigniew Tomanek</p>
   <p class="event-line">Google DeepMind x AI Tinkerers Hackathon  //  Warsaw 2026</p>
 
 </body>
