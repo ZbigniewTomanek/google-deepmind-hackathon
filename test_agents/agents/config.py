@@ -20,7 +20,11 @@ def build_config():
     mcp_url = os.environ.get("NEOCORTEX_MCP_URL", "http://localhost:8000")
     chat_token = os.environ.get("NEOCORTEX_CHAT_TOKEN", "chat-agent-token")
     joke_token = os.environ.get("NEOCORTEX_JOKE_TOKEN", "joke-agent-token")
-    research_token = os.environ.get("NEOCORTEX_RESEARCH_TOKEN", "research-agent-token")
+    research_orch_token = os.environ.get("NEOCORTEX_RESEARCH_ORCH_TOKEN", "research-orch-token")
+    video_proc_token = os.environ.get("NEOCORTEX_VIDEO_PROC_TOKEN", "video-processor-token")
+    audio_proc_token = os.environ.get("NEOCORTEX_AUDIO_PROC_TOKEN", "audio-processor-token")
+    rss_proc_token = os.environ.get("NEOCORTEX_RSS_PROC_TOKEN", "rss-processor-token")
+    chat_extractions_token = os.environ.get("NEOCORTEX_CHAT_EXTRACTIONS_TOKEN", "chat-extractions-token")
 
     return (
         ConfigBuilder()
@@ -58,9 +62,29 @@ def build_config():
             headers={"Authorization": f"Bearer {joke_token}"},
         )
         .mcp_server(
-            name="neocortex-research",
-            command="npx",
-            args=["mcp-remote", mcp_url, "--header", f"Authorization:Bearer {research_token}"],
+            name="neocortex-research-orch",
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {research_orch_token}"},
+        )
+        .mcp_server(
+            name="neocortex-video-proc",
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {video_proc_token}"},
+        )
+        .mcp_server(
+            name="neocortex-audio-proc",
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {audio_proc_token}"},
+        )
+        .mcp_server(
+            name="neocortex-rss-proc",
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {rss_proc_token}"},
+        )
+        .mcp_server(
+            name="neocortex-chat-extractions",
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {chat_extractions_token}"},
         )
         .compaction(auto=True, prune=True)
         .build()

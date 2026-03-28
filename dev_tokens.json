@@ -6,5 +6,10 @@
   "shared-token": "shared",
   "dev-token-neocortex": "dev-user",
   "chat-agent-token": "chat-agent",
-  "joke-agent-token": "joke-agent"
+  "joke-agent-token": "joke-agent",
+  "research-orch-token": "research-orch",
+  "video-processor-token": "video-processor",
+  "audio-processor-token": "audio-processor",
+  "rss-processor-token": "rss-processor",
+  "chat-extractions-token": "chat-extractions"
 }
