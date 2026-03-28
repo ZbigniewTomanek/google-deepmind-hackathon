@@ -47,3 +47,43 @@ def build_task_manager():
         .from_script(str(SCRIPTS_DIR / "task_manager.py"))
         .build()
     )
+
+
+def build_hackernews_rss():
+    return (
+        ToolBuilder()
+        .name("hackernews-rss")
+        .description("Parse an RSS feed (defaults to HackerNews) and return structured items")
+        .from_script(str(SCRIPTS_DIR / "hackernews_rss.py"))
+        .build()
+    )
+
+
+def build_transcribe_audio():
+    return (
+        ToolBuilder()
+        .name("transcribe-audio")
+        .description("Download YouTube audio and transcribe it via Gemini with timestamps")
+        .from_script(str(SCRIPTS_DIR / "transcribe_audio.py"))
+        .build()
+    )
+
+
+def build_transcribe_video():
+    return (
+        ToolBuilder()
+        .name("transcribe-video")
+        .description("Download YouTube video and transcribe via Gemini with timestamps and visual descriptions")
+        .from_script(str(SCRIPTS_DIR / "transcribe_video.py"))
+        .build()
+    )
+
+
+def build_video_screenshot():
+    return (
+        ToolBuilder()
+        .name("video-screenshot")
+        .description("Extract a frame from a video at a specific timestamp")
+        .from_script(str(SCRIPTS_DIR / "video_screenshot.py"))
+        .build()
+    )
