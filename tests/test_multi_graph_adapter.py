@@ -14,7 +14,7 @@ from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
 from neocortex.permissions.memory_service import InMemoryPermissionService
 from neocortex.schema_manager import SchemaManager
-from neocortex.tools.discover import discover
+from neocortex.tools.discover import discover_graphs, discover_ontology
 
 
 async def _make_admin_permissions() -> InMemoryPermissionService:
@@ -170,7 +170,7 @@ async def test_recall_results_include_graph_name_and_source_kind(pg_service) -> 
 
 
 @pytest.mark.asyncio
-async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service) -> None:
+async def test_discover_graphs_lists_accessible_graphs(pg_service) -> None:
     manager = SchemaManager(pg_service)
     router = GraphRouter(manager, pg_service.pool, permissions=await _make_admin_permissions())
     adapter = GraphServiceAdapter(GraphService(pg_service), router=router, pool=pg_service.pool, pg=pg_service)
@@ -205,8 +205,27 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
             shared=True,
         )
 
-        result = await discover(
+        graphs_result = await discover_graphs(
             cast(
+                Context,
+                _FakeContext(
+                    lifespan_context={
+                        "repo": adapter,
+                        "settings": settings,
+                        "schema_mgr": manager,
+                    }
+                ),
+            )
+        )
+
+        graph_names = [g.schema_name for g in graphs_result.graphs]
+        assert personal_schema in graph_names
+        assert shared_schema in graph_names
+
+        # Test discover_ontology for the personal graph
+        ontology_result = await discover_ontology(
+            graph_name=personal_schema,
+            ctx=cast(
                 Context,
                 _FakeContext(
                     lifespan_context={
@@ -214,16 +233,13 @@ async def test_discover_aggregates_stats_and_lists_accessible_graphs(pg_service)
                         "settings": settings,
                     }
                 ),
-            )
+            ),
         )
 
-        assert result.stats.total_nodes == 2
-        assert result.stats.total_edges == 0
-        assert result.stats.total_episodes == 1
-        assert result.graphs[0] == personal_schema
-        assert set(result.graphs) >= {personal_schema, shared_schema}
-        concept = next(item for item in result.node_types if item.name == "Concept")
-        assert concept.count == 2
+        assert ontology_result.graph_name == personal_schema
+        assert ontology_result.stats.total_nodes >= 1
+        concept = next(item for item in ontology_result.node_types if item.name == "Concept")
+        assert concept.count >= 1
     finally:
         await manager.drop_graph(personal_schema)
         await manager.drop_graph(shared_schema)

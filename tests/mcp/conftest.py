@@ -26,8 +26,18 @@ def test_settings() -> MCPSettings:
 
 
 @pytest.fixture
+def test_settings_no_domains() -> MCPSettings:
+    return MCPSettings(auth_mode="none", mock_db=True, domain_routing_enabled=False)
+
+
+@pytest.fixture
 def test_server(test_settings: MCPSettings):
     return create_server(test_settings)
+
+
+@pytest.fixture
+def test_server_no_domains(test_settings_no_domains: MCPSettings):
+    return create_server(test_settings_no_domains)
 
 
 @pytest_asyncio.fixture
