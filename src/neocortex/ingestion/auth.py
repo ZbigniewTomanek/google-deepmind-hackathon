@@ -62,16 +62,3 @@ async def get_agent_id(
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return agent_id
-
-
-def get_auth0_permissions(request: Request, credentials: HTTPAuthorizationCredentials) -> list[str]:
-    """Extract Auth0 permissions from the JWT. Returns empty list for non-auth0 modes."""
-    settings: MCPSettings = request.app.state.settings
-    if settings.auth_mode != "auth0":
-        return []
-    verifier = request.app.state.auth0_verifier
-    try:
-        claims = verifier.verify(credentials.credentials)
-        return claims.get("permissions", [])
-    except Exception:
-        return []
