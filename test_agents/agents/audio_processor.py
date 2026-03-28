@@ -5,10 +5,11 @@ from __future__ import annotations
 from open_agent_compiler._types import AgentPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
-from agents.tools import build_transcribe_local_audio
+from agents.tools import build_list_input_files, build_transcribe_local_audio
 
 
 def build_audio_processor(config):
+    list_files_tool = build_list_input_files()
     audio_tool = build_transcribe_local_audio()
 
     step_1 = (
@@ -49,6 +50,7 @@ def build_audio_processor(config):
         .description("Transcribes local audio files and stores findings in shared research graph")
         .mode("subagent")
         .config(config)
+        .tool(list_files_tool)
         .tool(audio_tool)
         .preamble(
             "# Audio Processor\n\n"

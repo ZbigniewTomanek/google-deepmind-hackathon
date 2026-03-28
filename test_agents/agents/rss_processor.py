@@ -5,10 +5,11 @@ from __future__ import annotations
 from open_agent_compiler._types import AgentPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
-from agents.tools import build_parse_local_rss
+from agents.tools import build_list_input_files, build_parse_local_rss
 
 
 def build_rss_processor(config):
+    list_files_tool = build_list_input_files()
     rss_tool = build_parse_local_rss()
 
     step_1 = (
@@ -49,6 +50,7 @@ def build_rss_processor(config):
         .description("Parses local RSS feeds and stores findings in shared research graph")
         .mode("subagent")
         .config(config)
+        .tool(list_files_tool)
         .tool(rss_tool)
         .preamble(
             "# RSS Processor\n\n"

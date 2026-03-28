@@ -5,10 +5,11 @@ from __future__ import annotations
 from open_agent_compiler._types import AgentPermissions
 from open_agent_compiler.builders import AgentBuilder, WorkflowStepBuilder
 
-from agents.tools import build_transcribe_local_video, build_video_screenshot
+from agents.tools import build_list_input_files, build_transcribe_local_video, build_video_screenshot
 
 
 def build_video_processor(config):
+    list_files_tool = build_list_input_files()
     video_tool = build_transcribe_local_video()
     screenshot_tool = build_video_screenshot()
 
@@ -53,6 +54,7 @@ def build_video_processor(config):
         .description("Transcribes local video files and stores findings in shared research graph")
         .mode("subagent")
         .config(config)
+        .tool(list_files_tool)
         .tool(video_tool)
         .tool(screenshot_tool)
         .preamble(
