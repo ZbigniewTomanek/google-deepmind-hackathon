@@ -20,6 +20,7 @@ class InMemoryRepository:
 
     def __init__(self) -> None:
         self._episodes: list[EpisodeRecord] = []
+        self._schema_episodes: dict[str, list[EpisodeRecord]] = {}
         self._next_id = 1
         self._node_types: dict[str, NodeType] = {}  # keyed by name
         self._edge_types: dict[str, EdgeType] = {}  # keyed by name
@@ -50,6 +51,28 @@ class InMemoryRepository:
         )
         return episode_id
 
+    async def store_episode_to(
+        self,
+        agent_id: str,
+        target_schema: str,
+        content: str,
+        context: str | None = None,
+        source_type: str = "mcp",
+    ) -> int:
+        episode_id = self._next_id
+        self._next_id += 1
+        record: EpisodeRecord = {
+            "id": episode_id,
+            "agent_id": agent_id,
+            "content": content,
+            "context": context,
+            "source_type": source_type,
+            "created_at": datetime.now(UTC),
+        }
+        self._episodes.append(record)
+        self._schema_episodes.setdefault(target_schema, []).append(record)
+        return episode_id
+
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
     ) -> list[RecallItem]:
@@ -78,8 +101,8 @@ class InMemoryRepository:
 
         return matches[:limit]
 
-    async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
-        del agent_id
+    async def get_node_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
+        del agent_id, target_schema
         return [
             TypeInfo(
                 id=nt.id,
@@ -90,8 +113,8 @@ class InMemoryRepository:
             for nt in sorted(self._node_types.values(), key=lambda t: t.name)
         ]
 
-    async def get_edge_types(self, agent_id: str | None = None) -> list[TypeInfo]:
-        del agent_id
+    async def get_edge_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
+        del agent_id, target_schema
         return [
             TypeInfo(
                 id=et.id,
@@ -110,7 +133,15 @@ class InMemoryRepository:
             total_episodes=count,
         )
 
-    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+    async def update_episode_embedding(
+        self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
+    ) -> None:
+        # When target_schema is set, search the schema-bucketed episodes first
+        if target_schema and target_schema in self._schema_episodes:
+            for episode in self._schema_episodes[target_schema]:
+                if episode["id"] == episode_id:
+                    episode["embedding"] = embedding
+                    return
         for episode in self._episodes:
             if episode["id"] == episode_id:
                 episode["embedding"] = embedding
@@ -122,7 +153,10 @@ class InMemoryRepository:
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
+    async def get_or_create_node_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> NodeType:
+        del target_schema
         if name in self._node_types:
             return self._node_types[name]
         now = datetime.now(UTC)
@@ -131,7 +165,10 @@ class InMemoryRepository:
         self._node_types[name] = nt
         return nt
 
-    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
+    async def get_or_create_edge_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> EdgeType:
+        del target_schema
         if name in self._edge_types:
             return self._edge_types[name]
         now = datetime.now(UTC)
@@ -142,8 +179,10 @@ class InMemoryRepository:
 
     # ── Episode Read ──
 
-    async def get_episode(self, agent_id: str, episode_id: int) -> Episode | None:
-        for ep in self._episodes:
+    async def get_episode(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> Episode | None:
+        # When target_schema is set, search the schema-bucketed episodes first
+        episodes = self._schema_episodes.get(target_schema, []) if target_schema else self._episodes
+        for ep in episodes:
             if ep["id"] == episode_id and ep["agent_id"] == agent_id:
                 return Episode(
                     id=ep["id"],
@@ -167,7 +206,9 @@ class InMemoryRepository:
         properties: dict | None = None,
         embedding: list[float] | None = None,
         source: str | None = None,
+        target_schema: str | None = None,
     ) -> Node:
+        del target_schema
         props = properties or {}
         # Look for existing node by (name, type_id)
         for node in self._nodes.values():
@@ -202,7 +243,8 @@ class InMemoryRepository:
         self._nodes[node.id] = node
         return node
 
-    async def find_nodes_by_name(self, agent_id: str, name: str) -> list[Node]:
+    async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
+        del target_schema
         return [n for n in self._nodes.values() if n.name.lower() == name.lower()]
 
     # ── Edge CRUD ──
@@ -215,7 +257,9 @@ class InMemoryRepository:
         type_id: int,
         weight: float = 1.0,
         properties: dict | None = None,
+        target_schema: str | None = None,
     ) -> Edge:
+        del target_schema
         props = properties or {}
         # Look for existing edge by (source_id, target_id, type_id)
         for edge in self._edges.values():
@@ -299,7 +343,8 @@ class InMemoryRepository:
 
     # ── Bulk Queries ──
 
-    async def list_all_node_names(self, agent_id: str) -> list[str]:
+    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
+        del target_schema
         return sorted(n.name for n in self._nodes.values())
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:

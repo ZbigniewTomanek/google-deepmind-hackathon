@@ -49,7 +49,32 @@ NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
 uv run python -m neocortex.ingestion
 ```
 
-Endpoints: `POST /ingest/text`, `POST /ingest/document` (file upload), `POST /ingest/events`.
+Ingestion endpoints:
+
+```
+POST /ingest/text      — body: {text, metadata, target_graph?}
+POST /ingest/events    — body: {events, metadata, target_graph?}
+POST /ingest/document  — multipart form with optional target_graph field
+```
+
+When `target_graph` is set, the agent must have write permission to the specified shared graph schema. Without it, data is stored in the agent's personal graph.
+
+Admin API (mounted on the same ingestion server):
+
+```
+POST   /admin/permissions                    Grant/update permission
+DELETE /admin/permissions/{agent_id}/{schema} Revoke permission
+GET    /admin/permissions                    List permissions (?agent_id=X or ?schema_name=X)
+GET    /admin/permissions/{agent_id}         List permissions for agent
+GET    /admin/agents                         List registered agents
+PUT    /admin/agents/{agent_id}/admin        Promote to admin
+DELETE /admin/agents/{agent_id}/admin        Demote from admin
+POST   /admin/graphs                         Create shared graph
+GET    /admin/graphs                         List all graphs
+DELETE /admin/graphs/{schema_name}           Drop shared graph
+```
+
+All `/admin/` endpoints require admin auth (bearer token resolving to an agent with `is_admin=true`).
 
 ### 3c. Run the Developer TUI
 
@@ -123,14 +148,23 @@ All configuration via environment variables (Pydantic BaseSettings):
 | `NEOCORTEX_RECALL_RECENCY_HALF_LIFE_HOURS` | `168.0` | Recency half-life in hours (7 days) |
 | `NEOCORTEX_RECALL_VECTOR_DISTANCE_THRESHOLD` | `0.5` | Cosine distance threshold for vector match |
 
+### Admin & Permissions (`mcp_settings.py`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEOCORTEX_BOOTSTRAP_ADMIN_ID` | `admin` | Agent ID seeded as admin on every startup |
+| `NEOCORTEX_ADMIN_TOKEN` | `admin-token-neocortex` | Bearer token for bootstrap admin (dev mode) |
+
 ### Dev Tokens
 
 `dev_tokens.json` maps bearer tokens to agent identities:
 
 ```json
 {
+  "admin-token-neocortex": "admin",
   "alice-token": "alice",
   "bob-token": "bob",
+  "eve-token": "eve",
   "shared-token": "shared",
   "dev-token-neocortex": "dev-user"
 }
@@ -170,6 +204,9 @@ and tears everything down on exit:
 # Embedding / hybrid recall (requires GOOGLE_API_KEY)
 GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_embedding_test.py
 GOOGLE_API_KEY=... ./scripts/run_e2e.sh scripts/e2e_hybrid_recall_test.py
+
+# Permission system tests
+./scripts/run_e2e.sh scripts/e2e_permission_test.py
 
 # Docker mode (builds images, runs everything in containers)
 ./scripts/run_e2e.sh --docker scripts/e2e_mcp_test.py
@@ -229,6 +266,13 @@ src/
 │   ├── schema_manager.py   # Graph schema lifecycle
 │   ├── postgres_service.py # Connection pool & health checks
 │   ├── auth/               # Authentication (dev tokens, Google OAuth)
+│   ├── permissions/        # Schema-level access control
+│   │   ├── protocol.py     # PermissionChecker protocol
+│   │   ├── pg_service.py   # PostgreSQL implementation
+│   │   └── memory_service.py # In-memory implementation (tests/mock)
+│   ├── admin/              # Admin REST API (mounted on ingestion app)
+│   │   ├── auth.py         # require_admin dependency
+│   │   └── routes.py       # Permission + graph management endpoints
 │   ├── embedding_service.py # Gemini embedding wrapper (768-dim MRL, normalized)
 │   ├── scoring.py          # Hybrid recall scoring (vector + text + recency)
 │   ├── db/                 # Database adapters, protocols, RLS
@@ -253,7 +297,8 @@ migrations/
 │   ├── 003_indexes.sql     # Vector + text indexes
 │   ├── 004_seed_ontology.sql
 │   ├── 005_rls_roles.sql   # Row-Level Security
-│   └── 006_graph_registry.sql
+│   ├── 006_graph_registry.sql
+│   └── 007_graph_permissions.sql  # agent_registry + graph_permissions
 └── templates/
     └── graph_schema.sql    # Template for dynamic schema provisioning
 

@@ -41,6 +41,24 @@ class GraphServiceAdapter:
         self._pg = pg
         self._settings = settings or MCPSettings()
 
+    def _scoped_conn(self, schema_name: str, agent_id: str, target_schema: str | None):
+        """Return the appropriate scoped connection context manager.
+
+        When target_schema is set (shared schema write), use graph_scoped_connection
+        which handles RLS. For personal schemas, use schema_scoped_connection.
+        """
+        assert self._pool is not None, "Connection pool required for scoped connections"
+        if target_schema is not None:
+            return graph_scoped_connection(self._pool, schema_name, agent_id=agent_id)
+        return schema_scoped_connection(self._pool, schema_name)
+
+    async def _resolve_schema(self, agent_id: str, target_schema: str | None = None) -> str:
+        """Resolve the target schema name for write operations."""
+        if target_schema is not None:
+            return target_schema
+        assert self._router is not None, "Router required for schema resolution"
+        return await self._router.route_store(agent_id)
+
     async def store_episode(
         self,
         agent_id: str,
@@ -73,6 +91,32 @@ class GraphServiceAdapter:
             raise RuntimeError("Failed to store episode.")
         return int(row["id"])
 
+    async def store_episode_to(
+        self,
+        agent_id: str,
+        target_schema: str,
+        content: str,
+        context: str | None = None,
+        source_type: str = "mcp",
+    ) -> int:
+        metadata = {"context": context} if context else {}
+        if self._pool is None:
+            raise RuntimeError("Connection pool required for store_episode_to.")
+
+        async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO episode (agent_id, content, source_type, metadata)
+                   VALUES ($1, $2, $3, $4::jsonb)
+                   RETURNING id""",
+                agent_id,
+                content,
+                source_type,
+                json.dumps(metadata),
+            )
+        if row is None:
+            raise RuntimeError("Failed to store episode.")
+        return int(row["id"])
+
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
     ) -> list[RecallItem]:
@@ -92,7 +136,9 @@ class GraphServiceAdapter:
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
         return _deduplicate_recall_items(merged_results)[:limit]
 
-    async def update_episode_embedding(self, episode_id: int, embedding: list[float], agent_id: str) -> None:
+    async def update_episode_embedding(
+        self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
+    ) -> None:
         emb_str = str(embedding)
         if self._pool is None or self._router is None:
             if self._pg is None:
@@ -103,18 +149,42 @@ class GraphServiceAdapter:
                 episode_id,
             )
             return
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             await conn.execute(
                 "UPDATE episode SET embedding = $1::vector WHERE id = $2",
                 emb_str,
                 episode_id,
             )
 
-    async def get_node_types(self, agent_id: str | None = None) -> list[TypeInfo]:
+    async def get_node_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
+        if target_schema is not None and self._pool is not None and agent_id is not None:
+            rows = await self._fetch_types_in_schema(target_schema, "node_type", agent_id)
+            counts = await self._fetch_type_counts_in_schema(target_schema, "node", agent_id)
+            return [
+                TypeInfo(
+                    id=int(row["id"]),
+                    name=str(row["name"]),
+                    description=str(row["description"]) if row["description"] is not None else None,
+                    count=counts.get(int(row["id"]), 0),
+                )
+                for row in rows
+            ]
         return await self._get_types(table_name="node_type", count_table="node", agent_id=agent_id)
 
-    async def get_edge_types(self, agent_id: str | None = None) -> list[TypeInfo]:
+    async def get_edge_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
+        if target_schema is not None and self._pool is not None and agent_id is not None:
+            rows = await self._fetch_types_in_schema(target_schema, "edge_type", agent_id)
+            counts = await self._fetch_type_counts_in_schema(target_schema, "edge", agent_id)
+            return [
+                TypeInfo(
+                    id=int(row["id"]),
+                    name=str(row["name"]),
+                    description=str(row["description"]) if row["description"] is not None else None,
+                    count=counts.get(int(row["id"]), 0),
+                )
+                for row in rows
+            ]
         return await self._get_types(table_name="edge_type", count_table="edge", agent_id=agent_id)
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
@@ -142,15 +212,17 @@ class GraphServiceAdapter:
 
     # ── Type Management ──
 
-    async def get_or_create_node_type(self, agent_id: str, name: str, description: str | None = None) -> NodeType:
-        if self._pool is None or self._router is None:
+    async def get_or_create_node_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> NodeType:
+        if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_node_type_by_name(name)
             if existing is not None:
                 return existing
             return await self._graph.create_node_type(name, description)
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO node_type (name, description) VALUES ($1, $2)
                    ON CONFLICT (name) DO NOTHING
@@ -166,15 +238,17 @@ class GraphServiceAdapter:
                 raise RuntimeError(f"Failed to create node type: {name}")
             return NodeType(**dict(row))
 
-    async def get_or_create_edge_type(self, agent_id: str, name: str, description: str | None = None) -> EdgeType:
-        if self._pool is None or self._router is None:
+    async def get_or_create_edge_type(
+        self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
+    ) -> EdgeType:
+        if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_edge_type_by_name(name)
             if existing is not None:
                 return existing
             return await self._graph.create_edge_type(name, description)
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO edge_type (name, description) VALUES ($1, $2)
                    ON CONFLICT (name) DO NOTHING
@@ -192,12 +266,12 @@ class GraphServiceAdapter:
 
     # ── Episode Read ──
 
-    async def get_episode(self, agent_id: str, episode_id: int) -> Episode | None:
-        if self._pool is None or self._router is None:
+    async def get_episode(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> Episode | None:
+        if target_schema is None and (self._pool is None or self._router is None):
             return await self._graph.get_episode(episode_id)
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 "SELECT id, agent_id, content, source_type, metadata, created_at " "FROM episode WHERE id = $1",
                 episode_id,
@@ -220,9 +294,10 @@ class GraphServiceAdapter:
         properties: dict | None = None,
         embedding: list[float] | None = None,
         source: str | None = None,
+        target_schema: str | None = None,
     ) -> Node:
         props = properties or {}
-        if self._pool is None or self._router is None:
+        if target_schema is None and (self._pool is None or self._router is None):
             # Fallback: use GraphService directly
             nodes = await self._graph.list_nodes(type_id=type_id, limit=10000)
             for node in nodes:
@@ -245,10 +320,10 @@ class GraphServiceAdapter:
                 source=source,
             )
 
-        schema_name = await self._router.route_store(agent_id)
+        schema_name = await self._resolve_schema(agent_id, target_schema)
         props_json = json.dumps(props)
         emb_str = str(embedding) if embedding else None
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
                 "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
@@ -299,13 +374,13 @@ class GraphServiceAdapter:
                     d["properties"] = json.loads(d["properties"])
                 return Node(**d)
 
-    async def find_nodes_by_name(self, agent_id: str, name: str) -> list[Node]:
-        if self._pool is None or self._router is None:
+    async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
+        if target_schema is None and (self._pool is None or self._router is None):
             nodes = await self._graph.list_nodes(limit=10000)
             return [n for n in nodes if n.name.lower() == name.lower()]
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             rows = await conn.fetch(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
                 "FROM node WHERE lower(name) = lower($1)",
@@ -329,9 +404,10 @@ class GraphServiceAdapter:
         type_id: int,
         weight: float = 1.0,
         properties: dict | None = None,
+        target_schema: str | None = None,
     ) -> Edge:
         props = properties or {}
-        if self._pool is None or self._router is None:
+        if target_schema is None and (self._pool is None or self._router is None):
             edges = await self._graph.get_edges_from(source_id, type_id=type_id)
             for edge in edges:
                 if edge.target_id == target_id:
@@ -354,9 +430,9 @@ class GraphServiceAdapter:
                 properties=props,
             )
 
-        schema_name = await self._router.route_store(agent_id)
+        schema_name = await self._resolve_schema(agent_id, target_schema)
         props_json = json.dumps(props)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
                    VALUES ($1, $2, $3, $4, $5::jsonb)
@@ -575,13 +651,13 @@ class GraphServiceAdapter:
 
     # ── Bulk Queries ──
 
-    async def list_all_node_names(self, agent_id: str) -> list[str]:
-        if self._pool is None or self._router is None:
+    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
+        if target_schema is None and (self._pool is None or self._router is None):
             nodes = await self._graph.list_nodes(limit=100000)
             return [n.name for n in nodes]
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             rows = await conn.fetch("SELECT name FROM node ORDER BY name")
         return [str(row["name"]) for row in rows]
 
