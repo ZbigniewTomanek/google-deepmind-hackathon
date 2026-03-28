@@ -62,3 +62,37 @@ async def extract_episode(
         episode_ids=episode_ids,
         target_schema=target_schema,
     )
+
+
+@app.task(
+    name="route_episode",
+    retry=procrastinate.RetryStrategy(max_attempts=3, wait=5),
+    queue="extraction",
+)
+async def route_episode(
+    agent_id: str,
+    episode_id: int,
+    episode_text: str,
+) -> None:
+    """Route an episode to shared graphs via domain classification."""
+    logger.info("route_episode_started", agent_id=agent_id, episode_id=episode_id)
+    from neocortex.jobs.context import get_services
+
+    services = get_services()
+    domain_router = services.get("domain_router")
+    if domain_router is None:
+        logger.debug("route_episode_skipped_no_router")
+        return
+
+    results = await domain_router.route_and_extract(
+        agent_id=agent_id,
+        episode_id=episode_id,
+        episode_text=episode_text,
+    )
+    logger.bind(action_log=True).info(
+        "route_episode_completed",
+        agent_id=agent_id,
+        episode_id=episode_id,
+        routed_to=[r.schema_name for r in results],
+        domain_count=len(results),
+    )

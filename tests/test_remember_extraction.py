@@ -61,7 +61,7 @@ async def test_remember_skips_extraction_when_no_job_app(repo: InMemoryRepositor
 @pytest.mark.asyncio
 async def test_remember_skips_extraction_when_disabled(repo: InMemoryRepository):
     """With extraction_enabled=False, no job is enqueued even with job_app."""
-    settings = MCPSettings(mock_db=True, extraction_enabled=False)
+    settings = MCPSettings(mock_db=True, extraction_enabled=False, domain_routing_enabled=False)
     ctx = MagicMock()
     ctx.lifespan_context = {
         "repo": repo,
@@ -79,8 +79,9 @@ async def test_remember_skips_extraction_when_disabled(repo: InMemoryRepository)
 
 
 @pytest.mark.asyncio
-async def test_remember_enqueues_extraction_job(repo: InMemoryRepository, settings: MCPSettings):
+async def test_remember_enqueues_extraction_job(repo: InMemoryRepository):
     """With job_app and extraction enabled, remember defers an extraction job."""
+    settings = MCPSettings(mock_db=True, extraction_enabled=True, domain_routing_enabled=False)
     mock_job_app = _make_mock_job_app(return_value=42)
 
     ctx = MagicMock()
@@ -126,7 +127,9 @@ async def test_processor_skips_extraction_when_no_job_app(repo: InMemoryReposito
 async def test_processor_skips_extraction_when_disabled(repo: InMemoryRepository):
     """EpisodeProcessor with extraction_enabled=False doesn't enqueue."""
     mock_job_app = MagicMock()
-    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=False)
+    processor = EpisodeProcessor(
+        repo=repo, job_app=mock_job_app, extraction_enabled=False, domain_routing_enabled=False
+    )
     result = await processor.process_text("agent-a", "hello world", {})
 
     assert result.status == "stored"
@@ -138,7 +141,7 @@ async def test_processor_enqueues_extraction_on_text(repo: InMemoryRepository):
     """EpisodeProcessor with job_app defers extraction after storing text."""
     mock_job_app = _make_mock_job_app(return_value=99)
 
-    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
+    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True, domain_routing_enabled=False)
     result = await processor.process_text("agent-a", "serotonin modulates mood", {})
 
     assert result.status == "stored"
@@ -155,7 +158,7 @@ async def test_processor_enqueues_extraction_on_document(repo: InMemoryRepositor
     """EpisodeProcessor defers extraction after storing a document."""
     mock_job_app = _make_mock_job_app(return_value=101)
 
-    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
+    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True, domain_routing_enabled=False)
     result = await processor.process_document("agent-a", "doc.txt", b"Medical text about SSRIs", "text/plain", {})
 
     assert result.status == "stored"
@@ -167,7 +170,7 @@ async def test_processor_enqueues_extraction_on_events(repo: InMemoryRepository)
     """EpisodeProcessor defers extraction for each event in a batch."""
     mock_job_app = _make_mock_job_app(return_value=200)
 
-    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True)
+    processor = EpisodeProcessor(repo=repo, job_app=mock_job_app, extraction_enabled=True, domain_routing_enabled=False)
     events = [{"type": "note", "text": "fact 1"}, {"type": "note", "text": "fact 2"}]
     result = await processor.process_events("agent-a", events, {})
 

@@ -41,6 +41,7 @@ class EpisodeProcessor:
         media_store: MediaFileStore | None = None,
         media_compressor: MediaCompressor | MockMediaCompressor | None = None,
         media_describer: MockMediaDescriptionService | MediaDescriptionService | None = None,
+        domain_routing_enabled: bool = True,
     ) -> None:
         self._repo = repo
         self._embeddings = embeddings
@@ -49,6 +50,7 @@ class EpisodeProcessor:
         self._media_store = media_store
         self._media_compressor = media_compressor
         self._media_describer = media_describer
+        self._domain_routing_enabled = domain_routing_enabled
 
     async def _embed_episode(self, episode_id: int, text: str, agent_id: str, target_schema: str | None = None) -> None:
         if self._embeddings is None:
@@ -73,6 +75,33 @@ class EpisodeProcessor:
         )
         return job_id
 
+    async def _enqueue_routing(
+        self,
+        agent_id: str,
+        episode_id: int,
+        text: str,
+        target_schema: str | None = None,
+    ) -> None:
+        """Enqueue domain routing job if enabled and no explicit target.
+
+        Requires self._job_app (which implies extraction_enabled) and
+        self._domain_routing_enabled. Skipped when target_schema is set
+        (explicit targeting takes precedence over automatic routing).
+        """
+        if not self._job_app or not self._domain_routing_enabled or target_schema is not None:
+            return
+        await self._job_app.configure_task("route_episode").defer_async(
+            agent_id=agent_id,
+            episode_id=episode_id,
+            episode_text=text,
+        )
+        logger.bind(action_log=True).info(
+            "domain_routing_enqueued",
+            episode_id=episode_id,
+            agent_id=agent_id,
+            source="ingestion",
+        )
+
     async def _store_episode(self, agent_id: str, text: str, source_type: str, target_schema: str | None = None) -> int:
         if target_schema:
             return await self._repo.store_episode_to(agent_id, target_schema, text, source_type=source_type)
@@ -84,6 +113,7 @@ class EpisodeProcessor:
         episode_id = await self._store_episode(agent_id, text, "ingestion_text", target_schema)
         await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
+        await self._enqueue_routing(agent_id, episode_id, text, target_schema)
         return IngestionResult(
             status="stored",
             episodes_created=1,
@@ -103,6 +133,7 @@ class EpisodeProcessor:
         episode_id = await self._store_episode(agent_id, text, "ingestion_document", target_schema)
         await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
+        await self._enqueue_routing(agent_id, episode_id, text, target_schema)
         return IngestionResult(
             status="stored",
             episodes_created=1,
@@ -123,6 +154,7 @@ class EpisodeProcessor:
                 episode_id = await self._store_episode(agent_id, event_text, "ingestion_event", target_schema)
                 await self._embed_episode(episode_id, event_text, agent_id, target_schema)
                 await self._enqueue_extraction(agent_id, episode_id, target_schema)
+                await self._enqueue_routing(agent_id, episode_id, event_text, target_schema)
                 stored += 1
             except Exception:
                 logger.exception("Event ingestion failed after %d/%d events", stored, len(events))
