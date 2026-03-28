@@ -498,15 +498,15 @@ For now, accept the manual cleanup path.
 
 | Stage | Description | Status | Notes |
 |-------|------------|--------|-------|
-| 1 | Fix seed domain schema provisioning | TODO | |
+| 1 | Fix seed domain schema provisioning | DONE | is_shared flag for world-readable shared schemas, seed schema provisioning on bootstrap, _ensure_schema validates existence |
 | 2 | Domain context in extraction pipeline | TODO | |
 | 3 | Discovery response models + protocol | TODO | |
 | 4 | Replace discover with 4 granular tools | TODO | |
 | 5 | TUI rebuild | TODO | |
 | 6 | Tests and validation | TODO | |
 
-**Last stage completed:** —
-**Last updated by:** —
+**Last stage completed:** Stage 1 — Fix seed domain schema provisioning
+**Last updated by:** plan-runner-agent
 
 ## Issues
 

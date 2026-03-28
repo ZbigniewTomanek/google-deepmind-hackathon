@@ -12,8 +12,13 @@ class InMemoryPermissionService:
         self._bootstrap_admin_id = bootstrap_admin_id
         self._permissions: dict[tuple[str, str], PermissionInfo] = {}
         self._agents: dict[str, AgentInfo] = {}
+        self._shared_schemas: set[str] = set()
         self._next_perm_id = 1
         self._next_agent_id = 1
+
+    def register_shared_schema(self, schema_name: str) -> None:
+        """Mark a schema as shared (world-readable)."""
+        self._shared_schemas.add(schema_name)
 
     async def is_admin(self, agent_id: str) -> bool:
         agent = self._agents.get(agent_id)
@@ -37,6 +42,8 @@ class InMemoryPermissionService:
     async def can_read_schema(self, agent_id: str, schema_name: str) -> bool:
         if await self.is_admin(agent_id):
             return True
+        if schema_name in self._shared_schemas:
+            return True
         perm = self._permissions.get((agent_id, schema_name))
         return perm is not None and perm.can_read
 
@@ -51,11 +58,13 @@ class InMemoryPermissionService:
             return set()
         if await self.is_admin(agent_id):
             return set(candidates)
-        return {
+        result = self._shared_schemas & set(candidates)
+        result.update(
             schema
             for schema in candidates
             if (perm := self._permissions.get((agent_id, schema))) is not None and perm.can_read
-        }
+        )
+        return result
 
     async def grant(
         self,
