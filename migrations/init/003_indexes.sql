@@ -29,3 +29,6 @@ CREATE INDEX idx_episode_embedding ON episode
 
 -- Node filtering by type
 CREATE INDEX idx_node_type ON node (type_id);
+
+-- Partial index for fast filtering of non-forgotten nodes
+CREATE INDEX idx_node_forgotten ON node (forgotten) WHERE forgotten = false;
