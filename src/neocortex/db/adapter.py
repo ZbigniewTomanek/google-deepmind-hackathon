@@ -475,29 +475,37 @@ class GraphServiceAdapter:
         query: str,
         limit: int = 5,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         if self._pool is None or self._router is None:
             # Fallback: simple text matching via GraphService
             nodes = await self._graph.list_nodes(limit=10000)
             query_lower = query.lower()
-            matches = [
-                n for n in nodes if query_lower in n.name.lower() or (n.content and query_lower in n.content.lower())
-            ]
+            matches: list[tuple[Node, float]] = []
+            for n in nodes:
+                name_match = query_lower in n.name.lower()
+                content_match = n.content and query_lower in n.content.lower()
+                if name_match or content_match:
+                    relevance = 1.0 if name_match else 0.5
+                    matches.append((n, relevance))
+            matches.sort(key=lambda x: x[1], reverse=True)
             return matches[:limit]
 
         schemas = await self._router.route_recall(agent_id)
-        all_results: list[Node] = []
+        all_results: list[tuple[Node, float]] = []
         for schema_name in schemas:
-            nodes = await self._search_nodes_in_schema(schema_name, query, agent_id, limit, query_embedding)
-            all_results.extend(nodes)
-        # Deduplicate by (name, type_id) keeping first occurrence
-        seen: set[tuple[str, int]] = set()
-        deduped: list[Node] = []
-        for node in all_results:
+            results = await self._search_nodes_in_schema(schema_name, query, agent_id, limit, query_embedding)
+            all_results.extend(results)
+        # Deduplicate by (name, type_id) keeping highest-scoring occurrence
+        seen: dict[tuple[str, int], int] = {}
+        deduped: list[tuple[Node, float]] = []
+        for node, score in all_results:
             key = (node.name.lower(), node.type_id)
             if key not in seen:
-                seen.add(key)
-                deduped.append(node)
+                seen[key] = len(deduped)
+                deduped.append((node, score))
+            elif score > deduped[seen[key]][1]:
+                deduped[seen[key]] = (node, score)
+        deduped.sort(key=lambda x: x[1], reverse=True)
         return deduped[:limit]
 
     async def _search_nodes_in_schema(
@@ -507,7 +515,7 @@ class GraphServiceAdapter:
         agent_id: str,
         limit: int,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         if self._pool is None:
             raise RuntimeError("Connection pool required")
 
@@ -543,7 +551,8 @@ class GraphServiceAdapter:
             else:
                 rows = await conn.fetch(
                     """SELECT id, type_id, name, content, properties, source,
-                              created_at, updated_at
+                              created_at, updated_at,
+                              ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank
                        FROM node
                        WHERE tsv @@ plainto_tsquery('english', $1)
                           OR lower(name) ILIKE '%' || $2 || '%' ESCAPE '\\'
@@ -554,15 +563,15 @@ class GraphServiceAdapter:
                     limit,
                 )
 
-        results: list[Node] = []
+        results: list[tuple[Node, float]] = []
         for row in rows:
             d = dict(row)
-            # Remove scoring columns not part of Node model
-            d.pop("text_rank", None)
-            d.pop("vector_sim", None)
+            text_rank = d.pop("text_rank", 0.0) or 0.0
+            vector_sim = d.pop("vector_sim", 0.0) or 0.0
+            relevance = max(float(text_rank), float(vector_sim))
             if isinstance(d.get("properties"), str):
                 d["properties"] = json.loads(d["properties"])
-            results.append(Node(**d))
+            results.append((Node(**d), relevance))
         return results
 
     # ── Graph Traversal ──

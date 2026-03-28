@@ -3,6 +3,7 @@ from loguru import logger
 
 from neocortex.auth.dependencies import get_agent_id_from_context
 from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
+from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency
 
 
 async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> RecallResult:
@@ -30,7 +31,9 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     results = await repo.recall(query=query, agent_id=agent_id, limit=limit, query_embedding=query_embedding)
 
     # Node search with graph traversal
-    matched_nodes = await repo.search_nodes(agent_id=agent_id, query=query, limit=5, query_embedding=query_embedding)
+    matched_node_tuples = await repo.search_nodes(
+        agent_id=agent_id, query=query, limit=5, query_embedding=query_embedding
+    )
 
     traversal_depth = settings.recall_traversal_depth
 
@@ -40,12 +43,26 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     type_name_map = {t.id: t.name for t in node_types}
     edge_type_name_map = {t.id: t.name for t in edge_types}
 
-    # Build node results with graph context
+    # Build node results with graph context + collect adjacency for spreading activation
     existing_node_ids = {r.item_id for r in results if r.source_kind == "node"}
     node_results: list[RecallItem] = []
+    merged_adjacency: dict[int, list[tuple[int, float]]] = {}
 
-    for node in matched_nodes:
+    # Collect all seeds: Phase 1 node results + Phase 2 search results
+    seed_nodes: list[tuple[int, float]] = []
+    for r in results:
+        if r.source_kind == "node":
+            seed_nodes.append((r.item_id, r.score))
+
+    for node, relevance_score in matched_node_tuples:
         neighborhood = await repo.get_node_neighborhood(agent_id=agent_id, node_id=node.id, depth=traversal_depth)
+
+        # Build adjacency map for spreading activation
+        adjacency = neighborhood_to_adjacency(neighborhood, node.id)
+        for nid, neighbors in adjacency.items():
+            if nid not in merged_adjacency:
+                merged_adjacency[nid] = []
+            merged_adjacency[nid].extend(neighbors)
 
         node_type_name = type_name_map.get(node.type_id, "Unknown")
 
@@ -85,13 +102,15 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
                     r.graph_context = graph_context
                     break
         else:
+            # Add Phase 2 seed with relevance score
+            seed_nodes.append((node.id, relevance_score))
             node_results.append(
                 RecallItem(
                     item_id=node.id,
                     name=node.name,
                     content=node.content or "",
                     item_type=node_type_name,
-                    score=0.5,  # default score for search_nodes matches
+                    score=relevance_score,
                     source=node.source,
                     source_kind="node",
                     graph_name=None,
@@ -99,8 +118,25 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
                 )
             )
 
-    # Merge and re-sort
+    # Merge and apply spreading activation
     all_results = results + node_results
+
+    if seed_nodes and merged_adjacency:
+        bonus_map = compute_spreading_activation(
+            seed_nodes=seed_nodes,
+            neighborhood=merged_adjacency,
+            decay=settings.spreading_activation_decay,
+            max_depth=settings.spreading_activation_max_depth,
+        )
+
+        # Apply bonus to node results
+        for r in all_results:
+            if r.source_kind == "node" and r.item_id in bonus_map:
+                bonus = bonus_map[r.item_id]
+                r.spreading_bonus = bonus
+                r.score += bonus * 0.1  # Moderate contribution to avoid dominating
+
+    # Re-sort by updated score
     all_results.sort(key=lambda item: item.score, reverse=True)
 
     # Record access for returned results (ACT-R activation tracking)
