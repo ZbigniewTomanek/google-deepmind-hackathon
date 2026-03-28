@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from neocortex.db.protocol import MemoryRepository
     from neocortex.embedding_service import EmbeddingService
 
+_UNSET: str = "__UNSET__"
+
 
 async def run_extraction(
     repo: MemoryRepository,
@@ -32,6 +34,7 @@ async def run_extraction(
     agent_id: str,
     episode_ids: list[int],
     target_schema: str | None = None,
+    source_schema: str | None = _UNSET,
     ontology_config: AgentInferenceConfig | None = None,
     extractor_config: AgentInferenceConfig | None = None,
     librarian_config: AgentInferenceConfig | None = None,
@@ -43,7 +46,10 @@ async def run_extraction(
         embeddings: Embedding service for node vectors (may be None).
         agent_id: Agent whose graph is being populated.
         episode_ids: Episodes to process.
-        target_schema: When set, all reads/writes target this schema instead of the agent's personal graph.
+        target_schema: When set, writes target this schema instead of the agent's personal graph.
+        source_schema: Schema to read episodes from. Default uses target_schema.
+                       Pass None explicitly to read from the personal graph even when
+                       target_schema is a shared schema (used by domain routing).
         ontology_config: Inference config for the ontology agent.
         extractor_config: Inference config for the extractor agent.
         librarian_config: Inference config for the librarian agent.
@@ -52,12 +58,14 @@ async def run_extraction(
     ext_cfg = extractor_config or AgentInferenceConfig()
     lib_cfg = librarian_config or AgentInferenceConfig()
 
+    read_schema: str | None = target_schema if source_schema is _UNSET else source_schema
+
     ontology_agent = build_ontology_agent(ont_cfg)
     extractor_agent = build_extractor_agent(ext_cfg)
     librarian_agent = build_librarian_agent(lib_cfg)
 
     for episode_id in episode_ids:
-        episode = await repo.get_episode(agent_id, episode_id, target_schema=target_schema)
+        episode = await repo.get_episode(agent_id, episode_id, target_schema=read_schema)
         if not episode:
             logger.warning("episode_not_found", episode_id=episode_id)
             continue

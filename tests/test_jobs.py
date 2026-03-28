@@ -169,6 +169,7 @@ async def test_extract_episode_calls_run_extraction():
             agent_id="test-agent",
             episode_ids=[10, 20],
             target_schema=None,
+            source_schema=None,
             ontology_config=AgentInferenceConfig(
                 model_name="test-model",
                 thinking_effort="low",

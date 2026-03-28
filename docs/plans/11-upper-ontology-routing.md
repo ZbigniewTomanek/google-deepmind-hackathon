@@ -93,6 +93,7 @@ src/neocortex/domains/
 | 4 | Pipeline Integration | DONE | route_episode task, services.py wiring (mock+PG), remember tool routing enqueue, EpisodeProcessor routing, existing tests updated | `feat(domains): integrate domain routing into remember tool and ingestion pipeline` |
 | 5 | Integration Tests | DONE | 10 tests: full routing pipeline (3), domain provisioning (2), pipeline integration (5 — remember + ingestion wiring) | `test(domains): add integration tests for domain routing pipeline` |
 | 6 | E2E Validation & Documentation | DONE | Full test suite green (379 pass), MCP+ingestion startup clean, CLAUDE.md updated with domains module + rule #7 + migration ref | `docs(domains): add E2E validation, update CLAUDE.md, and finalize plan 11` |
+| 7 | Post-Review Fixes & E2E Validation | DONE | Code review fixes (6 issues), source_schema bug fix, E2E scripts extended, extraction pipeline + ingestion E2E green | `fix(domains): address review issues and add source_schema for domain extraction` |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
@@ -675,7 +676,9 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion
 
 ## Issues
 
-[Document any problems discovered during execution]
+1. **Domain extraction `episode_not_found` (Stage 7)**: The extraction pipeline used `target_schema` for both reading episodes and writing results. Domain-routed extraction jobs set `target_schema` to a shared schema, but episodes live in the agent's personal schema. Fixed by adding `source_schema` parameter with `_UNSET` sentinel to `run_extraction()` and `extract_episode` task.
+
+2. **Seed domain schemas not auto-provisioned (observed in E2E)**: Seed domains have `schema_name` set in `ontology_domains` table, but the actual PostgreSQL schemas are not created at startup. `_ensure_schema()` short-circuits when `schema_name` is set, so it never calls `create_graph()`. This requires admins to create the schemas via `POST /admin/graphs` before domain routing can write to them. The E2E test handles this in Step 0.
 
 ## Decisions
 
@@ -719,3 +722,44 @@ After rebasing onto `main` (which now includes the `multi-modal-ingestion` branc
 **Problem**: The `_process_media()` method in `EpisodeProcessor` (used by `process_audio` and `process_video`) was written before domain routing existed. It called `_enqueue_extraction()` but not `_enqueue_routing()`. The text, document, and event pipelines all had routing; media did not.
 
 **Fix**: Added `await self._enqueue_routing(agent_id, episode_id, episode_text, target_schema)` to `_process_media()` after the extraction enqueue, matching the pattern in all other pipelines. The rebase also required merging the `EpisodeProcessor` constructor — both branches added parameters (media services from multimodal, `domain_routing_enabled` from this branch), resolved by keeping both.
+
+---
+
+## Stage 7: Post-Review Fixes & E2E Validation
+
+**Goal**: Address code review findings, fix the critical `source_schema` bug preventing domain extraction from reading episodes, extend E2E scripts to validate domain routing end-to-end.
+
+**Dependencies**: Stage 6
+
+### Code Review Fixes
+
+| # | Priority | Issue | Fix |
+|---|----------|-------|-----|
+| 1 | P1 | `_ensure_schema` ignored `create_graph` return value, hardcoding `f"ncx_shared__{domain.slug}"` | Capture return value from `self._schema_mgr.create_graph()` |
+| 2 | P1 | `AgentDomainClassifier` recreated `GoogleModel` and `ModelSettings` on every `classify()` call | Cache both in `__init__` |
+| 3 | P2 | Implicit dependency: `domain_routing_enabled` requires `extraction_enabled=True` (for job queue) undocumented | Added comment on the setting in `mcp_settings.py` |
+| 4 | P2 | `_SEED_DOMAINS` defined in `memory_service.py`, imported cross-impl by `pg_service.py` | Moved to `models.py` as `SEED_DOMAINS`, both services import from there |
+| 5 | P3 | Inline import of `DomainClassification` inside `route_and_extract` body | Moved to top-level imports in `router.py` |
+
+### Critical Bug Fix: `source_schema` for Domain Extraction
+
+**Problem**: Domain routing enqueued `extract_episode` with `target_schema=ncx_shared__domain_knowledge`, but the extraction pipeline used `target_schema` for both reading episodes and writing results. Episodes live in the agent's personal schema — so `repo.get_episode(agent_id, episode_id, target_schema="ncx_shared__...")` returned `None`, and extraction silently skipped all episodes. Shared domain schemas remained empty.
+
+**Fix**: Added `source_schema` parameter to `run_extraction()` (in `extraction/pipeline.py`) and `extract_episode` task (in `jobs/tasks.py`). Uses a sentinel (`_UNSET`) to distinguish "not provided" (fall back to `target_schema`) from "explicitly None" (read from personal graph). The domain router now passes `source_schema=None` in `_enqueue_extraction`, so the pipeline reads from the personal schema but writes extracted nodes/edges to the shared domain schema.
+
+### E2E Script Extensions
+
+**`e2e_extraction_pipeline_test.py`**:
+- Step 0: Create shared domain schemas via admin API, grant Alice write permissions
+- Step 2b: Verify `route_episode` jobs created and completed, wait for domain extraction jobs
+- Step 10b: Verify shared domain schemas populated with nodes/edges, confirm personal graph preserved (backward compat)
+- Increased `JOB_WAIT_TIMEOUT` from 120s to 300s (domain extraction spawns additional Gemini API calls)
+
+**`e2e_ingestion_test.py`**:
+- Verify `route_episode` jobs created when ingesting without `target_graph`
+- Verify no `route_episode` jobs for explicit `target_graph` ingestion
+
+### E2E Validation Results
+
+- **Extraction pipeline E2E**: 3 `route_episode` jobs completed, 3 domain extraction jobs completed. `ncx_shared__domain_knowledge` populated with 35 nodes and 41 edges. Personal graph preserved with 58 nodes. All medical seed texts correctly classified to `domain_knowledge` by Gemini.
+- **Ingestion E2E**: 6 `route_episode` jobs created for Alice (text/doc/events without `target_graph`), 0 for explicit `target_graph` ingestion. All checks passed.

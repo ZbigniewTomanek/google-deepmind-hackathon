@@ -13,6 +13,7 @@ from loguru import logger
 
 from neocortex.domains.classifier import DomainClassifier
 from neocortex.domains.models import (
+    DomainClassification,
     ProposedDomain,
     RoutingResult,
     SemanticDomain,
@@ -71,8 +72,6 @@ class DomainRouter:
         if classification.proposed_domain is not None and self._schema_mgr is not None:
             new_domain = await self._provision_domain(classification.proposed_domain, agent_id)
             if new_domain is not None:
-                from neocortex.domains.models import DomainClassification
-
                 matches.append(
                     DomainClassification(
                         domain_slug=new_domain.slug,
@@ -164,8 +163,7 @@ class DomainRouter:
         if self._schema_mgr is None:
             return None
 
-        schema_name = f"ncx_shared__{domain.slug}"
-        await self._schema_mgr.create_graph(agent_id="shared", purpose=domain.slug, is_shared=True)
+        schema_name = await self._schema_mgr.create_graph(agent_id="shared", purpose=domain.slug, is_shared=True)
 
         await self._permissions.grant(
             agent_id=agent_id,
@@ -179,7 +177,11 @@ class DomainRouter:
         return schema_name
 
     async def _enqueue_extraction(self, agent_id: str, episode_id: int, target_schema: str) -> int | None:
-        """Defer an extract_episode task for the target schema."""
+        """Defer an extract_episode task for the target schema.
+
+        Episodes live in the agent's personal graph (source_schema=None),
+        but extraction results go to the shared domain schema (target_schema).
+        """
         if self._job_app is None:
             return None
 
@@ -187,6 +189,7 @@ class DomainRouter:
             agent_id=agent_id,
             episode_ids=[episode_id],
             target_schema=target_schema,
+            source_schema=None,  # read from personal graph
         )
         logger.debug(
             "domain_extraction_enqueued",

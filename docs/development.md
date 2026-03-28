@@ -213,6 +213,15 @@ All configuration via environment variables (Pydantic BaseSettings):
 | `NEOCORTEX_MEDIA_DESCRIPTION_MAX_TOKENS` | `8192` | Max output tokens for media descriptions |
 | `GOOGLE_API_KEY` | _(unset)_ | Required for Gemini media descriptions in production mode |
 
+### Domain Routing (`mcp_settings.py`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEOCORTEX_DOMAIN_ROUTING_ENABLED` | `true` | Enable automatic routing to shared domain graphs. Requires `extraction_enabled=true` (uses the job queue) |
+| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `gemini-3-flash-preview` | Gemini model for domain classification |
+| `NEOCORTEX_DOMAIN_CLASSIFIER_THINKING_EFFORT` | `low` | Thinking effort for domain classifier |
+| `NEOCORTEX_DOMAIN_CLASSIFICATION_THRESHOLD` | `0.3` | Minimum confidence for domain match |
+
 ### Admin & Permissions (`mcp_settings.py`)
 
 | Variable | Default | Description |
@@ -261,7 +270,8 @@ The unified runner handles everything: starts PostgreSQL, applies migrations, la
 # MCP server smoke test (multi-agent isolation, discover cognitive stats)
 ./scripts/run_e2e.sh scripts/e2e_mcp_test.py
 
-# Ingestion API (text/doc/events, auth, target_graph permission enforcement)
+# Ingestion API (text/doc/events, auth, target_graph permission enforcement,
+# domain routing job creation verification)
 ./scripts/run_e2e.sh scripts/e2e_ingestion_test.py
 
 # Embedding / hybrid recall (requires GOOGLE_API_KEY in .env)
@@ -271,8 +281,9 @@ The unified runner handles everything: starts PostgreSQL, applies migrations, la
 # Permission system (shared graphs, grant/revoke, admin lifecycle, read via MCP recall)
 ./scripts/run_e2e.sh scripts/e2e_permission_test.py
 
-# Extraction pipeline (ingest → extract → recall with graph context,
-# cognitive fields, consolidation, node importance, discover stats)
+# Extraction pipeline + domain routing (ingest → extract → recall with graph context,
+# cognitive fields, consolidation, node importance, discover stats,
+# domain classification → shared schema population — requires GOOGLE_API_KEY, ~5 min)
 ./scripts/run_e2e.sh scripts/e2e_extraction_pipeline_test.py
 
 # Cognitive heuristics (ACT-R activation, spreading activation, edge reinforcement,
@@ -290,7 +301,9 @@ The unified runner handles everything: starts PostgreSQL, applies migrations, la
 KEEP_RUNNING=1 ./scripts/run_e2e.sh scripts/e2e_mcp_test.py
 ```
 
-The extraction-dependent tests (`e2e_extraction_pipeline_test.py`, `e2e_cognitive_recall_test.py`) clean up stale jobs before running and track only their own extraction jobs, so they work reliably even with leftover state from prior runs. Each triggers exactly 3 extraction jobs (~9 Gemini API calls).
+The extraction-dependent tests (`e2e_extraction_pipeline_test.py`, `e2e_cognitive_recall_test.py`) clean up stale jobs before running and track only their own extraction jobs, so they work reliably even with leftover state from prior runs. The extraction pipeline test triggers 3 personal + 3 domain extraction jobs (~18 Gemini API calls); the cognitive recall test triggers 3 extraction jobs (~9 Gemini API calls).
+
+The extraction pipeline test also validates domain routing end-to-end: it provisions shared domain schemas via the admin API, grants write permissions, ingests seed texts, and verifies that `route_episode` jobs classify episodes and populate shared domain schemas (e.g., `ncx_shared__domain_knowledge`) with extracted nodes and edges alongside the personal graph.
 
 ## Linting
 
@@ -350,6 +363,13 @@ src/
 │   ├── admin/              # Admin REST API (mounted on ingestion app)
 │   │   ├── auth.py         # require_admin dependency
 │   │   └── routes.py       # Permission + graph management endpoints
+│   ├── domains/            # Semantic domain routing (upper ontology)
+│   │   ├── models.py       # SemanticDomain, ClassificationResult, RoutingResult
+│   │   ├── protocol.py     # DomainService protocol
+│   │   ├── pg_service.py   # PostgreSQL implementation
+│   │   ├── memory_service.py # In-memory implementation (tests/mock)
+│   │   ├── classifier.py   # PydanticAI classification agent + mock
+│   │   └── router.py       # DomainRouter — classify → route → extract
 │   ├── embedding_service.py # Gemini embedding wrapper (768-dim MRL, normalized)
 │   ├── scoring.py          # Hybrid recall scoring (vector + text + recency)
 │   ├── db/                 # Database adapters, protocols, RLS
@@ -380,7 +400,8 @@ migrations/
 │   ├── 004_seed_ontology.sql
 │   ├── 005_rls_roles.sql   # Row-Level Security
 │   ├── 006_graph_registry.sql
-│   └── 007_graph_permissions.sql  # agent_registry + graph_permissions
+│   ├── 007_graph_permissions.sql  # agent_registry + graph_permissions
+│   └── 008_ontology_domains.sql   # Domain routing ontology table + seed domains
 └── templates/
     └── graph_schema.sql    # Template for dynamic schema provisioning
 
