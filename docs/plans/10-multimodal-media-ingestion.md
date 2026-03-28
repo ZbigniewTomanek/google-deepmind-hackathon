@@ -884,7 +884,7 @@ bash scripts/e2e_media.sh
 
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 1 | Settings, models, media file store | `PENDING` | |
+| 1 | Settings, models, media file store | `DONE` | Added 4 settings to MCPSettings, MediaRef/MediaIngestionResult models, MediaFileStore with save/resolve/delete |
 | 2 | Media compressor (ffmpeg) | `PENDING` | |
 | 3 | Gemini media description service | `PENDING` | |
 | 4 | Extend IngestionProcessor + EpisodeProcessor | `PENDING` | |
@@ -894,5 +894,5 @@ bash scripts/e2e_media.sh
 | 8 | E2E validation script and tests | `PENDING` | |
 | 9 | Final validation and cleanup | `PENDING` | |
 
-**Last stage completed**: —
-**Last updated by**: —
+**Last stage completed**: Stage 1 — Settings, models, media file store
+**Last updated by**: plan-runner-agent
