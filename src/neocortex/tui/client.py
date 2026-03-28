@@ -40,9 +40,26 @@ class NeoCortexClient:
         result = await self._client.call_tool("recall", {"query": query, "limit": limit})
         return self._parse_result(result)
 
-    async def discover(self) -> dict[str, Any]:
-        """Discover ontology and graph statistics."""
-        result = await self._client.call_tool("discover", {})
+    async def discover_domains(self) -> dict[str, Any]:
+        """List semantic knowledge domains."""
+        result = await self._client.call_tool("discover_domains", {})
+        return self._parse_result(result)
+
+    async def discover_graphs(self) -> dict[str, Any]:
+        """List accessible knowledge graphs with stats."""
+        result = await self._client.call_tool("discover_graphs", {})
+        return self._parse_result(result)
+
+    async def discover_ontology(self, graph_name: str) -> dict[str, Any]:
+        """Get node/edge types for a specific graph."""
+        result = await self._client.call_tool("discover_ontology", {"graph_name": graph_name})
+        return self._parse_result(result)
+
+    async def discover_details(self, type_name: str, graph_name: str, kind: str = "node") -> dict[str, Any]:
+        """Get detailed info about a specific type in a graph."""
+        result = await self._client.call_tool(
+            "discover_details", {"type_name": type_name, "graph_name": graph_name, "kind": kind}
+        )
         return self._parse_result(result)
 
     @staticmethod
