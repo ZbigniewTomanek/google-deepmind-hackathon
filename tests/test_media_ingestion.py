@@ -88,36 +88,41 @@ def processor(repo, media_store, mock_describer, mock_compressor) -> EpisodeProc
     )
 
 
-@pytest.fixture
-def wav_bytes() -> bytes:
-    """Generate minimal WAV file bytes (1 second of silence)."""
-    import io as _io
-
-    buf = _io.BytesIO()
-    with wave.open(buf, "w") as f:
+def _write_wav_file(path: str) -> str:
+    """Write a minimal 1-second WAV to the given path and return it."""
+    with wave.open(path, "w") as f:
         f.setnchannels(1)
         f.setsampwidth(2)
         f.setframerate(16000)
         f.writeframes(struct.pack("<" + "h" * 16000, *([0] * 16000)))
-    return buf.getvalue()
+    return path
 
 
 @pytest.fixture
-def mp4_bytes() -> bytes:
-    """Fake MP4 bytes (not a real video, but sufficient for mock pipeline)."""
-    return b"\x00\x00\x00\x1c\x66\x74\x79\x70\x69\x73\x6f\x6d" + b"\x00" * 1000
+def wav_file(tmp_path) -> str:
+    """Write a minimal WAV file and return its path."""
+    return _write_wav_file(str(tmp_path / "test.wav"))
+
+
+@pytest.fixture
+def mp4_file(tmp_path) -> str:
+    """Write a fake MP4 file and return its path."""
+    path = str(tmp_path / "test.mp4")
+    with open(path, "wb") as f:
+        f.write(b"\x00\x00\x00\x1c\x66\x74\x79\x70\x69\x73\x6f\x6d" + b"\x00" * 1000)
+    return path
 
 
 # --- EpisodeProcessor tests ---
 
 
 @pytest.mark.asyncio
-async def test_process_audio_stores_episode(processor: EpisodeProcessor, repo: InMemoryRepository, wav_bytes: bytes):
+async def test_process_audio_stores_episode(processor: EpisodeProcessor, repo: InMemoryRepository, wav_file: str):
     """process_audio creates an episode with source_type='ingestion_audio'."""
     result = await processor.process_audio(
         agent_id="test_agent",
         filename="recording.wav",
-        content=wav_bytes,
+        raw_path=wav_file,
         content_type="audio/wav",
         metadata={},
     )
@@ -135,13 +140,13 @@ async def test_process_audio_stores_episode(processor: EpisodeProcessor, repo: I
 
 @pytest.mark.asyncio
 async def test_process_audio_episode_text_contains_media_ref(
-    processor: EpisodeProcessor, repo: InMemoryRepository, wav_bytes: bytes
+    processor: EpisodeProcessor, repo: InMemoryRepository, wav_file: str
 ):
     """Episode text contains the media_ref relative path and description."""
     result = await processor.process_audio(
         agent_id="test_agent",
         filename="meeting.wav",
-        content=wav_bytes,
+        raw_path=wav_file,
         content_type="audio/wav",
         metadata={},
     )
@@ -164,12 +169,12 @@ async def test_process_audio_episode_text_contains_media_ref(
 
 
 @pytest.mark.asyncio
-async def test_process_audio_returns_media_ref(processor: EpisodeProcessor, wav_bytes: bytes):
+async def test_process_audio_returns_media_ref(processor: EpisodeProcessor, wav_file: str):
     """process_audio returns a MediaIngestionResult with a valid media_ref."""
     result = await processor.process_audio(
         agent_id="test_agent",
         filename="call.wav",
-        content=wav_bytes,
+        raw_path=wav_file,
         content_type="audio/wav",
         metadata={},
     )
@@ -182,12 +187,12 @@ async def test_process_audio_returns_media_ref(processor: EpisodeProcessor, wav_
 
 
 @pytest.mark.asyncio
-async def test_process_video_stores_episode(processor: EpisodeProcessor, repo: InMemoryRepository, mp4_bytes: bytes):
+async def test_process_video_stores_episode(processor: EpisodeProcessor, repo: InMemoryRepository, mp4_file: str):
     """process_video creates an episode with source_type='ingestion_video'."""
     result = await processor.process_video(
         agent_id="test_agent",
         filename="clip.mp4",
-        content=mp4_bytes,
+        raw_path=mp4_file,
         content_type="video/mp4",
         metadata={},
     )
@@ -202,13 +207,13 @@ async def test_process_video_stores_episode(processor: EpisodeProcessor, repo: I
 
 @pytest.mark.asyncio
 async def test_process_video_episode_text_contains_metadata(
-    processor: EpisodeProcessor, repo: InMemoryRepository, mp4_bytes: bytes
+    processor: EpisodeProcessor, repo: InMemoryRepository, mp4_file: str
 ):
     """Video episode text includes correct metadata."""
     result = await processor.process_video(
         agent_id="test_agent",
         filename="demo.mp4",
-        content=mp4_bytes,
+        raw_path=mp4_file,
         content_type="video/mp4",
         metadata={},
     )
@@ -223,7 +228,7 @@ async def test_process_video_episode_text_contains_metadata(
 
 @pytest.mark.asyncio
 async def test_process_audio_without_compressor_returns_failed(
-    repo: InMemoryRepository, media_store: MediaFileStore, mock_describer: MockMediaDescriptionService, wav_bytes: bytes
+    repo: InMemoryRepository, media_store: MediaFileStore, mock_describer: MockMediaDescriptionService, wav_file: str
 ):
     """When no compressor is available, process_audio returns status='failed'."""
     processor = EpisodeProcessor(
@@ -236,7 +241,7 @@ async def test_process_audio_without_compressor_returns_failed(
     result = await processor.process_audio(
         agent_id="test_agent",
         filename="test.wav",
-        content=wav_bytes,
+        raw_path=wav_file,
         content_type="audio/wav",
         metadata={},
     )
@@ -248,7 +253,7 @@ async def test_process_audio_without_compressor_returns_failed(
 
 @pytest.mark.asyncio
 async def test_process_video_without_compressor_returns_failed(
-    repo: InMemoryRepository, media_store: MediaFileStore, mock_describer: MockMediaDescriptionService, mp4_bytes: bytes
+    repo: InMemoryRepository, media_store: MediaFileStore, mock_describer: MockMediaDescriptionService, mp4_file: str
 ):
     """When no compressor is available, process_video returns status='failed'."""
     processor = EpisodeProcessor(
@@ -261,7 +266,7 @@ async def test_process_video_without_compressor_returns_failed(
     result = await processor.process_video(
         agent_id="test_agent",
         filename="test.mp4",
-        content=mp4_bytes,
+        raw_path=mp4_file,
         content_type="video/mp4",
         metadata={},
     )

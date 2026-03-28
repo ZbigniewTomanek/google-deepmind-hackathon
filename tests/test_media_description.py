@@ -1,4 +1,3 @@
-import os
 import struct
 import wave
 
@@ -99,26 +98,4 @@ def test_media_description_dataclass():
     assert desc.token_count == 42
 
 
-HAS_API_KEY = bool(os.environ.get("GOOGLE_API_KEY"))
-
-
-@pytest.mark.skipif(not HAS_API_KEY, reason="No GOOGLE_API_KEY")
-@pytest.mark.asyncio
-async def test_real_gemini_audio_description(wav_file: str):
-    """Integration test: real Gemini API call with a tiny audio file.
-
-    Verifies that the service handles the full upload→describe→cleanup
-    cycle. Uses gemini-2.0-flash as it's widely available. If the API
-    returns an error, the service should degrade gracefully (non-empty
-    fallback text, zero tokens).
-    """
-    service = MediaDescriptionService(
-        api_key=os.environ["GOOGLE_API_KEY"],
-        model="gemini-2.0-flash",
-    )
-
-    result = await service.describe_audio(wav_file, "audio/wav")
-
-    assert isinstance(result, MediaDescription)
-    assert len(result.text) > 0  # Even on failure, fallback text is non-empty
-    assert result.model == "gemini-2.0-flash"
+# Real Gemini integration test lives in tests/integration/test_media_gemini.py

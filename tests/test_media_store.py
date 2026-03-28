@@ -129,3 +129,19 @@ async def test_delete_nonexistent_returns_false(store: MediaFileStore):
     """delete() returns False for a file that doesn't exist."""
     result = await store.delete("agent1/nonexistent.ogg")
     assert result is False
+
+
+def test_resolve_rejects_path_traversal(store: MediaFileStore):
+    """resolve() raises ValueError for paths that escape the store root."""
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        store.resolve("../../etc/passwd")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        store.resolve("agent1/../../etc/passwd")
+
+
+@pytest.mark.asyncio
+async def test_delete_rejects_path_traversal(store: MediaFileStore):
+    """delete() raises ValueError for paths that escape the store root."""
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        await store.delete("../../../tmp/important_file")
