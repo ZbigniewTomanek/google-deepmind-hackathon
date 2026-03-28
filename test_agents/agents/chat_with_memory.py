@@ -115,7 +115,6 @@ def build_chat_with_memory(config):
         .workflow_step(step_4)
         .permissions(AgentPermissions(
             extra=(("neocortex-chat*", "allow"),),
-            task=(("*", "deny"), ("joke-with-memory", "allow")),
         ))
         .temperature(0.4)
         .steps(100)
