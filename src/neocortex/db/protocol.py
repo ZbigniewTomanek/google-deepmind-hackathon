@@ -135,3 +135,11 @@ class MemoryRepository(Protocol):
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         """Return all edge signatures (source→type→target) in the agent's graph."""
+
+    # ── Access Tracking ──
+
+    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+        """Increment access_count and update last_accessed_at for recalled nodes."""
+
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+        """Increment access_count and update last_accessed_at for recalled episodes."""

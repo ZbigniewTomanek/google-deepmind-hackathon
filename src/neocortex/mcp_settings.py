@@ -40,9 +40,9 @@ class MCPSettings(BaseSettings):
     embedding_model: str = "gemini-embedding-001"
 
     # Hybrid recall weights (normalized at scoring time, so any ratio works)
-    recall_weight_vector: float = 0.4
-    recall_weight_text: float = 0.35
-    recall_weight_recency: float = 0.25
+    recall_weight_vector: float = 0.3
+    recall_weight_text: float = 0.2
+    recall_weight_recency: float = 0.1
     recall_recency_half_life_hours: float = 168.0  # 7 days
     # Vector distance threshold: cosine distance below this counts as a match.
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
