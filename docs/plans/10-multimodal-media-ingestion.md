@@ -892,7 +892,7 @@ bash scripts/e2e_media.sh
 | 6 | Unit and integration tests | `DONE` | 7 MediaFileStore tests, 11 media ingestion tests (processor + HTTP endpoints), 1 Gemini integration test; 19 new tests total, all passing |
 | 7 | Documentation | `DONE` | Updated development.md with media ingestion section (system requirements, env vars, settings, endpoints, curl examples, storage layout, supported formats); updated CLAUDE.md codebase map with 5 new media files |
 | 8 | E2E validation script and tests | `DONE` | E2E test suite (9 tests: audio/video upload, content-type rejection, size rejection, regression for text/doc/events/health), synthetic fixtures, shell script, MockMediaCompressor for mock mode |
-| 9 | Final validation and cleanup | `PENDING` | |
+| 9 | Final validation and cleanup | `DONE` | E2E suite: 9/9 passed; full suite: 380 passed, 5 skipped; ruff: all checks passed; docs verified aligned with implementation |
 
-**Last stage completed**: Stage 8 — E2E Validation Script and Tests
+**Last stage completed**: Stage 9 — Final Validation and Cleanup
 **Last updated by**: plan-runner-agent
