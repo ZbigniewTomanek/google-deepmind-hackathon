@@ -29,6 +29,33 @@ async def get_agent_id(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing authorization token")
 
+    # Auth0 mode: validate JWT
+    if settings.auth_mode == "auth0":
+        verifier = request.app.state.auth0_verifier
+        try:
+            claims = verifier.verify(credentials.credentials)
+            sub = claims.get("sub")
+            if not sub:
+                raise HTTPException(status_code=401, detail="Token missing sub claim")
+            agent_id = str(sub)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
+
+        # Auto-provision Auth0 identity into permission system
+        from neocortex.auth.provisioning import ensure_agent_provisioned
+
+        permissions = request.app.state.permissions
+        auth0_perms = claims.get("permissions", [])
+        await ensure_agent_provisioned(
+            permissions=permissions,
+            agent_id=agent_id,
+            auth0_permissions=auth0_perms,
+        )
+        return agent_id
+
+    # Dev-token mode: static lookup
     token_map: dict[str, str] = request.app.state.token_map
     agent_id = token_map.get(credentials.credentials)
     if agent_id is None:

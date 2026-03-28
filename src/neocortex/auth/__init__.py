@@ -15,4 +15,10 @@ def create_auth(settings: MCPSettings) -> AuthProvider | None:
         from neocortex.auth.google import create_google_auth
 
         return create_google_auth(settings)
-    raise ValueError(f"Unknown auth_mode: {settings.auth_mode!r}. " "Use 'none', 'dev_token', or 'google_oauth'.")
+    if settings.auth_mode == "auth0":
+        from neocortex.auth.auth0 import create_auth0_auth
+
+        return create_auth0_auth(settings)
+    raise ValueError(
+        f"Unknown auth_mode: {settings.auth_mode!r}. " "Use 'none', 'dev_token', 'google_oauth', or 'auth0'."
+    )

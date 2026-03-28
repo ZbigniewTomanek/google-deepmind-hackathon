@@ -219,3 +219,7 @@ media_store/
 
 # process pids
 *.pid
+
+# Auth0 secrets
+.env.auth0
+auth0.md
