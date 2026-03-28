@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import jwt.exceptions
@@ -9,10 +10,11 @@ import pytest
 
 from neocortex.auth import create_auth
 from neocortex.auth.auth0 import create_auth0_auth
-from neocortex.auth.provisioning import ensure_agent_provisioned
+from neocortex.auth.provisioning import _provisioned_cache, ensure_agent_provisioned
 from neocortex.ingestion.auth0_jwt import Auth0JWTVerifier
 from neocortex.mcp_settings import MCPSettings
 from neocortex.permissions.memory_service import InMemoryPermissionService
+from neocortex.permissions.protocol import PermissionChecker
 
 # --- MCPSettings ---
 
@@ -145,6 +147,14 @@ def test_jwt_verifier_sets_correct_jwks_uri() -> None:
 # --- ensure_agent_provisioned ---
 
 
+@pytest.fixture(autouse=True)
+def _clear_provisioning_cache():
+    """Clear the module-level provisioning cache between tests."""
+    _provisioned_cache.clear()
+    yield
+    _provisioned_cache.clear()
+
+
 @pytest.mark.asyncio
 async def test_provisioning_registers_new_agent() -> None:
     permissions = InMemoryPermissionService(bootstrap_admin_id="bootstrap")
@@ -200,3 +210,22 @@ async def test_provisioning_without_permissions() -> None:
     agent_ids = {a.agent_id for a in agents}
     assert "m2m-client@clients" in agent_ids
     assert not await permissions.is_admin("m2m-client@clients")
+
+
+@pytest.mark.asyncio
+async def test_provisioning_cache_avoids_repeated_db_calls() -> None:
+    permissions = InMemoryPermissionService(bootstrap_admin_id="bootstrap")
+    await ensure_agent_provisioned(
+        permissions=permissions,
+        agent_id="auth0|cached",
+        auth0_permissions=["memory:read"],
+    )
+    assert "auth0|cached" in _provisioned_cache
+
+    # Second call should hit cache and skip list_agents entirely.
+    # Passing a broken permissions object proves the DB is never touched.
+    sentinel = cast(PermissionChecker, object())
+    await ensure_agent_provisioned(
+        permissions=sentinel,
+        agent_id="auth0|cached",
+    )

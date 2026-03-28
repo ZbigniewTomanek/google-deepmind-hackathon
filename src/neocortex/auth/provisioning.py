@@ -6,6 +6,10 @@ from loguru import logger
 
 from neocortex.permissions.protocol import PermissionChecker
 
+# In-memory cache of agent IDs already confirmed in the DB.
+# Avoids list_agents() on every request; reset on process restart.
+_provisioned_cache: set[str] = set()
+
 
 async def ensure_agent_provisioned(
     permissions: PermissionChecker,
@@ -22,15 +26,20 @@ async def ensure_agent_provisioned(
     Personal graph creation is handled by GraphRouter.route_store() on first write,
     so no explicit provisioning needed there.
     """
+    if agent_id in _provisioned_cache:
+        return
+
     agents = await permissions.list_agents()
     existing_ids = {a.agent_id for a in agents}
 
     if agent_id in existing_ids:
+        _provisioned_cache.add(agent_id)
         return  # Already provisioned
 
     logger.info("auto_provisioning_agent", agent_id=agent_id)
 
     is_admin = auth0_permissions is not None and "admin:manage" in auth0_permissions
     await permissions.set_admin(agent_id, is_admin=is_admin)
+    _provisioned_cache.add(agent_id)
     if is_admin:
         logger.info("agent_promoted_to_admin", agent_id=agent_id)
