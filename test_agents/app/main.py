@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 # Ensure test_agents root is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.agent_runner import get_session, list_agents, run_agent
+from app.agent_runner import get_session, list_agents, run_agent, start_agent
 from app.models import (
     AgentInfo,
     AgentListResponse,
@@ -69,16 +69,26 @@ async def trigger_agent(agent_name: str, request: AgentRunRequest):
 
     - **prompt**: The user's message
     - **session_id**: Resume an existing session (optional, auto-generated)
+    - **async_mode**: If true, return immediately and poll /sessions/{id}
     - **callback_url**: URL to POST full session result on completion
     - **context**: Prepopulated conversation history (list of {role, content})
     """
-    session = await run_agent(
-        agent_name=agent_name,
-        prompt=request.prompt,
-        session_id=request.session_id,
-        callback_url=request.callback_url,
-        context=request.context,
-    )
+    if request.async_mode:
+        session = await start_agent(
+            agent_name=agent_name,
+            prompt=request.prompt,
+            session_id=request.session_id,
+            callback_url=request.callback_url,
+            context=request.context,
+        )
+    else:
+        session = await run_agent(
+            agent_name=agent_name,
+            prompt=request.prompt,
+            session_id=request.session_id,
+            callback_url=request.callback_url,
+            context=request.context,
+        )
     return AgentRunResponse(
         session_id=session.session_id,
         agent_name=session.agent_name,

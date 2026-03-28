@@ -19,16 +19,28 @@ BUILD_DIR = Path(__file__).resolve().parent / "build"
 SCRIPTS_DIR = Path(__file__).resolve().parent / "agent_scripts"
 
 
-def _ensure_git_marker(build_dir: Path) -> None:
-    """Ensure build/ has a git repo so opencode detects it as a project root."""
-    if (build_dir / ".git").exists():
-        return
+_BUILD_PYPROJECT = """\
+[project]
+name = "neocortex-test-agents"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.0"]
+"""
+
+
+def _ensure_build_scaffold(build_dir: Path) -> None:
+    """Ensure build/ has pyproject.toml and git repo for opencode project detection."""
     build_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init"], cwd=build_dir, capture_output=True)
-    gitignore = build_dir / ".gitignore"
-    gitignore.write_text("*\n")
-    subprocess.run(["git", "add", "-f", ".gitignore"], cwd=build_dir, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "project marker"], cwd=build_dir, capture_output=True)
+
+    # Always write pyproject.toml so dependencies stay in sync
+    (build_dir / "pyproject.toml").write_text(_BUILD_PYPROJECT)
+
+    # Git repo marks build/ as a project root for opencode
+    if not (build_dir / ".git").exists():
+        subprocess.run(["git", "init"], cwd=build_dir, capture_output=True)
+        (build_dir / ".gitignore").write_text("*\n")
+        subprocess.run(["git", "add", "-f", ".gitignore"], cwd=build_dir, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "project marker"], cwd=build_dir, capture_output=True)
 
 
 def compile_and_write() -> Path:
@@ -46,7 +58,7 @@ def compile_and_write() -> Path:
         compiled = compile_agent(agent_def, target="opencode")
         writer.write(compiled)
 
-    _ensure_git_marker(BUILD_DIR)
+    _ensure_build_scaffold(BUILD_DIR)
 
     return BUILD_DIR
 

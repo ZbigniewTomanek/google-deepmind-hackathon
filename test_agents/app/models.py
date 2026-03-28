@@ -17,6 +17,7 @@ class AgentRunRequest(BaseModel):
 
     prompt: str = Field(description="The user prompt / message to send to the agent")
     session_id: str = Field(default="", description="Resume an existing session (optional)")
+    async_mode: bool = Field(default=False, description="If true, return immediately with session_id and poll /sessions/{id} for result")
     callback_url: str | None = Field(default=None, description="URL to POST full session result when agent completes")
     context: list[ContextMessage] | None = Field(default=None, description="Prepopulated conversation history")
 
