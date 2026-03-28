@@ -65,6 +65,8 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex  # Run MCP server with mock DB
 NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion  # Run ingestion API with mock DB
 docker compose up -d postgres                      # Start PostgreSQL
 uv run python -m neocortex                         # Run MCP server with real DB
+./scripts/launch.sh                                # Start all services (PG + MCP + ingestion)
+./scripts/launch.sh --stop                         # Stop background services
 ```
 
 ## Architecture Rules
@@ -121,6 +123,16 @@ Only messages with `action_log=True` appear in `agent_actions.log`. Use this for
 **Log level:** Controlled by `NEOCORTEX_LOG_LEVEL` env var (default `INFO`). Use `DEBUG` for routing decisions and DB operations; `TRACE` for connection-level detail.
 
 **Pydantic AI agents:** Use lifecycle hooks (`pydantic_ai.capabilities.Hooks`) to log model calls and tool executions to the same `agent_actions.log`. See `docs/plans/05-ingestion-api.md` Stage 9 for the full pattern.
+
+## Scripts
+
+- `scripts/launch.sh` — One-command launcher: kills stale processes, starts PostgreSQL + MCP + ingestion in background, waits for health, prints connection info. Use `--stop` to tear down.
+- `scripts/run_e2e.sh` — E2E test harness: starts services, runs a test script, tears down on exit.
+- `.claude/skills/ingesting-data/scripts/ingest.sh` — Curl wrapper for all ingestion and admin endpoints. Run with `--help` for usage.
+
+## Skills
+
+- `.claude/skills/ingesting-data/` — Ingestion skill: supported formats, auth setup, shared graph permissions, domain routing, curl examples. Reference files: `ENDPOINTS.md` (full API), `PERMISSIONS.md` (roles & shared graphs).
 
 ## Key References
 
