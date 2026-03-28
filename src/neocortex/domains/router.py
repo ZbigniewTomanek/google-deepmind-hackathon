@@ -158,7 +158,14 @@ class DomainRouter:
     async def _ensure_schema(self, domain: SemanticDomain, agent_id: str) -> str | None:
         """Get or create the shared schema for a domain. Returns None if unavailable."""
         if domain.schema_name is not None:
-            return domain.schema_name
+            # Verify schema actually exists (seed domains may have name but no schema)
+            if self._schema_mgr is not None:
+                existing = await self._schema_mgr.get_graph(agent_id="shared", purpose=domain.slug)
+                if existing is not None:
+                    return domain.schema_name
+                # Schema name set but schema doesn't exist — fall through to create
+            else:
+                return domain.schema_name
 
         if self._schema_mgr is None:
             return None
