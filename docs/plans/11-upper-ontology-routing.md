@@ -91,7 +91,7 @@ src/neocortex/domains/
 | 2 | Classification Agent | DONE | DomainClassifier protocol, AgentDomainClassifier (PydanticAI/Gemini), MockDomainClassifier (keyword-based), 4 settings added, 8 tests passing | `feat(domains): add classification agent with PydanticAI and mock implementations` |
 | 3 | Domain Router & Auto-Provisioning | DONE | DomainRouter with classify→permission→provision→extract flow, _sanitize_slug, 9 tests passing | `feat(domains): add domain router with auto-provisioning and permission-aware routing` |
 | 4 | Pipeline Integration | DONE | route_episode task, services.py wiring (mock+PG), remember tool routing enqueue, EpisodeProcessor routing, existing tests updated | `feat(domains): integrate domain routing into remember tool and ingestion pipeline` |
-| 5 | Integration Tests | PENDING | | |
+| 5 | Integration Tests | DONE | 10 tests: full routing pipeline (3), domain provisioning (2), pipeline integration (5 — remember + ingestion wiring) | `test(domains): add integration tests for domain routing pipeline` |
 | 6 | E2E Validation & Documentation | PENDING | | |
 
 Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
