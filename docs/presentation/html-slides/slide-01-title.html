@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+html { background: #04081A; }
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  background: #04081A;
+  font-family: 'Outfit', Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Top rule — Gemini blue */
+.rule-top {
+  position: absolute;
+  top: 48pt;
+  left: 80pt;
+  right: 80pt;
+  height: 1pt;
+  background: #9D6EF7;
+}
+
+/* Bottom rule */
+.rule-bottom {
+  position: absolute;
+  bottom: 64pt;
+  left: 80pt;
+  right: 80pt;
+  height: 1pt;
+  background: #9D6EF7;
+}
+
+/* Decorative dots — faint blue graph nodes */
+.hex-dot {
+  position: absolute;
+  width: 3pt;
+  height: 3pt;
+  border-radius: 50%;
+  background: #0D1B3E;
+}
+
+.hex-dot.bright {
+  background: #162D5A;
+}
+
+.hex-dot.glow {
+  background: #1E3F78;
+}
+
+.title-block {
+  text-align: center;
+  z-index: 1;
+}
+
+h1 {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #E8E4DC;
+  font-size: 44pt;
+  font-weight: 400;
+  letter-spacing: 0.35em;
+  margin: 0 0 10pt 0;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  font-family: 'Outfit', Arial, sans-serif;
+  color: #9D6EF7;
+  font-size: 16pt;
+  font-weight: 300;
+  margin: 0;
+  letter-spacing: 0.06em;
+}
+
+.event-line {
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: #6B5B95;
+  font-size: 10pt;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: 0.08em;
+  position: absolute;
+  bottom: 78pt;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+
+  <!-- Blue framing rules -->
+  <div class="rule-top"></div>
+  <div class="rule-bottom"></div>
+
+  <!-- Scattered graph-node dots -->
+  <div class="hex-dot" style="top: 80pt; left: 110pt;"></div>
+  <div class="hex-dot bright" style="top: 88pt; left: 148pt;"></div>
+  <div class="hex-dot" style="top: 72pt; left: 186pt;"></div>
+  <div class="hex-dot glow" style="top: 115pt; left: 125pt;"></div>
+  <div class="hex-dot" style="top: 128pt; left: 92pt;"></div>
+  <div class="hex-dot bright" style="top: 135pt; left: 165pt;"></div>
+  <div class="hex-dot" style="top: 95pt; left: 525pt;"></div>
+  <div class="hex-dot bright" style="top: 105pt; left: 560pt;"></div>
+  <div class="hex-dot glow" style="top: 88pt; left: 598pt;"></div>
+  <div class="hex-dot" style="top: 140pt; left: 540pt;"></div>
+  <div class="hex-dot bright" style="top: 148pt; left: 578pt;"></div>
+  <div class="hex-dot" style="top: 132pt; left: 615pt;"></div>
+  <div class="hex-dot" style="top: 270pt; left: 105pt;"></div>
+  <div class="hex-dot bright" style="top: 282pt; left: 140pt;"></div>
+  <div class="hex-dot glow" style="top: 268pt; left: 178pt;"></div>
+  <div class="hex-dot" style="top: 295pt; left: 535pt;"></div>
+  <div class="hex-dot bright" style="top: 305pt; left: 572pt;"></div>
+  <div class="hex-dot" style="top: 288pt; left: 608pt;"></div>
+  <div class="hex-dot glow" style="top: 190pt; left: 65pt;"></div>
+  <div class="hex-dot" style="top: 200pt; left: 640pt;"></div>
+  <div class="hex-dot bright" style="top: 220pt; left: 78pt;"></div>
+  <div class="hex-dot" style="top: 235pt; left: 630pt;"></div>
+
+  <!-- Main content -->
+  <div class="title-block">
+    <h1>NeoCortex</h1>
+    <p class="subtitle">Structured Memory for AI Agents</p>
+  </div>
+
+  <p class="event-line">Google DeepMind x AI Tinkerers Hackathon  //  Warsaw 2026</p>
+
+</body>
+</html>

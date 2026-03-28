@@ -223,3 +223,7 @@ media_store/
 # Auth0 secrets
 .env.auth0
 auth0.md
+# Presentation build artifacts
+docs/presentation/node_modules/
+docs/presentation/output/
+docs/presentation/package-lock.json
