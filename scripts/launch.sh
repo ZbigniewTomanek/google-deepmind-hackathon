@@ -28,16 +28,26 @@ log()  { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[1;31m==> %s\033[0m\n' "$*" >&2; exit 1; }
 
+pids_on_port() {
+    # Try lsof first (macOS + some Linux), fall back to ss+awk (Linux)
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -ti ":$1" 2>/dev/null || true
+    else
+        ss -tlnp "sport = :$1" 2>/dev/null \
+            | awk 'NR>1 { match($0, /pid=([0-9]+)/, m); if (m[1]) print m[1] }' || true
+    fi
+}
+
 kill_port() {
     local port="$1"
     local pids
-    pids=$(lsof -ti ":$port" 2>/dev/null || true)
+    pids=$(pids_on_port "$port")
     if [[ -n "$pids" ]]; then
         log "Killing existing process(es) on port $port (PIDs: $pids)..."
         echo "$pids" | xargs kill 2>/dev/null || true
         sleep 1
         # Force-kill stragglers
-        pids=$(lsof -ti ":$port" 2>/dev/null || true)
+        pids=$(pids_on_port "$port")
         if [[ -n "$pids" ]]; then
             echo "$pids" | xargs kill -9 2>/dev/null || true
             sleep 1
@@ -131,8 +141,10 @@ do_start() {
     kill_port "$MCP_PORT"
     kill_port "$INGESTION_PORT"
 
-    # --- PostgreSQL ---
-    log "Ensuring PostgreSQL is running..."
+    # --- PostgreSQL (fresh volume each start) ---
+    log "Removing old PostgreSQL container and volume..."
+    docker compose -f "$PROJECT_DIR/docker-compose.yml" down -v 2>/dev/null || true
+    log "Starting PostgreSQL with clean volume..."
     docker compose -f "$PROJECT_DIR/docker-compose.yml" up -d postgres 2>&1 || {
         log "Container conflict — removing stale container and retrying..."
         docker rm -f neocortex-postgres 2>/dev/null || true
