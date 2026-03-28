@@ -13,6 +13,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp
 
+ARG OPENCODE_VERSION=1.1.25
+ARG TARGETARCH
+RUN ARCH=$([ "$TARGETARCH" = "amd64" ] && echo "x64" || echo "arm64") \
+    && curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ARCH}.tar.gz" \
+       | tar -xz -C /usr/local/bin opencode \
+    && chmod +x /usr/local/bin/opencode
+
 ARG UID=1000
 ARG GID=1000
 

@@ -35,6 +35,12 @@ def build_config():
                 ),
                 models=(
                     ModelConfig(
+                        name="glm-4.7",
+                        id="glm-4.7",
+                        limits=ModelLimits(context=131072, output=16384),
+                        options=ModelOptions(temperature=0.3, top_p=0.9),
+                    ),
+                    ModelConfig(
                         name="glm-5",
                         id="glm-5",
                         limits=ModelLimits(context=131072, output=16384),
@@ -43,7 +49,7 @@ def build_config():
                 ),
             )
         )
-        .default_model("zai-coding-plan/glm-5")
+        .default_model("zai-coding-plan/glm-4.7")
         # Original single MCP for existing agents (no auth)
         .mcp_server(name="neocortex", url=mcp_url)
         # Per-agent MCP with auth tokens (remote + headers)
