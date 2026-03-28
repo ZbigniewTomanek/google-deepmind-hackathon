@@ -39,13 +39,20 @@ async def remember(
         router = ctx.lifespan_context["router"]
         await router.route_store_to(agent_id, target_graph)
         episode_id = await repo.store_episode_to(
-            agent_id=agent_id, target_schema=target_graph, content=text, context=context,
-            metadata=metadata, importance=episode_importance,
+            agent_id=agent_id,
+            target_schema=target_graph,
+            content=text,
+            context=context,
+            metadata=metadata,
+            importance=episode_importance,
         )
     else:
         episode_id = await repo.store_episode(
-            agent_id=agent_id, content=text, context=context,
-            metadata=metadata, importance=episode_importance,
+            agent_id=agent_id,
+            content=text,
+            context=context,
+            metadata=metadata,
+            importance=episode_importance,
         )
 
     embeddings = ctx.lifespan_context.get("embeddings")
@@ -68,6 +75,20 @@ async def remember(
             episode_id=episode_id,
             agent_id=agent_id,
             target_graph=target_graph,
+        )
+
+    # Enqueue domain routing if enabled (routes to shared domain graphs)
+    # Requires: job_app (implies extraction_enabled), routing enabled, no explicit target
+    if job_app and settings.domain_routing_enabled and target_graph is None:
+        await job_app.configure_task("route_episode").defer_async(
+            agent_id=agent_id,
+            episode_id=episode_id,
+            episode_text=text,
+        )
+        logger.bind(action_log=True).info(
+            "domain_routing_enqueued",
+            episode_id=episode_id,
+            agent_id=agent_id,
         )
 
     return RememberResult(

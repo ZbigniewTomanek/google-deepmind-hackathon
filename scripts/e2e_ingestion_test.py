@@ -225,6 +225,37 @@ async def main() -> None:
         if resp.status_code != 200:
             print(f"  [WARN] Cleanup failed: {resp.status_code}")
 
+    # --- Domain routing job verification ---
+    print("Verifying domain routing job creation...")
+    conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
+    try:
+        # Alice ingested without target_graph → route_episode jobs should exist
+        route_jobs = await conn.fetchval("""SELECT count(*) FROM procrastinate_jobs
+               WHERE task_name = 'route_episode'
+                 AND args::text LIKE '%alice%'""")
+        route_count = int(route_jobs)
+        if route_count > 0:
+            print(f"  [PASS] {route_count} route_episode job(s) created for Alice " "(ingested without target_graph)")
+        else:
+            print("  [WARN] No route_episode jobs for Alice — " "domain routing may be disabled or job queue not wired")
+
+        # Alice ingested WITH target_graph → should NOT have route_episode for that text
+        # The shared_text was ingested with explicit target_graph, so no routing job
+        shared_route_jobs = await conn.fetchval(f"""SELECT count(*) FROM procrastinate_jobs
+                WHERE task_name = 'route_episode'
+                  AND args::text LIKE '%{suffix}%'
+                  AND args::text LIKE '%shared%'""")
+        shared_route_count = int(shared_route_jobs)
+        if shared_route_count == 0:
+            print("  [PASS] No route_episode job for explicit target_graph ingestion")
+        else:
+            print(
+                f"  [WARN] Found {shared_route_count} route_episode job(s) "
+                "for explicit target_graph — should have been skipped"
+            )
+    finally:
+        await conn.close()
+
     # --- Database verification ---
     print("Verifying PostgreSQL data isolation...")
     conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
