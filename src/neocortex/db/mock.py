@@ -17,6 +17,7 @@ class EpisodeRecord(TypedDict, total=False):
     content: str
     context: str | None
     source_type: str
+    metadata: dict
     embedding: list[float] | None
     created_at: datetime
     access_count: int
@@ -45,10 +46,15 @@ class InMemoryRepository:
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1
         now = datetime.now(UTC)
+        episode_metadata = metadata or {}
+        if context:
+            episode_metadata["context"] = context
         self._episodes.append(
             {
                 "id": episode_id,
@@ -56,10 +62,11 @@ class InMemoryRepository:
                 "content": content,
                 "context": context,
                 "source_type": source_type,
+                "metadata": episode_metadata,
                 "created_at": now,
                 "access_count": 0,
                 "last_accessed_at": now,
-                "importance": 0.5,
+                "importance": importance,
             }
         )
         return episode_id
@@ -260,7 +267,7 @@ class InMemoryRepository:
                     content=ep["content"],
                     embedding=ep.get("embedding"),
                     source_type=ep.get("source_type"),
-                    metadata={"context": ep.get("context")} if ep.get("context") else {},
+                    metadata=ep.get("metadata", {}),
                     access_count=ep.get("access_count", 0),
                     last_accessed_at=ep.get("last_accessed_at"),
                     importance=ep.get("importance", 0.5),
@@ -280,6 +287,7 @@ class InMemoryRepository:
         embedding: list[float] | None = None,
         source: str | None = None,
         target_schema: str | None = None,
+        importance: float = 0.5,
     ) -> Node:
         del target_schema
         props = properties or {}
@@ -295,6 +303,11 @@ class InMemoryRepository:
                     properties=merged_props,
                     embedding=embedding or node.embedding,
                     source=source or node.source,
+                    importance=max(node.importance, importance),
+                    access_count=node.access_count,
+                    last_accessed_at=node.last_accessed_at,
+                    forgotten=node.forgotten,
+                    forgotten_at=node.forgotten_at,
                     created_at=node.created_at,
                     updated_at=datetime.now(UTC),
                 )
@@ -309,6 +322,7 @@ class InMemoryRepository:
             properties=props,
             embedding=embedding,
             source=source,
+            importance=importance,
             created_at=now,
             updated_at=now,
         )

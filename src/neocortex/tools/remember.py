@@ -9,6 +9,7 @@ async def remember(
     text: str,
     context: str | None = None,
     target_graph: str | None = None,
+    importance: float | None = None,
     ctx: Context | None = None,
 ) -> RememberResult:
     """Store a memory. Describe what you want to remember in natural language.
@@ -20,6 +21,7 @@ async def remember(
         context: Optional context about where/why this memory is being stored.
         target_graph: Optional shared graph to write to (requires write permission).
                       If omitted, stores to the agent's personal graph.
+        importance: Optional importance hint (0.0-1.0). Higher values indicate more critical memories.
     """
     if ctx is None:
         raise RuntimeError("FastMCP context is required for remember().")
@@ -27,14 +29,24 @@ async def remember(
     repo = ctx.lifespan_context["repo"]
     agent_id = get_agent_id_from_context(ctx)
 
+    metadata: dict = {}
+    episode_importance = 0.5
+    if importance is not None:
+        metadata["importance_hint"] = importance
+        episode_importance = importance
+
     if target_graph is not None:
         router = ctx.lifespan_context["router"]
         await router.route_store_to(agent_id, target_graph)
         episode_id = await repo.store_episode_to(
-            agent_id=agent_id, target_schema=target_graph, content=text, context=context
+            agent_id=agent_id, target_schema=target_graph, content=text, context=context,
+            metadata=metadata, importance=episode_importance,
         )
     else:
-        episode_id = await repo.store_episode(agent_id=agent_id, content=text, context=context)
+        episode_id = await repo.store_episode(
+            agent_id=agent_id, content=text, context=context,
+            metadata=metadata, importance=episode_importance,
+        )
 
     embeddings = ctx.lifespan_context.get("embeddings")
     if embeddings:

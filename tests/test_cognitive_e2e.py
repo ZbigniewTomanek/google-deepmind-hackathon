@@ -5,6 +5,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from neocortex.db.mock import InMemoryRepository
+from neocortex.extraction.pipeline import _persist_payload
+from neocortex.extraction.schemas import (
+    ExtractedEntity,
+    LibrarianPayload,
+    NormalizedEntity,
+)
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, Episode, Node
 from neocortex.schemas.memory import RecallItem
@@ -326,3 +332,132 @@ class TestStage2BaseActivation:
         for ep in repo._episodes:
             if ep["id"] in episode_ids:
                 assert ep["access_count"] >= 1
+
+
+class TestStage3Importance:
+    @pytest.mark.asyncio
+    async def test_upsert_node_with_importance(self, repo: InMemoryRepository):
+        """Upsert node with importance=0.8, read back, verify importance=0.8."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        node = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter", importance=0.8)
+        assert node.importance == 0.8
+
+    @pytest.mark.asyncio
+    async def test_upsert_node_importance_takes_max(self, repo: InMemoryRepository):
+        """Upsert node with importance=0.3, then 0.7, then 0.5 — verify max semantics."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        node = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter", importance=0.3)
+        assert node.importance == 0.3
+
+        node = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter", importance=0.7)
+        assert node.importance == 0.7
+
+        node = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter", importance=0.5)
+        assert node.importance == 0.7  # max semantics — stays at 0.7
+
+    @pytest.mark.asyncio
+    async def test_upsert_node_default_importance(self, repo: InMemoryRepository):
+        """Upsert without specifying importance, verify default 0.5."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        node = await repo.upsert_node(AGENT_ID, "Dopamine", concept.id, content="Reward pathway")
+        assert node.importance == 0.5
+
+    def test_importance_in_hybrid_score(self):
+        """Verify compute_hybrid_score with importance=0.9 scores higher than importance=0.1."""
+        weights = HybridWeights(vector=0.3, text=0.2, recency=0.1, activation=0.25, importance=0.15)
+        score_high = compute_hybrid_score(
+            vector_sim=None, text_rank=None, recency=0.5, activation=0.5, importance=0.9, weights=weights
+        )
+        score_low = compute_hybrid_score(
+            vector_sim=None, text_rank=None, recency=0.5, activation=0.5, importance=0.1, weights=weights
+        )
+        assert score_high > score_low
+
+    @pytest.mark.asyncio
+    async def test_importance_boosts_recall_ranking(self, repo: InMemoryRepository):
+        """Populate mock repo with 2 nodes matching same query: one high-importance, one low. Verify ranking."""
+        concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
+        await repo.upsert_node(
+            AGENT_ID, "Serotonin Alpha", concept.id, content="A neurotransmitter alpha", importance=0.9
+        )
+        await repo.upsert_node(
+            AGENT_ID, "Serotonin Beta", concept.id, content="A neurotransmitter beta", importance=0.1
+        )
+
+        results = await repo.recall("Serotonin", AGENT_ID, limit=10)
+        assert len(results) >= 2
+        assert results[0].name == "Serotonin Alpha"
+        assert results[0].importance == 0.9
+        assert results[1].importance == 0.1
+
+    def test_extraction_schemas_have_importance(self):
+        """Instantiate ExtractedEntity and NormalizedEntity with importance field, verify validation."""
+        entity = ExtractedEntity(name="Serotonin", type_name="Neurotransmitter", importance=0.8)
+        assert entity.importance == 0.8
+
+        normalized = NormalizedEntity(name="Serotonin", type_name="Neurotransmitter", importance=0.7)
+        assert normalized.importance == 0.7
+
+        # Verify validation rejects out-of-range
+        with pytest.raises(ValueError):
+            ExtractedEntity(name="Bad", type_name="T", importance=1.5)
+        with pytest.raises(ValueError):
+            NormalizedEntity(name="Bad", type_name="T", importance=-0.1)
+
+    @pytest.mark.asyncio
+    async def test_importance_hint_floors_extracted_importance(self, repo: InMemoryRepository):
+        """Store episode with importance_hint=0.8. Persist entity with lower importance.
+        Verify node gets importance=0.8 (hint used as floor).
+        Then persist entity with higher importance=0.9 — verify importance stays 0.9.
+        """
+        # Store episode with importance_hint
+        ep_id = await repo.store_episode(
+            AGENT_ID,
+            "Serotonin is critical for mood regulation",
+            metadata={"importance_hint": 0.8},
+            importance=0.8,
+        )
+
+        # Create a payload with entity that has lower importance (0.4)
+        await repo.get_or_create_node_type(AGENT_ID, "Neurotransmitter")
+        payload = LibrarianPayload(
+            entities=[
+                NormalizedEntity(
+                    name="Serotonin",
+                    type_name="Neurotransmitter",
+                    description="A neurotransmitter",
+                    importance=0.4,
+                )
+            ],
+            relations=[],
+        )
+
+        await _persist_payload(repo, None, AGENT_ID, ep_id, payload)
+
+        nodes = await repo.find_nodes_by_name(AGENT_ID, "Serotonin")
+        assert len(nodes) == 1
+        assert nodes[0].importance == 0.8  # hint used as floor
+
+        # Now persist with higher extractor importance (0.9)
+        ep_id2 = await repo.store_episode(
+            AGENT_ID,
+            "Serotonin details",
+            metadata={"importance_hint": 0.8},
+            importance=0.8,
+        )
+        payload2 = LibrarianPayload(
+            entities=[
+                NormalizedEntity(
+                    name="Serotonin",
+                    type_name="Neurotransmitter",
+                    description="A neurotransmitter",
+                    importance=0.9,
+                )
+            ],
+            relations=[],
+        )
+        await _persist_payload(repo, None, AGENT_ID, ep_id2, payload2)
+
+        nodes = await repo.find_nodes_by_name(AGENT_ID, "Serotonin")
+        assert len(nodes) == 1
+        assert nodes[0].importance == 0.9  # extractor was higher, max semantics
