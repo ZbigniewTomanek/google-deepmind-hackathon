@@ -41,25 +41,33 @@ class EpisodeProcessor:
         if vector:
             await self._repo.update_episode_embedding(episode_id, vector, agent_id)
 
-    async def _enqueue_extraction(self, agent_id: str, episode_id: int) -> int | None:
+    async def _enqueue_extraction(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> int | None:
         if not self._job_app or not self._extraction_enabled:
             return None
         job_id = await self._job_app.configure_task("extract_episode").defer_async(
-            agent_id=agent_id, episode_ids=[episode_id]
+            agent_id=agent_id, episode_ids=[episode_id], target_schema=target_schema
         )
         logger.bind(action_log=True).info(
             "extraction_enqueued",
             job_id=job_id,
             episode_id=episode_id,
             agent_id=agent_id,
+            target_schema=target_schema,
             source="ingestion",
         )
         return job_id
 
-    async def process_text(self, agent_id: str, text: str, metadata: dict) -> IngestionResult:
-        episode_id = await self._repo.store_episode(agent_id, text, source_type="ingestion_text")
+    async def _store_episode(self, agent_id: str, text: str, source_type: str, target_schema: str | None = None) -> int:
+        if target_schema:
+            return await self._repo.store_episode_to(agent_id, target_schema, text, source_type=source_type)
+        return await self._repo.store_episode(agent_id, text, source_type=source_type)
+
+    async def process_text(
+        self, agent_id: str, text: str, metadata: dict, target_schema: str | None = None
+    ) -> IngestionResult:
+        episode_id = await self._store_episode(agent_id, text, "ingestion_text", target_schema)
         await self._embed_episode(episode_id, text, agent_id)
-        await self._enqueue_extraction(agent_id, episode_id)
+        await self._enqueue_extraction(agent_id, episode_id, target_schema)
         return IngestionResult(
             status="stored",
             episodes_created=1,
@@ -67,26 +75,34 @@ class EpisodeProcessor:
         )
 
     async def process_document(
-        self, agent_id: str, filename: str, content: bytes, content_type: str, metadata: dict
+        self,
+        agent_id: str,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        metadata: dict,
+        target_schema: str | None = None,
     ) -> IngestionResult:
         text = content.decode("utf-8", errors="replace")
-        episode_id = await self._repo.store_episode(agent_id, text, source_type="ingestion_document")
+        episode_id = await self._store_episode(agent_id, text, "ingestion_document", target_schema)
         await self._embed_episode(episode_id, text, agent_id)
-        await self._enqueue_extraction(agent_id, episode_id)
+        await self._enqueue_extraction(agent_id, episode_id, target_schema)
         return IngestionResult(
             status="stored",
             episodes_created=1,
             message=f"Document '{filename}' stored as episode",
         )
 
-    async def process_events(self, agent_id: str, events: list[dict], metadata: dict) -> IngestionResult:
+    async def process_events(
+        self, agent_id: str, events: list[dict], metadata: dict, target_schema: str | None = None
+    ) -> IngestionResult:
         stored = 0
         for event in events:
             try:
                 event_text = json.dumps(event)
-                episode_id = await self._repo.store_episode(agent_id, event_text, source_type="ingestion_event")
+                episode_id = await self._store_episode(agent_id, event_text, "ingestion_event", target_schema)
                 await self._embed_episode(episode_id, event_text, agent_id)
-                await self._enqueue_extraction(agent_id, episode_id)
+                await self._enqueue_extraction(agent_id, episode_id, target_schema)
                 stored += 1
             except Exception:
                 logger.exception("Event ingestion failed after %d/%d events", stored, len(events))
