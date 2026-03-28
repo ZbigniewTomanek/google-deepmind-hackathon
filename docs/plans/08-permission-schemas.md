@@ -905,10 +905,10 @@ test(permissions): E2E smoke tests and development docs update
 | 2 | GraphRouter permission enforcement & MCP tool support | DONE | Router filters shared schemas by read permission, route_store_to validates write, store_episode_to on protocol/adapter/mock, remember tool gains target_graph, 11 new tests |
 | 3 | Ingestion API permission enforcement & extraction awareness | DONE | target_graph on ingestion models/routes, permission checks (403), EpisodeProcessor routes to target schema, extraction pipeline carries target_schema through task→run_extraction→_persist_payload, MemoryRepository methods accept target_schema, 16 new tests |
 | 4 | Admin REST API | DONE | require_admin dependency, permission CRUD endpoints, agent promote/demote, graph management (501 in mock mode), bootstrap admin token injection, 18 tests |
-| 5 | Integration tests (in-memory) & CLAUDE.md | PENDING | |
+| 5 | Integration tests (in-memory) & CLAUDE.md | DONE | Full permission lifecycle test (10 steps), admin lifecycle test, discover filtering test, admin bypass test, 4 extraction target schema tests, mock DB mode verified, CLAUDE.md updated with rule #6 + codebase map |
 | 6 | E2E smoke tests & development docs | PENDING | |
 
-Last stage completed: Stage 4 — Admin REST API
+Last stage completed: Stage 5 — Integration tests (in-memory) & CLAUDE.md
 Last updated by: plan-runner-agent
 
 ---

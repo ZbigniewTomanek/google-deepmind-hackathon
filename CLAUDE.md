@@ -18,6 +18,13 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
   graph_router.py        # Heuristic routing: which schema(s) per operation
   schema_manager.py      # Graph schema lifecycle (create/drop/list)
   auth/                  # Pluggable auth (none / dev_token / google_oauth)
+  permissions/             # Schema-level access control
+    protocol.py            # PermissionChecker protocol
+    pg_service.py          # PostgreSQL implementation
+    memory_service.py      # In-memory implementation (tests/mock)
+  admin/                   # Admin REST API (mounted on ingestion app)
+    auth.py                # require_admin dependency
+    routes.py              # Permission + graph management endpoints
   ingestion/             # FastAPI bulk-ingestion REST API (:8001)
     app.py               # App factory with lifespan (reuses create_services)
     routes.py            # POST /ingest/text, /ingest/document, /ingest/events
@@ -69,6 +76,9 @@ Each agent gets isolated schemas named `ncx_{agent_id}__{purpose}` (double under
 
 **5. Auth mode determines agent identity.**
 `NEOCORTEX_AUTH_MODE`: `none` -> "anonymous", `dev_token` -> from `dev_tokens.json` mapping, `google_oauth` -> OAuth subject. All resolved by `get_agent_id_from_context(ctx)`.
+
+**6. Shared schema access requires explicit permissions.**
+`graph_permissions` table controls read/write access per agent per shared schema. `GraphRouter` filters by `can_read`; ingestion validates `can_write`. Admin agents (`is_admin` in `agent_registry`) bypass all permission checks. Bootstrap admin seeded from `NEOCORTEX_BOOTSTRAP_ADMIN_ID` on every startup. `PermissionChecker` protocol has PG and in-memory implementations. Extraction pipeline carries `target_schema` so nodes/edges land in the correct graph.
 
 ## Observability
 
