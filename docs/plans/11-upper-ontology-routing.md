@@ -89,7 +89,7 @@ src/neocortex/domains/
 |---|-------|--------|-------|--------|
 | 1 | Domain Data Model & Storage | DONE | Models, protocol, PG + in-memory services, migration 008, 13 tests passing | `feat(domains): add semantic domain data model, migration, and storage services` |
 | 2 | Classification Agent | DONE | DomainClassifier protocol, AgentDomainClassifier (PydanticAI/Gemini), MockDomainClassifier (keyword-based), 4 settings added, 8 tests passing | `feat(domains): add classification agent with PydanticAI and mock implementations` |
-| 3 | Domain Router & Auto-Provisioning | PENDING | | |
+| 3 | Domain Router & Auto-Provisioning | DONE | DomainRouter with classify→permission→provision→extract flow, _sanitize_slug, 9 tests passing | `feat(domains): add domain router with auto-provisioning and permission-aware routing` |
 | 4 | Pipeline Integration | PENDING | | |
 | 5 | Integration Tests | PENDING | | |
 | 6 | E2E Validation & Documentation | PENDING | | |
