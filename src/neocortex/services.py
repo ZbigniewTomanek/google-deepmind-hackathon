@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TypedDict
+
+import procrastinate
+import procrastinate.exceptions
 
 from neocortex.config import PostgresConfig
 from neocortex.db.adapter import GraphServiceAdapter
@@ -21,6 +25,7 @@ class ServiceContext(TypedDict):
     router: GraphRouter | None
     settings: MCPSettings
     embeddings: EmbeddingService | None
+    job_app: procrastinate.App | None
 
 
 async def create_services(settings: MCPSettings) -> ServiceContext:
@@ -38,9 +43,11 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             router=None,
             settings=settings,
             embeddings=None,
+            job_app=None,
         )
 
-    pg = PostgresService(PostgresConfig())
+    pg_config = PostgresConfig()
+    pg = PostgresService(pg_config)
     await pg.connect()
 
     graph = GraphService(pg)
@@ -50,7 +57,17 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     repo = GraphServiceAdapter(graph, router=router, pool=pg.pool, pg=pg, settings=settings)
     embeddings = EmbeddingService(model=settings.embedding_model)
 
-    return ServiceContext(
+    # Procrastinate job queue (only when extraction is enabled with real DB)
+    job_app: procrastinate.App | None = None
+    if settings.extraction_enabled:
+        from neocortex.jobs import create_job_app
+
+        job_app = create_job_app(pg_config.dsn)
+        await job_app.open_async()
+        with contextlib.suppress(procrastinate.exceptions.ConnectorException):
+            await job_app.schema_manager.apply_schema_async()
+
+    ctx = ServiceContext(
         repo=repo,
         pg=pg,
         graph=graph,
@@ -58,11 +75,24 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         router=router,
         settings=settings,
         embeddings=embeddings,
+        job_app=job_app,
     )
+
+    # Make services available to Procrastinate task handlers
+    if job_app is not None:
+        from neocortex.jobs.context import set_services
+
+        set_services(ctx)
+
+    return ctx
 
 
 async def shutdown_services(ctx: ServiceContext) -> None:
     """Shut down services, closing the PostgreSQL connection pool if open."""
+    job_app = ctx.get("job_app")
+    if job_app is not None:
+        await job_app.close_async()
+
     pg = ctx.get("pg")
     if pg is not None:
         await pg.disconnect()

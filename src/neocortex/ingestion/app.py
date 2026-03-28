@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from neocortex.auth.tokens import load_token_map
+from neocortex.ingestion.episode_processor import EpisodeProcessor
 from neocortex.ingestion.routes import router
-from neocortex.ingestion.stub_processor import StubProcessor
 from neocortex.mcp_settings import MCPSettings
 from neocortex.services import create_services, shutdown_services
 
@@ -18,7 +18,12 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         ctx = await create_services(settings)
-        processor = StubProcessor(repo=ctx["repo"], embeddings=ctx.get("embeddings"))
+        processor = EpisodeProcessor(
+            repo=ctx["repo"],
+            embeddings=ctx.get("embeddings"),
+            job_app=ctx.get("job_app"),
+            extraction_enabled=settings.extraction_enabled,
+        )
 
         app.state.services_ctx = ctx
         app.state.processor = processor

@@ -16,6 +16,7 @@ async def test_remember_stores_episode_and_returns_stored_status(test_server) ->
         "status": "stored",
         "episode_id": 1,
         "message": "Memory stored.",
+        "extraction_job_id": None,
     }
     assert recall_result.structured_content["total"] == 1
     assert recall_result.structured_content["results"][0]["content"] == "Alice likes oolong tea."

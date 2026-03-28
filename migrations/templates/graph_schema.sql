@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS {schema_name}.edge (
     type_id     INT NOT NULL REFERENCES {schema_name}.edge_type(id),
     weight      FLOAT DEFAULT 1.0,
     properties  JSONB DEFAULT '{}',
-    created_at  TIMESTAMPTZ DEFAULT now()
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (source_id, target_id, type_id)
 );
 
 -- Episodic memory log (raw, append-only)

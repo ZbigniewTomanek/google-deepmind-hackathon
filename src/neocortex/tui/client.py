@@ -50,6 +50,8 @@ class NeoCortexClient:
         """Parse the MCP tool result into a dict."""
         if isinstance(result, dict):
             return result
+        if hasattr(result, "structured_content") and isinstance(result.structured_content, dict):
+            return result.structured_content
         if isinstance(result, list) and result:
             first = result[0]
             if hasattr(first, "text"):
