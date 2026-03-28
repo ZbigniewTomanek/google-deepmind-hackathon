@@ -371,7 +371,7 @@ psql -h localhost -U neocortex -d neocortex -c \
 | 3. chat_with_memory agent | DONE | Created chat_with_memory.py with 4-step workflow (recall, analyze, joke routing, respond+remember); permissions restrict to neocortex-chat MCP only |
 | 4. joke_with_memory subagent | DONE | Created joke_with_memory.py with 3-step workflow (recall preferences, generate joke, remember feedback); permissions restrict to neocortex-joke MCP only |
 | 5. Build pipeline registration | DONE | Added exports to __init__.py; added both builders to build_agents.py; compiles 6 agents successfully |
-| 6. Validate compiled output | TODO | |
+| 6. Validate compiled output | DONE | All permission globs, MCP entries, cross-isolation, and existing agent integrity verified. MCP tool naming deferred to E2E testing (requires live server). |
 
-Last stage completed: Stage 5 — Build pipeline registration
+Last stage completed: Stage 6 — Validate compiled output
 Last updated by: plan-runner-agent

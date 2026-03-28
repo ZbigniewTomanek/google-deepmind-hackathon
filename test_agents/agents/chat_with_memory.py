@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from open_agent_compiler._types import AgentPermissions
+from open_agent_compiler._types import AgentPermissions, ToolPermissions
 from open_agent_compiler.builders import AgentBuilder, SubagentBuilder, WorkflowStepBuilder
 
 
@@ -84,6 +84,7 @@ def build_chat_with_memory(config):
         .mode("primary")
         .config(config)
         .subagent(joke_mem_ref)
+        .tool_permissions(ToolPermissions(mcp=True))
         .preamble(
             "# Chat With Memory Agent\n\n"
             "You are a memory-first conversational agent. Your key behaviors:\n\n"
