@@ -46,6 +46,9 @@ class DomainRouter:
         self._job_app = job_app
         self._classification_threshold = classification_threshold
 
+    async def list_domains(self) -> list[SemanticDomain]:
+        return await self._domain_service.list_domains()
+
     async def route_and_extract(
         self,
         agent_id: str,
