@@ -709,3 +709,13 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion
 - Routing depends on `job_app` existing, which requires `extraction_enabled=True`
 - Therefore: `extraction_enabled=False` implicitly disables routing (no job queue available)
 - No explicit cross-check needed — the `if job_app and settings.domain_routing_enabled` guard handles both cases naturally
+
+---
+
+## Post-Merge: Multimodal Ingestion Integration
+
+After rebasing onto `main` (which now includes the `multi-modal-ingestion` branch from PR #6), the media ingestion pipeline needed reintegration with domain routing.
+
+**Problem**: The `_process_media()` method in `EpisodeProcessor` (used by `process_audio` and `process_video`) was written before domain routing existed. It called `_enqueue_extraction()` but not `_enqueue_routing()`. The text, document, and event pipelines all had routing; media did not.
+
+**Fix**: Added `await self._enqueue_routing(agent_id, episode_id, episode_text, target_schema)` to `_process_media()` after the extraction enqueue, matching the pattern in all other pipelines. The rebase also required merging the `EpisodeProcessor` constructor — both branches added parameters (media services from multimodal, `domain_routing_enabled` from this branch), resolved by keeping both.

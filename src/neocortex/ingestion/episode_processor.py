@@ -279,6 +279,7 @@ class EpisodeProcessor:
             episode_id = await self._store_episode(agent_id, episode_text, source_type, target_schema)
             await self._embed_episode(episode_id, episode_text, agent_id, target_schema)
             await self._enqueue_extraction(agent_id, episode_id, target_schema)
+            await self._enqueue_routing(agent_id, episode_id, episode_text, target_schema)
 
             logger.bind(action_log=True).info(
                 "media_ingested",
