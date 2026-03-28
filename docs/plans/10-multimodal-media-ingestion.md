@@ -679,22 +679,204 @@ Update the ingestion description to mention audio/video support.
 
 ---
 
-## Stage 8: Final Validation
+## Stage 8: E2E Validation Script
 
-**Goal**: End-to-end verification that the entire pipeline works.
+**Goal**: Create an automated end-to-end validation script that starts the ingestion server in mock mode, exercises all media endpoints (plus existing ones for regression), and asserts correct responses. This makes the pipeline reproducibly testable without manual curl invocations.
 
 ### Steps
 
-1. Run full test suite: `uv run pytest tests/ -v`
-2. Start mock server: `NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion`
-3. Upload audio file → verify episode appears in mock store with description
-4. Upload video file → verify episode appears with description
-5. Verify existing text/document/events endpoints still work unchanged
-6. Verify health endpoint still works
-7. Verify 415 for unsupported media types
-8. Verify 413 for oversized uploads
+#### 8.1 — Generate synthetic test fixtures
 
-**Commit**: No commit — validation stage only.
+Create `tests/e2e/fixtures/` with minimal synthetic media files generated via Python (no binary blobs checked in):
+
+Create `tests/e2e/conftest.py`:
+```python
+import wave, struct, tempfile, os
+import pytest
+
+@pytest.fixture(scope="session")
+def synthetic_wav(tmp_path_factory) -> str:
+    """Generate a 1-second mono WAV file (silence)."""
+    path = str(tmp_path_factory.mktemp("fixtures") / "test.wav")
+    with wave.open(path, "w") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(16000)
+        f.writeframes(struct.pack("<" + "h" * 16000, *([0] * 16000)))
+    return path
+
+@pytest.fixture(scope="session")
+def synthetic_mp4(tmp_path_factory) -> str:
+    """Generate a minimal valid MP4 via ffmpeg (1s black, silent). Skip if no ffmpeg."""
+    import shutil
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    path = str(tmp_path_factory.mktemp("fixtures") / "test.mp4")
+    os.system(
+        f'ffmpeg -y -f lavfi -i color=black:s=160x120:d=1 '
+        f'-f lavfi -i anullsrc=r=16000:cl=mono -t 1 '
+        f'-c:v libx264 -crf 51 -c:a aac -b:a 32k -shortest "{path}" '
+        f'-loglevel quiet'
+    )
+    return path
+
+@pytest.fixture(scope="session")
+def oversized_bytes() -> bytes:
+    """Return bytes just over the 100 MB limit for size-rejection tests."""
+    return b"\x00" * (100 * 1024 * 1024 + 1)
+```
+
+#### 8.2 — E2E test suite
+
+Create `tests/e2e/test_media_e2e.py`:
+
+```python
+"""
+End-to-end tests for the media ingestion pipeline.
+
+Starts the ingestion app in mock mode (NEOCORTEX_MOCK_DB=true) via the
+FastAPI TestClient and exercises the full request→response cycle for
+audio and video endpoints, plus regression checks on existing endpoints.
+"""
+import json, pytest
+from fastapi.testclient import TestClient
+
+@pytest.fixture()
+def client():
+    """Create a TestClient against the ingestion app in mock mode."""
+    import os
+    os.environ["NEOCORTEX_MOCK_DB"] = "true"
+    from neocortex.ingestion.app import create_app
+    app = create_app()
+    with TestClient(app) as c:
+        yield c
+
+class TestAudioEndpoint:
+    def test_upload_wav_returns_stored(self, client, synthetic_wav):
+        with open(synthetic_wav, "rb") as f:
+            resp = client.post(
+                "/ingest/audio",
+                files={"file": ("test.wav", f, "audio/wav")},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "stored"
+        assert body["episodes_created"] >= 1
+        assert body.get("media_ref") is not None
+        assert body["media_ref"]["original_filename"] == "test.wav"
+
+    def test_rejects_unsupported_content_type(self, client, tmp_path):
+        fake = tmp_path / "notes.txt"
+        fake.write_text("hello")
+        with open(fake, "rb") as f:
+            resp = client.post(
+                "/ingest/audio",
+                files={"file": ("notes.txt", f, "text/plain")},
+            )
+        assert resp.status_code == 415
+
+    def test_rejects_oversized_upload(self, client, oversized_bytes):
+        resp = client.post(
+            "/ingest/audio",
+            files={"file": ("big.wav", oversized_bytes, "audio/wav")},
+        )
+        assert resp.status_code == 413
+
+class TestVideoEndpoint:
+    def test_upload_mp4_returns_stored(self, client, synthetic_mp4):
+        with open(synthetic_mp4, "rb") as f:
+            resp = client.post(
+                "/ingest/video",
+                files={"file": ("test.mp4", f, "video/mp4")},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "stored"
+        assert body["episodes_created"] >= 1
+        assert body.get("media_ref") is not None
+
+    def test_rejects_unsupported_content_type(self, client, tmp_path):
+        fake = tmp_path / "doc.pdf"
+        fake.write_bytes(b"%PDF-fake")
+        with open(fake, "rb") as f:
+            resp = client.post(
+                "/ingest/video",
+                files={"file": ("doc.pdf", f, "application/pdf")},
+            )
+        assert resp.status_code == 415
+
+class TestRegressionExistingEndpoints:
+    """Ensure adding media endpoints did not break text/document/events."""
+
+    def test_health(self, client):
+        resp = client.get("/health")
+        assert resp.status_code == 200
+
+    def test_ingest_text(self, client):
+        resp = client.post(
+            "/ingest/text",
+            json={"text": "Regression test content", "metadata": {}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "stored"
+
+    def test_ingest_document(self, client):
+        resp = client.post(
+            "/ingest/document",
+            files={"file": ("test.txt", b"doc content", "text/plain")},
+        )
+        assert resp.status_code == 200
+
+    def test_ingest_events(self, client):
+        resp = client.post(
+            "/ingest/events",
+            json={"events": [{"type": "test", "data": "hello"}], "metadata": {}},
+        )
+        assert resp.status_code == 200
+```
+
+#### 8.3 — Shell convenience script
+
+Create `scripts/e2e_media.sh`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Running media ingestion E2E tests ==="
+NEOCORTEX_MOCK_DB=true uv run pytest tests/e2e/test_media_e2e.py -v --tb=short
+echo ""
+echo "=== Running full test suite (regression) ==="
+uv run pytest tests/ -v --tb=short
+echo ""
+echo "✓ All E2E and regression tests passed."
+```
+
+Make executable: `chmod +x scripts/e2e_media.sh`
+
+**Verification**:
+```bash
+bash scripts/e2e_media.sh
+# All tests should pass (video tests skip gracefully if ffmpeg is missing)
+```
+
+**Commit**: `test(media): add automated e2e validation script and test suite`
+
+---
+
+## Stage 9: Final Validation and Cleanup
+
+**Goal**: Run the full automated E2E suite, verify no regressions, confirm the plan is complete, and update the progress tracker.
+
+### Steps
+
+1. Run the e2e script: `bash scripts/e2e_media.sh`
+2. Run full test suite including all prior tests: `uv run pytest tests/ -v`
+3. Verify no lint/type errors: `uv run ruff check src/` (if ruff is configured)
+4. Review that all new files are tracked by git and none contain secrets or large binaries
+5. Confirm documentation from Stage 7 reflects the final implementation (endpoint signatures, settings names, supported formats match the code)
+6. Update the progress tracker below — mark all stages `DONE`
+
+**Commit**: `chore(media): mark multimodal ingestion plan complete`
 
 ---
 
@@ -702,14 +884,15 @@ Update the ingestion description to mention audio/video support.
 
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 1 | Settings, models, media file store | `PENDING` | |
-| 2 | Media compressor (ffmpeg) | `PENDING` | |
-| 3 | Gemini media description service | `PENDING` | |
-| 4 | Extend IngestionProcessor + EpisodeProcessor | `PENDING` | |
-| 5 | API endpoints for audio/video | `PENDING` | |
-| 6 | Unit and integration tests | `PENDING` | |
-| 7 | Documentation | `PENDING` | |
-| 8 | Final validation | `PENDING` | |
+| 1 | Settings, models, media file store | `DONE` | Added 4 settings to MCPSettings, MediaRef/MediaIngestionResult models, MediaFileStore with save/resolve/delete |
+| 2 | Media compressor (ffmpeg) | `DONE` | MediaCompressor with compress_audio/compress_video/probe_duration, CompressedMedia dataclass, ffmpeg availability check, 6 passing tests |
+| 3 | Gemini media description service | `DONE` | MediaDescriptionService with Gemini Files API upload/poll/generate/cleanup, MockMediaDescriptionService, MediaDescription dataclass, audit logging, 7 passing tests |
+| 4 | Extend IngestionProcessor + EpisodeProcessor | `DONE` | Protocol aligned with target_schema, added process_audio/process_video to protocol and EpisodeProcessor with full compress→describe→store→embed→extract pipeline |
+| 5 | API endpoints for audio/video | `DONE` | Added POST /ingest/audio and /ingest/video endpoints with content-type validation, size limits, audit logging; wired media services into app lifespan |
+| 6 | Unit and integration tests | `DONE` | 7 MediaFileStore tests, 11 media ingestion tests (processor + HTTP endpoints), 1 Gemini integration test; 19 new tests total, all passing |
+| 7 | Documentation | `DONE` | Updated development.md with media ingestion section (system requirements, env vars, settings, endpoints, curl examples, storage layout, supported formats); updated CLAUDE.md codebase map with 5 new media files |
+| 8 | E2E validation script and tests | `DONE` | E2E test suite (9 tests: audio/video upload, content-type rejection, size rejection, regression for text/doc/events/health), synthetic fixtures, shell script, MockMediaCompressor for mock mode |
+| 9 | Final validation and cleanup | `DONE` | E2E suite: 9/9 passed; full suite: 380 passed, 5 skipped; ruff: all checks passed; docs verified aligned with implementation |
 
-**Last stage completed**: —
-**Last updated by**: —
+**Last stage completed**: Stage 9 — Final Validation and Cleanup
+**Last updated by**: plan-runner-agent
