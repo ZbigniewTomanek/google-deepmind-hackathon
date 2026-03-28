@@ -13,6 +13,8 @@ class MemoryRepository(Protocol):
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
         """Store a raw episode and return the episode ID."""
 
@@ -77,10 +79,12 @@ class MemoryRepository(Protocol):
         embedding: list[float] | None = None,
         source: str | None = None,
         target_schema: str | None = None,
+        importance: float = 0.5,
     ) -> Node:
         """Upsert by (name, type_id) within the agent's schema.
 
         If a node with the same name AND type_id exists, merge properties and update.
+        Importance uses max semantics — it only goes up.
         Name alone is NOT the uniqueness key — the same name under different types
         creates separate nodes (e.g. 'Serotonin' as Neurotransmitter vs Drug).
         """
@@ -113,11 +117,11 @@ class MemoryRepository(Protocol):
         query: str,
         limit: int = 5,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         """Search nodes by text and/or vector similarity.
 
         Combines text search on node names/content with vector similarity
-        on node embeddings. Returns top-N matching nodes.
+        on node embeddings. Returns top-N matching (node, relevance_score) tuples.
         """
 
     # ── Graph Traversal ──
@@ -135,3 +139,58 @@ class MemoryRepository(Protocol):
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         """Return all edge signatures (source→type→target) in the agent's graph."""
+
+    # ── Access Tracking ──
+
+    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+        """Increment access_count and update last_accessed_at for recalled nodes."""
+
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+        """Increment access_count and update last_accessed_at for recalled episodes."""
+
+    # ── Soft-Forget ──
+
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+        """Soft-delete nodes by setting forgotten=true. Returns count."""
+
+    async def resurrect_node(self, agent_id: str, node_id: int) -> None:
+        """Clear forgotten flag and bump access_count for a re-referenced node."""
+
+    async def identify_forgettable_nodes(
+        self, agent_id: str, activation_threshold: float, importance_floor: float
+    ) -> list[int]:
+        """Return IDs of nodes eligible for soft-forget.
+
+        Uses a practical proxy (access_count == 0 AND stale > 7 days) rather
+        than computing ACT-R activation in SQL. ``activation_threshold`` is
+        accepted for future use but currently unused by both implementations.
+        ``importance_floor`` is applied: nodes with importance >= floor are
+        never forgettable.
+        """
+
+    # ── Episodic Consolidation ──
+
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+        """Mark an episode as consolidated (extraction completed)."""
+
+    # ── Edge Reinforcement ──
+
+    async def reinforce_edges(
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+    ) -> None:
+        """Increment edge weights for traversed edges, capped at ceiling."""
+
+    async def decay_stale_edges(
+        self,
+        agent_id: str,
+        older_than_hours: float = 168.0,
+        decay_factor: float = 0.95,
+        floor: float = 0.1,
+        force: bool = False,
+    ) -> int:
+        """Decay weights of edges not recently reinforced. Returns count of decayed edges.
+
+        Uses last_reinforced_at (not created_at) to target edges that haven't
+        been traversed recently. The force parameter bypasses probabilistic
+        gating for deterministic testing.
+        """

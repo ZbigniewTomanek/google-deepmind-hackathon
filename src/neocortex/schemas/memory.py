@@ -27,6 +27,9 @@ class RecallItem(BaseModel):
     content: str
     item_type: str
     score: float = Field(..., description="Hybrid relevance score")
+    activation_score: float | None = None
+    importance: float | None = None
+    spreading_bonus: float | None = None
     source: str | None = None
     source_kind: Literal["node", "episode"]
     graph_name: str | None = None
@@ -50,6 +53,9 @@ class GraphStats(BaseModel):
     total_nodes: int
     total_edges: int
     total_episodes: int
+    forgotten_nodes: int = 0
+    consolidated_episodes: int = 0
+    avg_activation: float = 0.0
 
 
 class DiscoverResult(BaseModel):

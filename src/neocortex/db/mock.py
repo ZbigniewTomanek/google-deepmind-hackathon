@@ -1,8 +1,14 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
+from neocortex.scoring import (
+    HybridWeights,
+    compute_base_activation,
+    compute_hybrid_score,
+    compute_recency_score,
+)
 
 
 class EpisodeRecord(TypedDict, total=False):
@@ -11,8 +17,13 @@ class EpisodeRecord(TypedDict, total=False):
     content: str
     context: str | None
     source_type: str
+    metadata: dict
     embedding: list[float] | None
     created_at: datetime
+    access_count: int
+    last_accessed_at: datetime
+    importance: float
+    consolidated: bool
 
 
 class InMemoryRepository:
@@ -36,9 +47,15 @@ class InMemoryRepository:
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1
+        now = datetime.now(UTC)
+        episode_metadata = metadata or {}
+        if context:
+            episode_metadata["context"] = context
         self._episodes.append(
             {
                 "id": episode_id,
@@ -46,7 +63,12 @@ class InMemoryRepository:
                 "content": content,
                 "context": context,
                 "source_type": source_type,
-                "created_at": datetime.now(UTC),
+                "metadata": episode_metadata,
+                "created_at": now,
+                "access_count": 0,
+                "last_accessed_at": now,
+                "importance": importance,
+                "consolidated": False,
             }
         )
         return episode_id
@@ -77,8 +99,12 @@ class InMemoryRepository:
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
     ) -> list[RecallItem]:
         query_lower = query.lower()
+        # Must stay in sync with MCPSettings defaults
+        weights = HybridWeights(vector=0.3, text=0.2, recency=0.1, activation=0.25, importance=0.15)
+        half_life = 168.0  # 7 days
         matches: list[RecallItem] = []
 
+        # Match episodes
         for episode in self._episodes:
             if episode["agent_id"] != agent_id:
                 continue
@@ -86,19 +112,79 @@ class InMemoryRepository:
             if query_lower not in content.lower():
                 continue
 
+            created_at = episode.get("created_at", datetime.now(UTC))
+            recency = compute_recency_score(created_at, half_life)
+
+            access_count = episode.get("access_count", 0)
+            last_accessed_at = episode.get("last_accessed_at", created_at)
+            activation = compute_base_activation(access_count, last_accessed_at)
+
+            importance_val = episode.get("importance", 0.5)
+            score = compute_hybrid_score(
+                vector_sim=None,
+                text_rank=None,
+                recency=recency,
+                activation=activation,
+                importance=importance_val,
+                weights=weights,
+            )
+
+            # Consolidated episodes get half the score — graph nodes take priority
+            if episode.get("consolidated", False):
+                score *= 0.5
+
             matches.append(
                 RecallItem(
                     item_id=int(episode["id"]),
                     name=f"Episode #{episode['id']}",
                     content=content,
                     item_type="Episode",
-                    score=1.0,
+                    score=score,
+                    activation_score=activation,
+                    importance=importance_val,
                     source=str(episode["source_type"]),
                     source_kind="episode",
                     graph_name=None,
                 )
             )
 
+        # Match nodes (exclude forgotten)
+        for node in self._nodes.values():
+            if node.forgotten:
+                continue
+            name_match = query_lower in node.name.lower()
+            content_match = node.content and query_lower in node.content.lower()
+            if not (name_match or content_match):
+                continue
+
+            recency = compute_recency_score(node.created_at, half_life)
+            last_acc = node.last_accessed_at or node.created_at
+            activation = compute_base_activation(node.access_count, last_acc)
+            score = compute_hybrid_score(
+                vector_sim=None,
+                text_rank=None,
+                recency=recency,
+                activation=activation,
+                importance=node.importance,
+                weights=weights,
+            )
+
+            matches.append(
+                RecallItem(
+                    item_id=node.id,
+                    name=node.name,
+                    content=node.content or "",
+                    item_type="Node",
+                    score=score,
+                    activation_score=activation,
+                    importance=node.importance,
+                    source=node.source,
+                    source_kind="node",
+                    graph_name=None,
+                )
+            )
+
+        matches.sort(key=lambda item: item.score, reverse=True)
         return matches[:limit]
 
     async def get_node_types(self, agent_id: str | None = None, target_schema: str | None = None) -> list[TypeInfo]:
@@ -127,10 +213,26 @@ class InMemoryRepository:
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         count = sum(1 for e in self._episodes if agent_id is None or e["agent_id"] == agent_id)
+        forgotten_nodes = sum(1 for n in self._nodes.values() if n.forgotten)
+        consolidated_episodes = sum(
+            1
+            for e in self._episodes
+            if (agent_id is None or e["agent_id"] == agent_id) and e.get("consolidated", False)
+        )
+        active_nodes = [n for n in self._nodes.values() if not n.forgotten]
+        if active_nodes:
+            avg_activation = sum(
+                compute_base_activation(n.access_count, n.last_accessed_at or n.created_at) for n in active_nodes
+            ) / len(active_nodes)
+        else:
+            avg_activation = 0.0
         return GraphStats(
             total_nodes=len(self._nodes),
             total_edges=len(self._edges),
             total_episodes=count,
+            forgotten_nodes=forgotten_nodes,
+            consolidated_episodes=consolidated_episodes,
+            avg_activation=round(avg_activation, 4),
         )
 
     async def update_episode_embedding(
@@ -190,7 +292,11 @@ class InMemoryRepository:
                     content=ep["content"],
                     embedding=ep.get("embedding"),
                     source_type=ep.get("source_type"),
-                    metadata={"context": ep.get("context")} if ep.get("context") else {},
+                    metadata=ep.get("metadata", {}),
+                    access_count=ep.get("access_count", 0),
+                    last_accessed_at=ep.get("last_accessed_at"),
+                    importance=ep.get("importance", 0.5),
+                    consolidated=ep.get("consolidated", False),
                     created_at=ep.get("created_at", datetime.now(UTC)),
                 )
         return None
@@ -207,6 +313,7 @@ class InMemoryRepository:
         embedding: list[float] | None = None,
         source: str | None = None,
         target_schema: str | None = None,
+        importance: float = 0.5,
     ) -> Node:
         del target_schema
         props = properties or {}
@@ -214,6 +321,12 @@ class InMemoryRepository:
         for node in self._nodes.values():
             if node.name.lower() == name.lower() and node.type_id == type_id:
                 merged_props = {**node.properties, **props}
+                now = datetime.now(UTC)
+                # Resurrect forgotten nodes on re-upsert
+                new_forgotten = node.forgotten if not node.forgotten else False
+                new_forgotten_at = node.forgotten_at if not node.forgotten else None
+                new_access_count = node.access_count + 1 if node.forgotten else node.access_count
+                new_last_accessed = now if node.forgotten else node.last_accessed_at
                 updated = Node(
                     id=node.id,
                     type_id=node.type_id,
@@ -222,8 +335,13 @@ class InMemoryRepository:
                     properties=merged_props,
                     embedding=embedding or node.embedding,
                     source=source or node.source,
+                    importance=max(node.importance, importance),
+                    access_count=new_access_count,
+                    last_accessed_at=new_last_accessed,
+                    forgotten=new_forgotten,
+                    forgotten_at=new_forgotten_at,
                     created_at=node.created_at,
-                    updated_at=datetime.now(UTC),
+                    updated_at=now,
                 )
                 self._nodes[node.id] = updated
                 return updated
@@ -236,6 +354,7 @@ class InMemoryRepository:
             properties=props,
             embedding=embedding,
             source=source,
+            importance=importance,
             created_at=now,
             updated_at=now,
         )
@@ -245,7 +364,7 @@ class InMemoryRepository:
 
     async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         del target_schema
-        return [n for n in self._nodes.values() if n.name.lower() == name.lower()]
+        return [n for n in self._nodes.values() if n.name.lower() == name.lower() and not n.forgotten]
 
     # ── Edge CRUD ──
 
@@ -298,14 +417,21 @@ class InMemoryRepository:
         query: str,
         limit: int = 5,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         query_lower = query.lower()
-        matches: list[Node] = []
+        matches: list[tuple[Node, float]] = []
         for node in self._nodes.values():
+            if node.forgotten:
+                continue
             name_match = query_lower in node.name.lower()
             content_match = node.content and query_lower in node.content.lower()
             if name_match or content_match:
-                matches.append(node)
+                # Simple text overlap heuristic for relevance score
+                name_score = 1.0 if name_match else 0.0
+                content_score = 0.5 if content_match else 0.0
+                relevance = max(name_score, content_score)
+                matches.append((node, relevance))
+        matches.sort(key=lambda x: x[1], reverse=True)
         return matches[:limit]
 
     # ── Graph Traversal ──
@@ -325,7 +451,11 @@ class InMemoryRepository:
                     elif edge.target_id == nid and edge.source_id not in visited:
                         neighbor_id = edge.source_id
 
-                    if neighbor_id is not None and neighbor_id in self._nodes:
+                    if (
+                        neighbor_id is not None
+                        and neighbor_id in self._nodes
+                        and not self._nodes[neighbor_id].forgotten
+                    ):
                         visited.add(neighbor_id)
                         next_frontier.append(neighbor_id)
                         results.append(
@@ -345,7 +475,108 @@ class InMemoryRepository:
 
     async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
         del target_schema
-        return sorted(n.name for n in self._nodes.values())
+        return sorted(n.name for n in self._nodes.values() if not n.forgotten)
+
+    # ── Soft-Forget ──
+
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+        now = datetime.now(UTC)
+        count = 0
+        for nid in node_ids:
+            node = self._nodes.get(nid)
+            if node is not None and not node.forgotten:
+                self._nodes[nid] = node.model_copy(update={"forgotten": True, "forgotten_at": now})
+                count += 1
+        return count
+
+    async def resurrect_node(self, agent_id: str, node_id: int) -> None:
+        now = datetime.now(UTC)
+        node = self._nodes.get(node_id)
+        if node is not None:
+            self._nodes[node_id] = node.model_copy(
+                update={
+                    "forgotten": False,
+                    "forgotten_at": None,
+                    "access_count": node.access_count + 1,
+                    "last_accessed_at": now,
+                }
+            )
+
+    async def identify_forgettable_nodes(
+        self, agent_id: str, activation_threshold: float, importance_floor: float
+    ) -> list[int]:
+        now = datetime.now(UTC)
+        threshold = now - timedelta(days=7)
+        forgettable = []
+        for node in self._nodes.values():
+            if node.forgotten:
+                continue
+            if node.importance >= importance_floor:
+                continue
+            if node.access_count > 0:
+                continue
+            last_acc = node.last_accessed_at or node.created_at
+            if last_acc >= threshold:
+                continue
+            forgettable.append(node.id)
+        return forgettable
+
+    # ── Episodic Consolidation ──
+
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+        for ep in self._episodes:
+            if ep["id"] == episode_id and ep["agent_id"] == agent_id:
+                ep["consolidated"] = True
+                return
+
+    # ── Access Tracking ──
+
+    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+        now = datetime.now(UTC)
+        for nid in node_ids:
+            node = self._nodes.get(nid)
+            if node is not None:
+                self._nodes[nid] = node.model_copy(
+                    update={"access_count": node.access_count + 1, "last_accessed_at": now}
+                )
+
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+        now = datetime.now(UTC)
+        for ep in self._episodes:
+            if ep["id"] in episode_ids:
+                ep["access_count"] = ep.get("access_count", 0) + 1
+                ep["last_accessed_at"] = now
+
+    # ── Edge Reinforcement ──
+
+    async def reinforce_edges(
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+    ) -> None:
+        now = datetime.now(UTC)
+        for eid in edge_ids:
+            edge = self._edges.get(eid)
+            if edge is not None:
+                new_weight = min(edge.weight + delta, ceiling)
+                self._edges[eid] = edge.model_copy(update={"weight": new_weight, "last_reinforced_at": now})
+
+    async def decay_stale_edges(
+        self,
+        agent_id: str,
+        older_than_hours: float = 168.0,
+        decay_factor: float = 0.95,
+        floor: float = 0.1,
+        force: bool = False,
+    ) -> int:
+        now = datetime.now(UTC)
+        threshold = now - timedelta(hours=older_than_hours)
+        count = 0
+        for eid, edge in list(self._edges.items()):
+            reinforced_at = edge.last_reinforced_at or edge.created_at
+            if reinforced_at < threshold and edge.weight > floor:
+                new_weight = max(edge.weight * decay_factor, floor)
+                self._edges[eid] = edge.model_copy(update={"weight": new_weight})
+                count += 1
+        return count
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         sigs = []

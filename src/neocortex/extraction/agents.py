@@ -131,6 +131,11 @@ def build_extractor_agent(
             "Every relation must use an existing edge type name.",
             "Use the text as the only evidence source — do not invent facts.",
             "Prefer canonical, normalized names for entities.",
+            "Assign an importance score (0.0-1.0) to each entity:\n"
+            "  0.0-0.3: Peripheral, contextual detail\n"
+            "  0.3-0.6: Standard factual entity\n"
+            "  0.6-0.8: Central concept referenced multiple times\n"
+            "  0.8-1.0: Critical domain entity (core drug, disease, mechanism)",
         ),
     )
 
@@ -188,6 +193,8 @@ def build_librarian_agent(
             "Deduplicate entities against the known node list.",
             "Normalize entity names to canonical forms.",
             "Keep identifiers stable and machine-friendly.",
+            "Preserve importance scores from extractor. If merging with an existing node, "
+            "take the maximum importance (knowledge that keeps being referenced is important).",
         ),
     )
 
