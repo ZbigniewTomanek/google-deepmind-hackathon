@@ -182,6 +182,7 @@ async def test_extract_episode_calls_run_extraction():
                 model_name="test-model",
                 thinking_effort="low",
             ),
+            domain_hint=None,
         )
     finally:
         ctx_mod._services = None

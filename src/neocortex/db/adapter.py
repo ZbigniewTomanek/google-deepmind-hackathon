@@ -12,7 +12,7 @@ from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.postgres_service import PostgresService
-from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
+from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
 
 if TYPE_CHECKING:
@@ -229,6 +229,112 @@ class GraphServiceAdapter:
         if self._router is None:
             return []
         return await self._router.route_discover(agent_id)
+
+    async def get_stats_for_schema(self, agent_id: str, schema_name: str) -> GraphStats:
+        if self._pool is None:
+            raise RuntimeError("Connection pool is required for get_stats_for_schema.")
+        return await self._get_stats_in_schema(schema_name, agent_id)
+
+    async def get_type_detail(self, agent_id: str, type_name: str, graph_name: str, kind: str) -> TypeDetail | None:
+        if self._pool is None:
+            raise RuntimeError("Connection pool is required for get_type_detail.")
+
+        if kind == "node":
+            return await self._get_node_type_detail(agent_id, type_name, graph_name)
+        elif kind == "edge":
+            return await self._get_edge_type_detail(agent_id, type_name, graph_name)
+        return None
+
+    async def _get_node_type_detail(self, agent_id: str, type_name: str, schema_name: str) -> TypeDetail | None:
+        assert self._pool is not None
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
+            row = await conn.fetchrow(
+                "SELECT id, name, description FROM node_type WHERE name = $1",
+                type_name,
+            )
+            if row is None:
+                return None
+
+            type_id = int(row["id"])
+            count_row = await conn.fetchrow(
+                "SELECT count(*) AS cnt FROM node WHERE type_id = $1",
+                type_id,
+            )
+            count = int(count_row["cnt"]) if count_row else 0
+
+            # Connected edge types: edge types where nodes of this type participate
+            edge_rows = await conn.fetch(
+                """SELECT DISTINCT et.name FROM edge_type et
+                   JOIN edge e ON e.type_id = et.id
+                   JOIN node n ON (n.id = e.source_id OR n.id = e.target_id)
+                   WHERE n.type_id = $1""",
+                type_id,
+            )
+            connected = [str(r["name"]) for r in edge_rows]
+
+            # Sample node names
+            sample_rows = await conn.fetch(
+                "SELECT name FROM node WHERE type_id = $1 ORDER BY created_at DESC LIMIT 5",
+                type_id,
+            )
+            samples = [str(r["name"]) for r in sample_rows]
+
+        return TypeDetail(
+            id=type_id,
+            name=str(row["name"]),
+            description=str(row["description"]) if row["description"] is not None else None,
+            count=count,
+            connected_edge_types=connected,
+            sample_names=samples,
+        )
+
+    async def _get_edge_type_detail(self, agent_id: str, type_name: str, schema_name: str) -> TypeDetail | None:
+        assert self._pool is not None
+        async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
+            row = await conn.fetchrow(
+                "SELECT id, name, description FROM edge_type WHERE name = $1",
+                type_name,
+            )
+            if row is None:
+                return None
+
+            type_id = int(row["id"])
+            count_row = await conn.fetchrow(
+                "SELECT count(*) AS cnt FROM edge WHERE type_id = $1",
+                type_id,
+            )
+            count = int(count_row["cnt"]) if count_row else 0
+
+            # Connected node types: source and target node types for this edge type
+            node_type_rows = await conn.fetch(
+                """SELECT DISTINCT nt.name FROM node_type nt
+                   JOIN node n ON n.type_id = nt.id
+                   JOIN edge e ON (e.source_id = n.id OR e.target_id = n.id)
+                   WHERE e.type_id = $1""",
+                type_id,
+            )
+            connected = [str(r["name"]) for r in node_type_rows]
+
+            # Sample edge signatures
+            sample_rows = await conn.fetch(
+                """SELECT src.name AS src_name, tgt.name AS tgt_name
+                   FROM edge e
+                   JOIN node src ON src.id = e.source_id
+                   JOIN node tgt ON tgt.id = e.target_id
+                   WHERE e.type_id = $1
+                   ORDER BY e.created_at DESC LIMIT 5""",
+                type_id,
+            )
+            samples = [f"{r['src_name']}→{r['tgt_name']}" for r in sample_rows]
+
+        return TypeDetail(
+            id=type_id,
+            name=str(row["name"]),
+            description=str(row["description"]) if row["description"] is not None else None,
+            count=count,
+            connected_edge_types=connected,
+            sample_names=samples,
+        )
 
     # ── Type Management ──
 

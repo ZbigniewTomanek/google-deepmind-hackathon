@@ -1,7 +1,7 @@
 from typing import Protocol
 
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
-from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
+from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 
 
 class MemoryRepository(Protocol):
@@ -43,6 +43,12 @@ class MemoryRepository(Protocol):
 
     async def get_stats(self, agent_id: str | None = None) -> GraphStats:
         """Return graph summary statistics."""
+
+    async def get_stats_for_schema(self, agent_id: str, schema_name: str) -> GraphStats:
+        """Return stats for a single schema."""
+
+    async def get_type_detail(self, agent_id: str, type_name: str, graph_name: str, kind: str) -> TypeDetail | None:
+        """Return detailed info for a single type: description, connected types, sample names."""
 
     async def update_episode_embedding(
         self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None

@@ -46,6 +46,9 @@ class DomainRouter:
         self._job_app = job_app
         self._classification_threshold = classification_threshold
 
+    async def list_domains(self) -> list[SemanticDomain]:
+        return await self._domain_service.list_domains()
+
     async def route_and_extract(
         self,
         agent_id: str,
@@ -100,7 +103,8 @@ class DomainRouter:
                 )
                 continue
 
-            job_id = await self._enqueue_extraction(agent_id, episode_id, schema_name)
+            hint = f"{domain.name}: {domain.description}"
+            job_id = await self._enqueue_extraction(agent_id, episode_id, schema_name, domain_hint=hint)
             results.append(
                 RoutingResult(
                     domain_slug=match.domain_slug,
@@ -158,7 +162,14 @@ class DomainRouter:
     async def _ensure_schema(self, domain: SemanticDomain, agent_id: str) -> str | None:
         """Get or create the shared schema for a domain. Returns None if unavailable."""
         if domain.schema_name is not None:
-            return domain.schema_name
+            # Verify schema actually exists (seed domains may have name but no schema)
+            if self._schema_mgr is not None:
+                existing = await self._schema_mgr.get_graph(agent_id="shared", purpose=domain.slug)
+                if existing is not None:
+                    return domain.schema_name
+                # Schema name set but schema doesn't exist — fall through to create
+            else:
+                return domain.schema_name
 
         if self._schema_mgr is None:
             return None
@@ -176,7 +187,9 @@ class DomainRouter:
         await self._domain_service.update_schema_name(domain.slug, schema_name)
         return schema_name
 
-    async def _enqueue_extraction(self, agent_id: str, episode_id: int, target_schema: str) -> int | None:
+    async def _enqueue_extraction(
+        self, agent_id: str, episode_id: int, target_schema: str, domain_hint: str | None = None
+    ) -> int | None:
         """Defer an extract_episode task for the target schema.
 
         Episodes live in the agent's personal graph (source_schema=None),
@@ -190,6 +203,7 @@ class DomainRouter:
             episode_ids=[episode_id],
             target_schema=target_schema,
             source_schema=None,  # read from personal graph
+            domain_hint=domain_hint,
         )
         logger.debug(
             "domain_extraction_enqueued",

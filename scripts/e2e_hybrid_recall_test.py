@@ -157,13 +157,19 @@ async def test_recency_boost() -> None:
 
 async def test_discover() -> None:
     """Discover should report stats including our stored episodes."""
-    print("\n--- Discover ---")
-    result = await mcp_call("discover", {})
-    stats = result.get("stats", {})
-    graphs = result.get("graphs", [])
+    print("\n--- Discover (via discover_graphs + discover_ontology) ---")
+    graphs_result = await mcp_call("discover_graphs", {})
+    graphs = graphs_result.get("graphs", [])
+    print(f"  Graphs: {[g['schema_name'] for g in graphs]}")
 
-    print(f"  Stats: {stats}")
-    print(f"  Graphs: {graphs}")
+    if not graphs:
+        raise AssertionError("Expected at least one graph in discover_graphs")
+
+    # Use the first graph to get stats via discover_ontology
+    first_graph = graphs[0]["schema_name"]
+    ontology_result = await mcp_call("discover_ontology", {"graph_name": first_graph})
+    stats = ontology_result.get("stats", {})
+    print(f"  Stats for {first_graph}: {stats}")
 
     episode_count = stats.get("total_episodes", 0)
     if isinstance(episode_count, (int, float)) and episode_count > 0:
@@ -174,7 +180,7 @@ async def test_discover() -> None:
     # Cognitive heuristics stats should be present
     for key in ("forgotten_nodes", "consolidated_episodes", "avg_activation"):
         if key not in stats:
-            raise AssertionError(f"Missing cognitive stat '{key}' in discover stats: {stats}")
+            raise AssertionError(f"Missing cognitive stat '{key}' in discover_ontology stats: {stats}")
     print(
         f"  [PASS] Cognitive stats present: "
         f"forgotten={stats['forgotten_nodes']}, "
