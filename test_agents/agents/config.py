@@ -20,6 +20,7 @@ def build_config():
     mcp_url = os.environ.get("NEOCORTEX_MCP_URL", "http://localhost:8000")
     chat_token = os.environ.get("NEOCORTEX_CHAT_TOKEN", "chat-agent-token")
     joke_token = os.environ.get("NEOCORTEX_JOKE_TOKEN", "joke-agent-token")
+    research_token = os.environ.get("NEOCORTEX_RESEARCH_TOKEN", "research-agent-token")
 
     return (
         ConfigBuilder()
@@ -55,6 +56,11 @@ def build_config():
             name="neocortex-joke",
             url=mcp_url,
             headers={"Authorization": f"Bearer {joke_token}"},
+        )
+        .mcp_server(
+            name="neocortex-research",
+            command="npx",
+            args=["mcp-remote", mcp_url, "--header", f"Authorization:Bearer {research_token}"],
         )
         .compaction(auto=True, prune=True)
         .build()
