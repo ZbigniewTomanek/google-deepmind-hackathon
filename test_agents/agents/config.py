@@ -44,17 +44,17 @@ def build_config():
         )
         .default_model("zai-coding-plan/glm-5")
         # Original single MCP for existing agents (no auth)
-        .mcp_server(name="neocortex", command="npx", args=["mcp-remote", mcp_url])
-        # Per-agent MCP with auth tokens
+        .mcp_server(name="neocortex", url=mcp_url)
+        # Per-agent MCP with auth tokens (remote + headers)
         .mcp_server(
             name="neocortex-chat",
-            command="npx",
-            args=["mcp-remote", mcp_url, "--header", f"Authorization:Bearer {chat_token}"],
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {chat_token}"},
         )
         .mcp_server(
             name="neocortex-joke",
-            command="npx",
-            args=["mcp-remote", mcp_url, "--header", f"Authorization:Bearer {joke_token}"],
+            url=mcp_url,
+            headers={"Authorization": f"Bearer {joke_token}"},
         )
         .compaction(auto=True, prune=True)
         .build()
