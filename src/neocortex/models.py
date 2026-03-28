@@ -25,6 +25,11 @@ class Node(BaseModel):
     properties: dict = {}
     embedding: list[float] | None = None
     source: str | None = None
+    access_count: int = 0
+    last_accessed_at: datetime | None = None
+    importance: float = 0.5
+    forgotten: bool = False
+    forgotten_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -36,6 +41,7 @@ class Edge(BaseModel):
     type_id: int
     weight: float = 1.0
     properties: dict = {}
+    last_reinforced_at: datetime | None = None
     created_at: datetime
 
 
@@ -46,4 +52,8 @@ class Episode(BaseModel):
     embedding: list[float] | None = None
     source_type: str | None = None
     metadata: dict = {}
+    access_count: int = 0
+    last_accessed_at: datetime | None = None
+    importance: float = 0.5
+    consolidated: bool = False
     created_at: datetime

@@ -13,7 +13,7 @@ from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeInfo
-from neocortex.scoring import HybridWeights, compute_hybrid_score, compute_recency_score
+from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
 
 if TYPE_CHECKING:
     from neocortex.graph_router import GraphRouter
@@ -65,27 +65,32 @@ class GraphServiceAdapter:
         content: str,
         context: str | None = None,
         source_type: str = "mcp",
+        metadata: dict | None = None,
+        importance: float = 0.5,
     ) -> int:
-        metadata = {"context": context} if context else {}
+        episode_metadata = metadata or {}
+        if context:
+            episode_metadata["context"] = context
         if self._pool is None or self._router is None:
             episode = await self._graph.create_episode(
                 agent_id=agent_id,
                 content=content,
                 source_type=source_type,
-                metadata=metadata,
+                metadata=episode_metadata,
             )
             return episode.id
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata)
-                   VALUES ($1, $2, $3, $4::jsonb)
+                """INSERT INTO episode (agent_id, content, source_type, metadata, importance)
+                   VALUES ($1, $2, $3, $4::jsonb, $5)
                    RETURNING id""",
                 agent_id,
                 content,
                 source_type,
-                json.dumps(metadata),
+                json.dumps(episode_metadata),
+                importance,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -198,11 +203,21 @@ class GraphServiceAdapter:
 
         schemas = await self._router.route_discover(agent_id)
         totals = GraphStats(total_nodes=0, total_edges=0, total_episodes=0)
+        activation_sum = 0.0
+        active_node_count = 0
         for schema_name in schemas:
             schema_stats = await self._get_stats_in_schema(schema_name, agent_id)
             totals.total_nodes += schema_stats.total_nodes
             totals.total_edges += schema_stats.total_edges
             totals.total_episodes += schema_stats.total_episodes
+            totals.forgotten_nodes += schema_stats.forgotten_nodes
+            totals.consolidated_episodes += schema_stats.consolidated_episodes
+            active_in_schema = schema_stats.total_nodes - schema_stats.forgotten_nodes
+            if active_in_schema > 0:
+                activation_sum += schema_stats.avg_activation * active_in_schema
+                active_node_count += active_in_schema
+        if active_node_count > 0:
+            totals.avg_activation = round(activation_sum / active_node_count, 4)
         return totals
 
     async def list_graphs(self, agent_id: str) -> list[str]:
@@ -273,7 +288,9 @@ class GraphServiceAdapter:
         schema_name = await self._resolve_schema(agent_id, target_schema)
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
-                "SELECT id, agent_id, content, source_type, metadata, created_at " "FROM episode WHERE id = $1",
+                "SELECT id, agent_id, content, source_type, metadata, "
+                "access_count, last_accessed_at, importance, consolidated, created_at "
+                "FROM episode WHERE id = $1",
                 episode_id,
             )
         if row is None:
@@ -295,6 +312,7 @@ class GraphServiceAdapter:
         embedding: list[float] | None = None,
         source: str | None = None,
         target_schema: str | None = None,
+        importance: float = 0.5,
     ) -> Node:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
@@ -325,7 +343,7 @@ class GraphServiceAdapter:
         emb_str = str(embedding) if embedding else None
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
-                "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
+                "SELECT id, type_id, name, content, properties, source, importance, created_at, updated_at "
                 "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
                 name,
                 type_id,
@@ -341,13 +359,21 @@ class GraphServiceAdapter:
                         content = COALESCE($1, content),
                         properties = $2::jsonb,
                         embedding = COALESCE($3::vector, embedding),
+                        importance = GREATEST(importance, $5),
+                        forgotten = false,
+                        forgotten_at = NULL,
+                        access_count = CASE WHEN forgotten THEN access_count + 1 ELSE access_count END,
+                        last_accessed_at = CASE WHEN forgotten THEN now() ELSE last_accessed_at END,
                         updated_at = now()
                        WHERE id = $4
-                       RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
+                       RETURNING id, type_id, name, content, properties, source, importance,
+                                 access_count, last_accessed_at, forgotten, forgotten_at,
+                                 created_at, updated_at""",
                     content,
                     merged_json,
                     emb_str,
                     row["id"],
+                    importance,
                 )
                 if updated_row is None:
                     raise RuntimeError("Failed to update node")
@@ -357,15 +383,18 @@ class GraphServiceAdapter:
                 return Node(**d)
             else:
                 new_row = await conn.fetchrow(
-                    """INSERT INTO node (type_id, name, content, properties, embedding, source)
-                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6)
-                       RETURNING id, type_id, name, content, properties, source, created_at, updated_at""",
+                    """INSERT INTO node (type_id, name, content, properties, embedding, source, importance)
+                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7)
+                       RETURNING id, type_id, name, content, properties, source, importance,
+                                 access_count, last_accessed_at, forgotten, forgotten_at,
+                                 created_at, updated_at""",
                     type_id,
                     name,
                     content,
                     props_json,
                     emb_str,
                     source,
+                    importance,
                 )
                 if new_row is None:
                     raise RuntimeError("Failed to create node")
@@ -383,7 +412,7 @@ class GraphServiceAdapter:
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             rows = await conn.fetch(
                 "SELECT id, type_id, name, content, properties, source, created_at, updated_at "
-                "FROM node WHERE lower(name) = lower($1)",
+                "FROM node WHERE lower(name) = lower($1) AND forgotten = false",
                 name,
             )
         results = []
@@ -462,29 +491,37 @@ class GraphServiceAdapter:
         query: str,
         limit: int = 5,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         if self._pool is None or self._router is None:
             # Fallback: simple text matching via GraphService
             nodes = await self._graph.list_nodes(limit=10000)
             query_lower = query.lower()
-            matches = [
-                n for n in nodes if query_lower in n.name.lower() or (n.content and query_lower in n.content.lower())
-            ]
+            matches: list[tuple[Node, float]] = []
+            for n in nodes:
+                name_match = query_lower in n.name.lower()
+                content_match = n.content and query_lower in n.content.lower()
+                if name_match or content_match:
+                    relevance = 1.0 if name_match else 0.5
+                    matches.append((n, relevance))
+            matches.sort(key=lambda x: x[1], reverse=True)
             return matches[:limit]
 
         schemas = await self._router.route_recall(agent_id)
-        all_results: list[Node] = []
+        all_results: list[tuple[Node, float]] = []
         for schema_name in schemas:
-            nodes = await self._search_nodes_in_schema(schema_name, query, agent_id, limit, query_embedding)
-            all_results.extend(nodes)
-        # Deduplicate by (name, type_id) keeping first occurrence
-        seen: set[tuple[str, int]] = set()
-        deduped: list[Node] = []
-        for node in all_results:
+            results = await self._search_nodes_in_schema(schema_name, query, agent_id, limit, query_embedding)
+            all_results.extend(results)
+        # Deduplicate by (name, type_id) keeping highest-scoring occurrence
+        seen: dict[tuple[str, int], int] = {}
+        deduped: list[tuple[Node, float]] = []
+        for node, score in all_results:
             key = (node.name.lower(), node.type_id)
             if key not in seen:
-                seen.add(key)
-                deduped.append(node)
+                seen[key] = len(deduped)
+                deduped.append((node, score))
+            elif score > deduped[seen[key]][1]:
+                deduped[seen[key]] = (node, score)
+        deduped.sort(key=lambda x: x[1], reverse=True)
         return deduped[:limit]
 
     async def _search_nodes_in_schema(
@@ -494,7 +531,7 @@ class GraphServiceAdapter:
         agent_id: str,
         limit: int,
         query_embedding: list[float] | None = None,
-    ) -> list[Node]:
+    ) -> list[tuple[Node, float]]:
         if self._pool is None:
             raise RuntimeError("Connection pool required")
 
@@ -510,9 +547,10 @@ class GraphServiceAdapter:
                                    ELSE 0
                               END AS vector_sim
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
+                       WHERE forgotten = false
+                         AND (tsv @@ plainto_tsquery('english', $1)
                           OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
-                          OR lower(name) ILIKE '%' || $4 || '%' ESCAPE '\\'
+                          OR lower(name) ILIKE '%' || $4 || '%' ESCAPE '\\')
                        ORDER BY GREATEST(
                            COALESCE(ts_rank(tsv, plainto_tsquery('english', $1)), 0),
                            CASE WHEN embedding IS NOT NULL
@@ -530,10 +568,12 @@ class GraphServiceAdapter:
             else:
                 rows = await conn.fetch(
                     """SELECT id, type_id, name, content, properties, source,
-                              created_at, updated_at
+                              created_at, updated_at,
+                              ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
-                          OR lower(name) ILIKE '%' || $2 || '%' ESCAPE '\\'
+                       WHERE forgotten = false
+                         AND (tsv @@ plainto_tsquery('english', $1)
+                          OR lower(name) ILIKE '%' || $2 || '%' ESCAPE '\\')
                        ORDER BY ts_rank(tsv, plainto_tsquery('english', $1)) DESC
                        LIMIT $3""",
                     query,
@@ -541,15 +581,15 @@ class GraphServiceAdapter:
                     limit,
                 )
 
-        results: list[Node] = []
+        results: list[tuple[Node, float]] = []
         for row in rows:
             d = dict(row)
-            # Remove scoring columns not part of Node model
-            d.pop("text_rank", None)
-            d.pop("vector_sim", None)
+            text_rank = d.pop("text_rank", 0.0) or 0.0
+            vector_sim = d.pop("vector_sim", 0.0) or 0.0
+            relevance = max(float(text_rank), float(vector_sim))
             if isinstance(d.get("properties"), str):
                 d["properties"] = json.loads(d["properties"])
-            results.append(Node(**d))
+            results.append((Node(**d), relevance))
         return results
 
     # ── Graph Traversal ──
@@ -576,7 +616,7 @@ class GraphServiceAdapter:
                         visited.add(neighbor_id)
                         next_frontier.append(neighbor_id)
                         neighbor_node = await self._graph.get_node(neighbor_id)
-                        if neighbor_node is not None:
+                        if neighbor_node is not None and not getattr(neighbor_node, "forgotten", False):
                             edge_id = int(neighbor["edge_id"])
                             edge = await self._graph.get_edge(edge_id)
                             results.append(
@@ -630,7 +670,7 @@ class GraphServiceAdapter:
 
                         node_row = await conn.fetchrow(
                             "SELECT id, type_id, name, content, properties, source, "
-                            "created_at, updated_at FROM node WHERE id = $1",
+                            "created_at, updated_at FROM node WHERE id = $1 AND forgotten = false",
                             neighbor_id,
                         )
                         if node_row is not None:
@@ -658,8 +698,145 @@ class GraphServiceAdapter:
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            rows = await conn.fetch("SELECT name FROM node ORDER BY name")
+            rows = await conn.fetch("SELECT name FROM node WHERE forgotten = false ORDER BY name")
         return [str(row["name"]) for row in rows]
+
+    # ── Access Tracking ──
+
+    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+        if not node_ids:
+            return
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE node SET access_count = access_count + 1, last_accessed_at = now() "
+                "WHERE id = ANY($1::int[])",
+                node_ids,
+            )
+
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+        if not episode_ids:
+            return
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE episode SET access_count = access_count + 1, last_accessed_at = now() "
+                "WHERE id = ANY($1::int[])",
+                episode_ids,
+            )
+
+    # ── Soft-Forget ──
+
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+        if not node_ids:
+            return 0
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            result = await conn.execute(
+                "UPDATE node SET forgotten = true, forgotten_at = now() "
+                "WHERE id = ANY($1::int[]) AND forgotten = false",
+                node_ids,
+            )
+        count = int(result.split()[-1]) if result else 0
+        return count
+
+    async def resurrect_node(self, agent_id: str, node_id: int) -> None:
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE node SET forgotten = false, forgotten_at = NULL, "
+                "access_count = access_count + 1, last_accessed_at = now() "
+                "WHERE id = $1",
+                node_id,
+            )
+
+    async def identify_forgettable_nodes(
+        self, agent_id: str, activation_threshold: float, importance_floor: float
+    ) -> list[int]:
+        if self._pool is None or self._router is None:
+            return []
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            rows = await conn.fetch(
+                "SELECT id FROM node "
+                "WHERE forgotten = false "
+                "AND importance < $1 "
+                "AND access_count = 0 "
+                "AND last_accessed_at < now() - interval '7 days'",
+                importance_floor,
+            )
+        return [int(row["id"]) for row in rows]
+
+    # ── Episodic Consolidation ──
+
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE episode SET consolidated = true WHERE id = $1",
+                episode_id,
+            )
+
+    # ── Edge Reinforcement ──
+
+    async def reinforce_edges(
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+    ) -> None:
+        if not edge_ids:
+            return
+        if self._pool is None or self._router is None:
+            return
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            await conn.execute(
+                "UPDATE edge SET weight = LEAST(weight + $2, $3), last_reinforced_at = now() "
+                "WHERE id = ANY($1::int[])",
+                edge_ids,
+                delta,
+                ceiling,
+            )
+
+    async def decay_stale_edges(
+        self,
+        agent_id: str,
+        older_than_hours: float = 168.0,
+        decay_factor: float = 0.95,
+        floor: float = 0.1,
+        force: bool = False,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            result = await conn.execute(
+                "UPDATE edge SET weight = GREATEST(weight * $1, $2) "
+                "WHERE last_reinforced_at < now() - make_interval(hours => $3) "
+                "AND weight > $2",
+                decay_factor,
+                floor,
+                older_than_hours,
+            )
+        # asyncpg returns "UPDATE N" string
+        count = int(result.split()[-1]) if result else 0
+        return count
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         if self._pool is None or self._router is None:
@@ -682,6 +859,8 @@ class GraphServiceAdapter:
             vector=self._settings.recall_weight_vector,
             text=self._settings.recall_weight_text,
             recency=self._settings.recall_weight_recency,
+            activation=self._settings.recall_weight_activation,
+            importance=self._settings.recall_weight_importance,
         )
         half_life = self._settings.recall_recency_half_life_hours
 
@@ -732,7 +911,25 @@ class GraphServiceAdapter:
             hit = info["hit"]
             created_at = hit.get("created_at")
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(info["vector_sim"], info["text_rank"], recency, weights)
+
+            # Compute activation from access_count and last_accessed_at if available
+            access_count = int(hit.get("access_count") or 0)
+            last_accessed = hit.get("last_accessed_at") or created_at
+            activation = (
+                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                if last_accessed
+                else None
+            )
+            node_importance = float(hit.get("importance") or 0.5)
+
+            score = compute_hybrid_score(
+                info["vector_sim"],
+                info["text_rank"],
+                recency,
+                activation,
+                node_importance,
+                weights,
+            )
             node_results.append(
                 RecallItem(
                     item_id=nid,
@@ -740,6 +937,8 @@ class GraphServiceAdapter:
                     content=str(hit.get("content") or ""),
                     item_type=type_names.get(int(hit["type_id"]), "Unknown"),
                     score=score,
+                    activation_score=activation,
+                    importance=node_importance,
                     source=str(hit["source"]) if hit.get("source") is not None else None,
                     source_kind="node",
                     graph_name=None,
@@ -774,7 +973,27 @@ class GraphServiceAdapter:
             ep = info["episode"]
             created_at = ep.created_at if hasattr(ep, "created_at") else ep.get("created_at")
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(info["vector_sim"], info["text_rank"], recency, weights)
+
+            # Episode activation
+            ep_access = int(ep.access_count if hasattr(ep, "access_count") else ep.get("access_count", 0))
+            ep_last_acc = (
+                ep.last_accessed_at if hasattr(ep, "last_accessed_at") else ep.get("last_accessed_at")
+            ) or created_at
+            activation = (
+                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                if ep_last_acc
+                else None
+            )
+            ep_importance = float(ep.importance if hasattr(ep, "importance") else ep.get("importance", 0.5))
+
+            score = compute_hybrid_score(
+                info["vector_sim"],
+                info["text_rank"],
+                recency,
+                activation,
+                ep_importance,
+                weights,
+            )
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -784,6 +1003,8 @@ class GraphServiceAdapter:
                     content=content,
                     item_type="Episode",
                     score=score,
+                    activation_score=activation,
+                    importance=ep_importance,
                     source=source_type,
                     source_kind="episode",
                     graph_name=None,
@@ -809,6 +1030,8 @@ class GraphServiceAdapter:
             vector=self._settings.recall_weight_vector,
             text=self._settings.recall_weight_text,
             recency=self._settings.recall_weight_recency,
+            activation=self._settings.recall_weight_activation,
+            importance=self._settings.recall_weight_importance,
         )
         half_life = self._settings.recall_recency_half_life_hours
 
@@ -822,10 +1045,12 @@ class GraphServiceAdapter:
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
                               END AS vector_sim,
+                              access_count, last_accessed_at, importance,
                               created_at
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
-                          OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
+                       WHERE forgotten = false
+                         AND (tsv @@ plainto_tsquery('english', $1)
+                          OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3))
                        ORDER BY text_rank DESC NULLS LAST
                        LIMIT $4""",
                     query,
@@ -835,7 +1060,10 @@ class GraphServiceAdapter:
                 )
                 escaped_query = _escape_ilike(query)
                 episode_rows = await conn.fetch(
-                    """SELECT id, content, source_type, created_at,
+                    """SELECT id, content, source_type,
+                              access_count, last_accessed_at, importance,
+                              consolidated,
+                              created_at,
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
@@ -856,9 +1084,11 @@ class GraphServiceAdapter:
                     """SELECT id, name, content, source, type_id,
                               ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
                               NULL::double precision AS vector_sim,
+                              access_count, last_accessed_at, importance,
                               created_at
                        FROM node
-                       WHERE tsv @@ plainto_tsquery('english', $1)
+                       WHERE forgotten = false
+                         AND tsv @@ plainto_tsquery('english', $1)
                        ORDER BY text_rank DESC
                        LIMIT $2""",
                     query,
@@ -866,7 +1096,10 @@ class GraphServiceAdapter:
                 )
                 escaped_query = _escape_ilike(query)
                 episode_rows = await conn.fetch(
-                    """SELECT id, content, source_type, created_at,
+                    """SELECT id, content, source_type,
+                              access_count, last_accessed_at, importance,
+                              consolidated,
+                              created_at,
                               NULL::double precision AS vector_sim
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
@@ -886,7 +1119,24 @@ class GraphServiceAdapter:
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(vector_sim, text_rank, recency, weights)
+
+            access_count = int(row["access_count"] or 0)
+            last_accessed = row["last_accessed_at"] or created_at
+            activation = (
+                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                if last_accessed
+                else None
+            )
+            node_importance = float(row["importance"]) if row["importance"] is not None else 0.5
+
+            score = compute_hybrid_score(
+                vector_sim,
+                text_rank,
+                recency,
+                activation,
+                node_importance,
+                weights,
+            )
             results.append(
                 RecallItem(
                     item_id=int(row["id"]),
@@ -894,6 +1144,8 @@ class GraphServiceAdapter:
                     content=str(row["content"] or ""),
                     item_type=type_names.get(int(row["type_id"]), "Unknown"),
                     score=score,
+                    activation_score=activation,
+                    importance=node_importance,
                     source=str(row["source"]) if row["source"] is not None else None,
                     source_kind="node",
                     graph_name=schema_name,
@@ -904,7 +1156,29 @@ class GraphServiceAdapter:
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
-            score = compute_hybrid_score(vector_sim, None, recency, weights)
+
+            ep_access = int(row["access_count"] or 0)
+            ep_last_acc = row["last_accessed_at"] or created_at
+            activation = (
+                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                if ep_last_acc
+                else None
+            )
+            ep_importance = float(row["importance"]) if row["importance"] is not None else 0.5
+
+            score = compute_hybrid_score(
+                vector_sim,
+                None,
+                recency,
+                activation,
+                ep_importance,
+                weights,
+            )
+
+            # Consolidated episodes get half the score — graph nodes take priority
+            if row.get("consolidated"):
+                score *= 0.5
+
             results.append(
                 RecallItem(
                     item_id=int(row["id"]),
@@ -912,6 +1186,8 @@ class GraphServiceAdapter:
                     content=str(row["content"]),
                     item_type="Episode",
                     score=score,
+                    activation_score=activation,
+                    importance=ep_importance,
                     source=str(row["source_type"]) if row["source_type"] is not None else None,
                     source_kind="episode",
                     graph_name=schema_name,
@@ -1020,7 +1296,13 @@ class GraphServiceAdapter:
             row = await conn.fetchrow("""SELECT
                        (SELECT count(*) FROM node) AS total_nodes,
                        (SELECT count(*) FROM edge) AS total_edges,
-                       (SELECT count(*) FROM episode) AS total_episodes""")
+                       (SELECT count(*) FROM episode) AS total_episodes,
+                       (SELECT count(*) FROM node WHERE forgotten = true) AS forgotten_nodes,
+                       (SELECT count(*) FROM episode WHERE consolidated = true) AS consolidated_episodes,
+                       (SELECT coalesce(avg(access_count), 0) FROM node WHERE forgotten = false) AS avg_access_count""")
+        # NOTE: avg_access_count is a rough proxy for avg_activation.
+        # Computing real ACT-R activation in SQL is impractical; the mock
+        # implementation uses compute_base_activation() for accuracy.
         if row is None:
             raise RuntimeError(f"Failed to fetch graph stats for schema '{schema_name}'.")
 
@@ -1028,6 +1310,9 @@ class GraphServiceAdapter:
             total_nodes=int(row["total_nodes"]),
             total_edges=int(row["total_edges"]),
             total_episodes=int(row["total_episodes"]),
+            forgotten_nodes=int(row["forgotten_nodes"]),
+            consolidated_episodes=int(row["consolidated_episodes"]),
+            avg_activation=round(float(row["avg_access_count"]), 4),
         )
 
 

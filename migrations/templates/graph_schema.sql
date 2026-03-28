@@ -24,41 +24,51 @@ CREATE TABLE IF NOT EXISTS {schema_name}.edge_type (
 
 -- Graph nodes (entities/memories)
 CREATE TABLE IF NOT EXISTS {schema_name}.node (
-    id          SERIAL PRIMARY KEY,
-    type_id     INT NOT NULL REFERENCES {schema_name}.node_type(id),
-    name        TEXT NOT NULL,
-    content     TEXT,
-    properties  JSONB DEFAULT '{}',
-    embedding   vector(768),
-    tsv         tsvector GENERATED ALWAYS AS (
-                    to_tsvector('english', coalesce(name, '') || ' ' || coalesce(content, ''))
-                ) STORED,
-    source      TEXT,
-    created_at  TIMESTAMPTZ DEFAULT now(),
-    updated_at  TIMESTAMPTZ DEFAULT now()
+    id              SERIAL PRIMARY KEY,
+    type_id         INT NOT NULL REFERENCES {schema_name}.node_type(id),
+    name            TEXT NOT NULL,
+    content         TEXT,
+    properties      JSONB DEFAULT '{}',
+    embedding       vector(768),
+    tsv             tsvector GENERATED ALWAYS AS (
+                        to_tsvector('english', coalesce(name, '') || ' ' || coalesce(content, ''))
+                    ) STORED,
+    source          TEXT,
+    access_count    INTEGER DEFAULT 0,
+    last_accessed_at TIMESTAMPTZ DEFAULT now(),
+    importance      FLOAT DEFAULT 0.5,
+    forgotten       BOOLEAN DEFAULT false,
+    forgotten_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Graph edges (relationships between nodes)
 CREATE TABLE IF NOT EXISTS {schema_name}.edge (
-    id          SERIAL PRIMARY KEY,
-    source_id   INT NOT NULL REFERENCES {schema_name}.node(id) ON DELETE CASCADE,
-    target_id   INT NOT NULL REFERENCES {schema_name}.node(id) ON DELETE CASCADE,
-    type_id     INT NOT NULL REFERENCES {schema_name}.edge_type(id),
-    weight      FLOAT DEFAULT 1.0,
-    properties  JSONB DEFAULT '{}',
-    created_at  TIMESTAMPTZ DEFAULT now(),
+    id                  SERIAL PRIMARY KEY,
+    source_id           INT NOT NULL REFERENCES {schema_name}.node(id) ON DELETE CASCADE,
+    target_id           INT NOT NULL REFERENCES {schema_name}.node(id) ON DELETE CASCADE,
+    type_id             INT NOT NULL REFERENCES {schema_name}.edge_type(id),
+    weight              FLOAT DEFAULT 1.0,
+    properties          JSONB DEFAULT '{}',
+    last_reinforced_at  TIMESTAMPTZ DEFAULT now(),
+    created_at          TIMESTAMPTZ DEFAULT now(),
     UNIQUE (source_id, target_id, type_id)
 );
 
 -- Episodic memory log (raw, append-only)
 CREATE TABLE IF NOT EXISTS {schema_name}.episode (
-    id          SERIAL PRIMARY KEY,
-    agent_id    TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    embedding   vector(768),
-    source_type TEXT,
-    metadata    JSONB DEFAULT '{}',
-    created_at  TIMESTAMPTZ DEFAULT now()
+    id              SERIAL PRIMARY KEY,
+    agent_id        TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    embedding       vector(768),
+    source_type     TEXT,
+    metadata        JSONB DEFAULT '{}',
+    access_count    INTEGER DEFAULT 0,
+    last_accessed_at TIMESTAMPTZ DEFAULT now(),
+    importance      FLOAT DEFAULT 0.5,
+    consolidated    BOOLEAN DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Migration tracking (for application-level migrations beyond init)
@@ -105,6 +115,10 @@ CREATE INDEX IF NOT EXISTS idx_{schema_name}_episode_embedding
 -- Node filtering by type
 CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_type
     ON {schema_name}.node (type_id);
+
+-- Partial index for fast filtering of non-forgotten nodes
+CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_forgotten
+    ON {schema_name}.node (forgotten) WHERE forgotten = false;
 
 -- Default node types
 INSERT INTO {schema_name}.node_type (name, description) VALUES
