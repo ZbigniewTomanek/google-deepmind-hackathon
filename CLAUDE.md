@@ -128,11 +128,11 @@ Only messages with `action_log=True` appear in `agent_actions.log`. Use this for
 
 - `scripts/launch.sh` — One-command launcher: kills stale processes, starts PostgreSQL + MCP + ingestion in background, waits for health, prints connection info. Use `--stop` to tear down.
 - `scripts/run_e2e.sh` — E2E test harness: starts services, runs a test script, tears down on exit.
-- `.claude/skills/ingesting-data/scripts/ingest.sh` — Curl wrapper for all ingestion and admin endpoints. Run with `--help` for usage.
+- `.claude/skills/neocortex/scripts/ingest.sh` — Curl wrapper for all ingestion and admin endpoints. Run with `--help` for usage.
 
 ## Skills
 
-- `.claude/skills/ingesting-data/` — Ingestion skill: supported formats, auth setup, shared graph permissions, domain routing, curl examples. Reference files: `ENDPOINTS.md` (full API), `PERMISSIONS.md` (roles & shared graphs).
+- `.claude/skills/neocortex/` — Project skill: DB schema, diagnostic queries, multi-agent setup guide, API endpoints, permissions, debugging playbook, ingestion workflows. Reference files: `DB_SCHEMA.md`, `KNOWN_ISSUES.md`, `ENDPOINTS.md`, `PERMISSIONS.md`.
 
 ## Key References
 
