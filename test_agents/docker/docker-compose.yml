@@ -54,6 +54,7 @@ services:
     network_mode: host
     volumes:
       - ${PROJECT_ROOT}:/workspace
+      - ${PROJECT_ROOT}/../OpenAgentCompiler:/OpenAgentCompiler:ro
       - ${PROJECT_ROOT}/test_agents/build:/app
       - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
