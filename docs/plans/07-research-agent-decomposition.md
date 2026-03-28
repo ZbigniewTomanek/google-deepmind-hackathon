@@ -450,7 +450,7 @@ No commit — validation only.
 | Stage | Description | Status | Notes |
 |-------|-------------|--------|-------|
 | 1 | New ScriptTool implementations (3 scripts) | DONE | Created list_input_files.py, transcribe_local_video.py, transcribe_local_audio.py, parse_local_rss.py; added feedparser dep |
-| 2 | Tool builder functions (4 builders) | PENDING | |
+| 2 | Tool builder functions (4 builders) | DONE | Added build_list_input_files, build_transcribe_local_video, build_transcribe_local_audio, build_parse_local_rss to tools.py |
 | 3 | Config — tokens, MCP servers, shared graph setup | PENDING | Includes setup_shared_graph.sh |
 | 4 | Subagent definitions | PENDING | Shared-graph-only, no personal storage |
 | 5 | Research orchestrator (refactored) | PENDING | |
@@ -459,5 +459,5 @@ No commit — validation only.
 | 8 | Stage runner & API call scripts | PENDING | set -e, fail-fast error handling |
 | 9 | Validation | PENDING | |
 
-Last stage completed: Stage 1 — New ScriptTool implementations
+Last stage completed: Stage 2 — Tool builder functions
 Last updated by: plan-runner-agent
