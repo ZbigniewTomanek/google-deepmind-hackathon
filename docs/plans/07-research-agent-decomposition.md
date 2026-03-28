@@ -453,11 +453,11 @@ No commit — validation only.
 | 2 | Tool builder functions (4 builders) | DONE | Added build_list_input_files, build_transcribe_local_video, build_transcribe_local_audio, build_parse_local_rss to tools.py |
 | 3 | Config — tokens, MCP servers, shared graph setup | DONE | Added 5 tokens, 5 MCP servers (URL+headers), env vars, setup_shared_graph.sh |
 | 4 | Subagent definitions | DONE | Created video_processor.py, audio_processor.py, rss_processor.py — all write to shared graph via MCP |
-| 5 | Research orchestrator (refactored) | PENDING | |
+| 5 | Research orchestrator (refactored) | DONE | Rewrote research.py as routing orchestrator with list-input-files tool + 3 subagent refs; updated __init__.py exports |
 | 6 | Chat-with-extractions agent | PENDING | |
 | 7 | Build pipeline & Docker updates | PENDING | |
 | 8 | Stage runner & API call scripts | PENDING | set -e, fail-fast error handling |
 | 9 | Validation | PENDING | |
 
-Last stage completed: Stage 4 — Subagent definitions
+Last stage completed: Stage 5 — Research orchestrator (refactored)
 Last updated by: plan-runner-agent
