@@ -48,6 +48,26 @@ class MCPSettings(BaseSettings):
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
     recall_vector_distance_threshold: float = 0.5
 
+    # Cognitive heuristic weights (wired in Stage 2+)
+    recall_weight_activation: float = 0.25
+    recall_weight_importance: float = 0.15
+
+    # ACT-R activation parameters
+    activation_decay_rate: float = 0.5
+
+    # Spreading activation
+    spreading_activation_decay: float = 0.6
+    spreading_activation_max_depth: int = 2
+
+    # Soft-forget thresholds
+    forget_activation_threshold: float = 0.05
+    forget_importance_floor: float = 0.3
+
+    # Edge reinforcement
+    edge_reinforcement_delta: float = 0.05
+    edge_weight_floor: float = 0.1
+    edge_weight_ceiling: float = 2.0
+
     # Graph traversal
     recall_traversal_depth: int = 2  # hops from matched node
 
