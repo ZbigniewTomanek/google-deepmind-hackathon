@@ -17,6 +17,7 @@ from agents import (
     build_chat_with_memory,
     build_joke_subagent,
     build_joke_with_memory,
+    build_research_agent,
     build_search_orchestrator,
     build_task_subagent,
 )
@@ -60,6 +61,7 @@ def compile_and_write() -> Path:
         build_joke_subagent(config),
         build_chat_with_memory(config),
         build_joke_with_memory(config),
+        build_research_agent(config),
     ]
 
     writer = OpenCodeWriter(output_dir=BUILD_DIR, scripts_dir=SCRIPTS_DIR)
