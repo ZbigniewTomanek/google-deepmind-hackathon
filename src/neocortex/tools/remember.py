@@ -1,4 +1,5 @@
 from fastmcp import Context
+from loguru import logger
 
 from neocortex.auth.dependencies import get_agent_id_from_context
 from neocortex.schemas.memory import RememberResult
@@ -26,8 +27,24 @@ async def remember(text: str, context: str | None = None, ctx: Context | None = 
         if vector:
             await repo.update_episode_embedding(episode_id, vector, agent_id)
 
+    # Enqueue extraction job if enabled
+    extraction_job_id: int | None = None
+    settings = ctx.lifespan_context["settings"]
+    job_app = ctx.lifespan_context.get("job_app")
+    if job_app and settings.extraction_enabled:
+        extraction_job_id = await job_app.configure_task("extract_episode").defer_async(
+            agent_id=agent_id, episode_ids=[episode_id]
+        )
+        logger.bind(action_log=True).info(
+            "extraction_enqueued",
+            job_id=extraction_job_id,
+            episode_id=episode_id,
+            agent_id=agent_id,
+        )
+
     return RememberResult(
         status="stored",
         episode_id=episode_id,
         message="Memory stored.",
+        extraction_job_id=extraction_job_id,
     )

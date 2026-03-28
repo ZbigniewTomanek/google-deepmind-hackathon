@@ -22,7 +22,8 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     app.py               # App factory with lifespan (reuses create_services)
     routes.py            # POST /ingest/text, /ingest/document, /ingest/events
     protocol.py          # IngestionProcessor protocol
-    stub_processor.py    # Stores raw episodes via MemoryRepository
+    episode_processor.py # Stores episodes + enqueues extraction jobs
+    stub_processor.py    # Backward-compat shim → episode_processor
   tui/                   # Developer TUI for interactive MCP server testing
     app.py               # Textual App with remember/recall/discover modes
     client.py            # MCP client using streamable-HTTP transport
