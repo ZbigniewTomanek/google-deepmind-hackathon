@@ -139,7 +139,7 @@ E2E validation runs weight stability stress test and final Plan 15 scenario gate
 | 3.5 | [E2E Validate: Tool Pipeline](stages/03.5-validate-tool-pipeline.md) | DONE | E2E test + Plan 15 scenario replay (14 scenarios); fixed 2 pre-existing test failures (test_jobs source_schema, test_ingestion_api dev_tokens_file leak) | test(e2e): Plan 15 scenario replay for tool-equipped librarian |
 | 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | DONE | Name-primary node dedup with _types_are_merge_safe; source-target edge dedup; fallback + mock parity; 23 new tests | fix(db): adapter-level dedup safety nets for type drift |
 | 4.5 | [E2E Validate: Safety Nets](stages/04.5-validate-safety-nets.md) | DONE | All 3 E2E suites pass; scenarios 9P+2Pa+3F=11/14 gate pass; 5 homonym detections (correct separations); 2 edge drift catches; SQL fix in test script; no false merges | test(e2e): validate adapter safety nets — no regressions, scenario gate 11/14 |
-| 5 | [Fix Edge Weight Management](stages/05-weight-management.md) | PENDING | P2: Diminishing reinforcement + bounded micro-decay | |
+| 5 | [Fix Edge Weight Management](stages/05-weight-management.md) | DONE | Logarithmic diminishing returns; micro_decay_edges protocol+impl; stale decay 48h/25%; ceiling 1.5; 11 new tests | fix(scoring): bounded edge reinforcement with continuous micro-decay |
 | 5.5 | [E2E Validate: Weight Management](stages/05.5-validate-weight-management.md) | PENDING | E2E: weight stability stress test, final scenario gate | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`

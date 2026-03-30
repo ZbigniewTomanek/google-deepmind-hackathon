@@ -1158,7 +1158,7 @@ class GraphServiceAdapter:
     # ── Edge Reinforcement ──
 
     async def reinforce_edges(
-        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 1.5
     ) -> None:
         if not edge_ids:
             return
@@ -1167,18 +1167,48 @@ class GraphServiceAdapter:
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
+            # Logarithmic diminishing returns: increment shrinks as weight grows
+            # At weight 1.0: +delta/1.0, at 1.2: +delta/2.0, at 1.4: +delta/3.0
             await conn.execute(
-                "UPDATE edge SET weight = LEAST(weight + $2, $3), last_reinforced_at = now() "
+                "UPDATE edge SET "
+                "weight = LEAST(weight + $2 / (1.0 + (weight - 1.0) * 5.0), $3), "
+                "last_reinforced_at = now() "
                 "WHERE id = ANY($1::int[])",
                 edge_ids,
                 delta,
                 ceiling,
             )
 
+    async def micro_decay_edges(
+        self,
+        agent_id: str,
+        exclude_ids: list[int],
+        factor: float = 0.998,
+        floor: float = 0.1,
+        recently_reinforced_hours: float = 1.0,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            result = await conn.execute(
+                "UPDATE edge SET weight = GREATEST(weight * $1, $2) "
+                "WHERE id != ALL($3::int[]) "
+                "AND weight > $2 "
+                "AND last_reinforced_at > now() - make_interval(hours => $4)",
+                factor,
+                floor,
+                exclude_ids or [],
+                recently_reinforced_hours,
+            )
+        count = int(result.split()[-1]) if result else 0
+        return count
+
     async def decay_stale_edges(
         self,
         agent_id: str,
-        older_than_hours: float = 168.0,
+        older_than_hours: float = 48.0,
         decay_factor: float = 0.95,
         floor: float = 0.1,
         force: bool = False,

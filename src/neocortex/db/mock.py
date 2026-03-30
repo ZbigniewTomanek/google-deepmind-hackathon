@@ -746,19 +746,42 @@ class InMemoryRepository:
     # ── Edge Reinforcement ──
 
     async def reinforce_edges(
-        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 1.5
     ) -> None:
         now = datetime.now(UTC)
         for eid in edge_ids:
             edge = self._edges.get(eid)
             if edge is not None:
-                new_weight = min(edge.weight + delta, ceiling)
+                # Logarithmic diminishing returns: increment shrinks as weight grows
+                increment = delta / (1.0 + (edge.weight - 1.0) * 5.0)
+                new_weight = min(edge.weight + increment, ceiling)
                 self._edges[eid] = edge.model_copy(update={"weight": new_weight, "last_reinforced_at": now})
+
+    async def micro_decay_edges(
+        self,
+        agent_id: str,
+        exclude_ids: list[int],
+        factor: float = 0.998,
+        floor: float = 0.1,
+        recently_reinforced_hours: float = 1.0,
+    ) -> int:
+        now = datetime.now(UTC)
+        threshold = now - timedelta(hours=recently_reinforced_hours)
+        count = 0
+        for eid, edge in list(self._edges.items()):
+            if eid in exclude_ids:
+                continue
+            reinforced_at = edge.last_reinforced_at or edge.created_at
+            if reinforced_at > threshold and edge.weight > floor:
+                new_weight = max(edge.weight * factor, floor)
+                self._edges[eid] = edge.model_copy(update={"weight": new_weight})
+                count += 1
+        return count
 
     async def decay_stale_edges(
         self,
         agent_id: str,
-        older_than_hours: float = 168.0,
+        older_than_hours: float = 48.0,
         decay_factor: float = 0.95,
         floor: float = 0.1,
         force: bool = False,

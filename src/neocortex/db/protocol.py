@@ -219,14 +219,29 @@ class MemoryRepository(Protocol):
     # ── Edge Reinforcement ──
 
     async def reinforce_edges(
-        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 1.5
     ) -> None:
-        """Increment edge weights for traversed edges, capped at ceiling."""
+        """Increment edge weights for traversed edges using diminishing returns, capped at ceiling."""
+
+    async def micro_decay_edges(
+        self,
+        agent_id: str,
+        exclude_ids: list[int],
+        factor: float = 0.998,
+        floor: float = 0.1,
+        recently_reinforced_hours: float = 1.0,
+    ) -> int:
+        """Apply small multiplicative decay to recently-active edges (excluding given IDs).
+
+        Targets edges reinforced within ``recently_reinforced_hours`` that are NOT in
+        ``exclude_ids``. This prevents weight stagnation without touching the entire table.
+        Called probabilistically (~25% of recalls). Returns count of decayed edges.
+        """
 
     async def decay_stale_edges(
         self,
         agent_id: str,
-        older_than_hours: float = 168.0,
+        older_than_hours: float = 48.0,
         decay_factor: float = 0.95,
         floor: float = 0.1,
         force: bool = False,

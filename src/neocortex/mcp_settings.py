@@ -76,7 +76,8 @@ class MCPSettings(BaseSettings):
     # Edge reinforcement
     edge_reinforcement_delta: float = 0.05
     edge_weight_floor: float = 0.1
-    edge_weight_ceiling: float = 2.0
+    edge_weight_ceiling: float = 1.5
+    edge_micro_decay_factor: float = 0.998
 
     # Graph traversal
     recall_traversal_depth: int = 2  # hops from matched node
