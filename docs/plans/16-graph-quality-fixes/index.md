@@ -66,20 +66,27 @@ but the per-episode curation handles the critical path.
 
 ## Strategy
 
-**Phase A: Quick Win** (Stage 1)
+**Phase A: Quick Win** (Stage 1 → 1.5)
 Fix the COALESCE bug independently — small change, immediate value.
+E2E validation confirms content updates work through the full pipeline.
 
-**Phase B: Tool-Equipped Librarian** (Stages 2-3)
+**Phase B: Tool-Equipped Librarian** (Stages 2-3 → 3.5)
 The core architectural change. Stage 2 adds read-only retrieval tools so the librarian
 can see the graph. Stage 3 adds mutation tools so it can curate the graph, and rewires
-the pipeline to use tool-driven persistence instead of `_persist_payload()`.
+the pipeline to use tool-driven persistence instead of `_persist_payload()`. Includes
+partial failure handling via `cleanup_partial_curation` and `max_tool_calls` safety bound.
+E2E validation replays Plan 15 scenarios and checks tool call metrics.
 
-**Phase C: Defense in Depth** (Stage 4)
+**Phase C: Defense in Depth** (Stage 4 → 4.5)
 Adapter-level safety nets for when the LLM makes mistakes despite having tools.
-Name-primary node dedup, source-target edge dedup. These are fallbacks, not primary fixes.
+Name-primary node dedup with semantic homonym guard, source-target edge dedup.
+These are fallbacks, not primary fixes.
+E2E validation checks drift/homonym monitoring and confirms no false merges.
 
-**Phase D: Scoring** (Stage 5)
-Fix edge weight creep independently.
+**Phase D: Scoring** (Stage 5 → 5.5)
+Fix edge weight creep independently. Diminishing-returns reinforcement, bounded
+probabilistic micro-decay, tighter stale-edge decay window.
+E2E validation runs weight stability stress test and final Plan 15 scenario gate.
 
 ---
 
@@ -126,10 +133,14 @@ Fix edge weight creep independently.
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | [Fix Node Content Updates](stages/01-content-updates.md) | PENDING | P0: COALESCE SQL fix + prompt | |
+| 1.5 | [E2E Validate: Content Updates](stages/01.5-validate-content-updates.md) | PENDING | E2E: content update scenario + extraction regression | |
 | 2 | [Librarian Retrieval Tools](stages/02-librarian-retrieval.md) | PENDING | P0: Read-only graph query tools via @agent.tool | |
-| 3 | [Librarian Mutation Tools & Pipeline Redesign](stages/03-librarian-mutation.md) | PENDING | P0: Write tools + replace _persist_payload | |
-| 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | PENDING | P1: Defense-in-depth dedup at DB layer | |
-| 5 | [Fix Edge Weight Management](stages/05-weight-management.md) | PENDING | P2: Bounded reinforcement + continuous decay | |
+| 3 | [Librarian Mutation Tools & Pipeline Redesign](stages/03-librarian-mutation.md) | PENDING | P0: Write tools + replace _persist_payload + partial failure handling | |
+| 3.5 | [E2E Validate: Tool Pipeline](stages/03.5-validate-tool-pipeline.md) | PENDING | E2E: Plan 15 scenarios, tool metrics, partial failure recovery | |
+| 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | PENDING | P1: Defense-in-depth dedup with homonym guard | |
+| 4.5 | [E2E Validate: Safety Nets](stages/04.5-validate-safety-nets.md) | PENDING | E2E: drift/homonym monitoring, scenario score comparison | |
+| 5 | [Fix Edge Weight Management](stages/05-weight-management.md) | PENDING | P2: Diminishing reinforcement + bounded micro-decay | |
+| 5.5 | [E2E Validate: Weight Management](stages/05.5-validate-weight-management.md) | PENDING | E2E: weight stability stress test, final scenario gate | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
@@ -155,9 +166,14 @@ To execute this plan, follow this loop for each stage:
 
 Repeat until all stages are DONE or a stage is BLOCKED.
 
+**Validation stages (.5)**: Each .5 stage runs E2E tests and persists results
+to `results/`. A .5 stage gates the next implementation stage — do not proceed
+if validation fails. Fix the preceding stage first.
+
 **Parallelism**: Stages 1 and 5 are independent of the core pipeline work.
 Stages 2 and 3 are sequential (read tools before write tools).
-Stage 4 can run after Stage 3.
+Stage 4 can run after Stage 3.5 passes.
+Validation stages always run after their parent stage.
 
 **If a stage cannot be completed**: mark it BLOCKED in the tracker with a note
 explaining why, and stop. Do not proceed to subsequent stages.
@@ -170,6 +186,18 @@ revise affected stages, and get user confirmation before continuing.
 ## Issues
 
 1. **Pre-existing: Unbounded context to librarian** — `list_all_node_names()` at `pipeline.py:124` passes ALL node names with no LIMIT. Breaks at ~50K nodes. Stage 2 replaces this with bounded tool-based retrieval.
+
+2. **[FIXED] Partial failure risk in tool-driven curation** — Tool calls persist independently; LLM timeout mid-curation leaves orphan nodes/edges. Stage 3 now includes `cleanup_partial_curation` step for idempotent retry.
+
+3. **[FIXED] Stage 4 homonym semantics** — Original name-primary dedup unconditionally merged single-name matches regardless of type compatibility, violating the protocol contract. Now uses `_types_are_merge_safe` semantic guard.
+
+4. **[FIXED] micro_decay_edges scalability** — Original design updated ALL edges per recall (O(n) writes). Now probabilistic (25%) and bounded to recently-reinforced edges only.
+
+5. **[FIXED] Fallback path loses dedup context** — When `librarian_use_tools=False`, the old `known_node_names` was removed with no replacement. Stage 3 now re-injects a bounded (500) name list in fallback mode.
+
+6. **[FIXED] Stale code samples in Stage 3** — `ctx.deps.properties.get("episode_id")` replaced with `ctx.deps.episode_id`. CurationSummary counts now computed from actions via `@model_validator`.
+
+7. **Latency/cost increase** — Tool-equipped librarian may 3-5x pipeline latency. Mitigated with `max_tool_calls=50`. Monitor via Stage 3.5 tool call metrics. If problematic, add batched `find_nodes_by_names` tool.
 
 ---
 

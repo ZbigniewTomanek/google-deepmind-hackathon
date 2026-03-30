@@ -119,14 +119,12 @@ def build_librarian_agent(config=None):
             ctx.deps.agent_id, query, limit=limit,
             query_embedding=embedding,
         )
-        type_names = {}  # cache type_id → name lookups
+        types = await ctx.deps.repo.get_node_types(
+            ctx.deps.agent_id, target_schema=ctx.deps.target_schema
+        )
+        type_names = {t.id: t.name for t in types}
         out = []
         for node, score in results:
-            if node.type_id not in type_names:
-                types = await ctx.deps.repo.get_node_types(
-                    ctx.deps.agent_id, target_schema=ctx.deps.target_schema
-                )
-                type_names = {t.id: t.name for t in types}
             out.append({
                 "node_id": node.id,
                 "name": node.name,
@@ -278,7 +276,9 @@ def build_librarian_agent(config=None):
 **File**: `src/neocortex/extraction/pipeline.py`
 **Lines**: 123-136
 
-Replace the unbounded name list with repo injection:
+Replace the unbounded name list with repo injection. Add `max_tool_calls` to
+bound LLM tool usage — without this, a large extraction could produce 50+ tool
+calls (find + inspect + create per entity), blowing up latency and cost.
 
 ```python
 # BEFORE (unbounded, breaks at scale):
@@ -298,9 +298,15 @@ librarian_result = await librarian_agent.run(
         agent_id=agent_id,
         target_schema=target_schema,
     ),
-    model_settings=lib_cfg.model_settings,
+    model_settings=ModelSettings(
+        **(lib_cfg.model_settings or {}),
+        max_tool_calls=50,  # Safety bound: ~2 calls/entity for 25 entities
+    ),
 )
 ```
+
+The `max_tool_calls` limit prevents runaway tool loops. 50 is generous enough
+for typical episodes (10-15 entities) while preventing pathological cases.
 
 ### 2.5 Update librarian system prompt
 

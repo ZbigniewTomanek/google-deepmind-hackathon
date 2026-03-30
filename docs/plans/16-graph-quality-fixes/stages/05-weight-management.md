@@ -78,27 +78,37 @@ edge_weight_ceiling: float = 1.5          # was 2.0
 The diminishing-returns approach is more principled (first recalls matter most,
 matching real memory). Choose based on implementation preference.
 
-### 5.2 Add continuous micro-decay to ALL edges during recall
+### 5.2 Add bounded micro-decay during recall
 
 **File**: `src/neocortex/tools/recall.py`
 **Lines**: 185-195
 
-After reinforcing traversed edges, apply a small decay to all OTHER edges
-in the same schema. This prevents the stagnation problem where active edges
-never enter the 7-day decay window.
+After reinforcing traversed edges, apply a small decay to non-traversed edges.
+This prevents the stagnation problem where active edges never enter the
+stale-edge decay window.
+
+**Scalability constraint**: A naive `UPDATE edge SET ... WHERE id != ALL(...)`
+touches every edge in the schema on every recall. At 50K+ edges this is an
+O(n) write per query — contradicting the plan's scalability goals.
+
+**Solution**: Make micro-decay probabilistic (25% of recalls) and bound it
+to edges not reinforced recently (last 1 hour), so only the "warm" edges
+that would otherwise stagnate are touched:
 
 ```python
 # Edge reinforcement — strengthen traversed edges
 if traversed_edge_ids:
     await repo.reinforce_edges(agent_id, list(traversed_edge_ids), ...)
 
-# Micro-decay — gently decay all non-traversed edges
-await repo.micro_decay_edges(
-    agent_id,
-    exclude_ids=list(traversed_edge_ids),
-    factor=0.998,  # 0.2% decay per recall
-    floor=settings.edge_weight_floor,
-)
+# Micro-decay — probabilistic, bounded to recently-active edges only
+if random.random() < 0.25:
+    await repo.micro_decay_edges(
+        agent_id,
+        exclude_ids=list(traversed_edge_ids),
+        factor=0.998,  # 0.2% decay per application
+        floor=settings.edge_weight_floor,
+        recently_reinforced_hours=1.0,  # Only edges reinforced in last hour
+    )
 ```
 
 ### 5.3 Add `micro_decay_edges` to protocol and implementations
@@ -109,11 +119,13 @@ await repo.micro_decay_edges(
 async def micro_decay_edges(
     self, agent_id: str, exclude_ids: list[int],
     factor: float = 0.998, floor: float = 0.1,
+    recently_reinforced_hours: float = 1.0,
 ) -> None:
-    """Apply small multiplicative decay to all edges except the given IDs.
+    """Apply small multiplicative decay to recently-active edges (excluding given IDs).
 
-    Called on every recall to prevent weight stagnation. The factor should
-    be close to 1.0 (e.g. 0.998 = 0.2% decay per recall).
+    Targets edges reinforced within `recently_reinforced_hours` that are NOT in
+    `exclude_ids`. This prevents weight stagnation without touching the entire table.
+    Called probabilistically (~25% of recalls).
     """
 ```
 
@@ -121,8 +133,14 @@ async def micro_decay_edges(
 
 ```sql
 UPDATE edge SET weight = GREATEST(weight * $1, $2)
-WHERE id != ALL($3::int[]) AND weight > $2
+WHERE id != ALL($3::int[])
+  AND weight > $2
+  AND last_reinforced_at > now() - make_interval(hours => $4)
 ```
+
+The `last_reinforced_at` filter bounds the update set to edges that were
+recently active (and would otherwise never enter the stale-edge decay window).
+Cold edges are already handled by `decay_stale_edges` (step 5.4).
 
 **File**: `src/neocortex/db/mock.py` — equivalent in-memory implementation.
 

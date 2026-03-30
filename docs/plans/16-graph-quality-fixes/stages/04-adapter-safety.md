@@ -28,7 +28,15 @@ librarian should handle them correctly most of the time.
 **File**: `src/neocortex/db/adapter.py`
 **Lines**: 452-515
 
-Change `upsert_node` to use two-phase lookup:
+Change `upsert_node` to use two-phase lookup with a **semantic guard** to
+avoid merging legitimate homonyms. The protocol contract explicitly states:
+> "the same name under different types creates separate nodes
+> (e.g. 'Serotonin' as Neurotransmitter vs Drug)."
+
+We respect this by only merging when the existing type is semantically close
+to the requested type. "Close" is defined conservatively: same type hierarchy
+prefix (e.g., `Person` / `Employee` share the prefix heuristic) or a curated
+merge-safe list. When in doubt, create separately and log the potential dup.
 
 ```python
 async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
@@ -47,16 +55,38 @@ async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             if r["type_id"] == type_id:
                 row = r
                 break
-        # If no exact match but exactly 1 node exists, reuse it
+
+        # Phase 3: If no exact match but exactly 1 node exists,
+        # check whether the types are semantically compatible before merging.
         if row is None and len(rows) == 1:
-            row = rows[0]
-            logger.bind(action_log=True).info(
-                "node_type_drift_caught",
-                name=name,
-                existing_type_id=row["type_id"],
-                requested_type_id=type_id,
-                agent_id=agent_id,
+            existing_type_id = rows[0]["type_id"]
+            # Load type names for comparison
+            existing_type = await conn.fetchval(
+                "SELECT name FROM node_type WHERE id = $1", existing_type_id
             )
+            requested_type = await conn.fetchval(
+                "SELECT name FROM node_type WHERE id = $1", type_id
+            )
+            if _types_are_merge_safe(existing_type, requested_type):
+                row = rows[0]
+                logger.bind(action_log=True).info(
+                    "node_type_drift_caught",
+                    name=name,
+                    existing_type=existing_type,
+                    requested_type=requested_type,
+                    action="merged",
+                    agent_id=agent_id,
+                )
+            else:
+                # Legitimate homonym — create separate node, log for monitoring
+                logger.bind(action_log=True).info(
+                    "node_homonym_detected",
+                    name=name,
+                    existing_type=existing_type,
+                    requested_type=requested_type,
+                    action="created_separate",
+                    agent_id=agent_id,
+                )
 
     if row is not None:
         # UPDATE path (unchanged from current)
@@ -65,6 +95,40 @@ async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
         # INSERT path (unchanged)
         ...
 ```
+
+Add the merge-safety heuristic as a module-level function:
+
+```python
+# Type pairs that should NOT be auto-merged (known homonym categories)
+_HOMONYM_TYPE_GROUPS = frozenset({
+    frozenset({"Drug", "Neurotransmitter"}),
+    frozenset({"Person", "Organization"}),
+    frozenset({"Language", "Country"}),
+    # Add more as discovered via monitoring logs
+})
+
+def _types_are_merge_safe(existing: str | None, requested: str | None) -> bool:
+    """Return True if two type names likely refer to the same entity
+    (LLM type drift) rather than a legitimate homonym.
+
+    Conservative: returns False when uncertain → creates separate node.
+    """
+    if not existing or not requested:
+        return False
+    if existing == requested:
+        return True
+    pair = frozenset({existing, requested})
+    if pair in _HOMONYM_TYPE_GROUPS:
+        return False  # Known homonym pair — don't merge
+    # Heuristic: if one type name is a substring of the other,
+    # they're likely related (Person/PersonRole, Software/SoftwareTool)
+    e, r = existing.lower(), requested.lower()
+    return e in r or r in e
+```
+
+This is intentionally conservative — when in doubt, create a separate node
+and let the librarian agent (Stages 2-3) handle the merge decision at the
+LLM level. The adapter is the safety net, not the primary dedup mechanism.
 
 ### 4.2 Source-target primary edge dedup in adapter
 
@@ -132,11 +196,15 @@ frequently, it means the librarian agent's prompts need tuning.
 
 ### 4.6 Add tests
 
-- Same name, different type, 1 existing → reuses existing node (no duplicate)
-- Same name, different type, 2+ existing → matches by type (homonym case)
+- Same name, compatible types (Person/Employee), 1 existing → merges (no duplicate)
+- Same name, incompatible types (Drug/Neurotransmitter), 1 existing → creates separate node
+- Same name, substring-related types (Software/SoftwareTool) → merges
+- Same name, different type, 2+ existing → matches by type (multi-homonym case)
 - Same source-target, different edge type, 1 existing → updates existing edge
 - Same source-target, different edge type, 2+ existing → adds normally
-- Content and properties correctly merged in both cases
+- Content and properties correctly merged in merge cases
+- `_types_are_merge_safe` unit tests for all heuristic branches
+- Drift/homonym log entries emitted correctly
 
 ---
 

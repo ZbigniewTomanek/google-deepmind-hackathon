@@ -68,8 +68,7 @@ Add inside `build_librarian_agent()`, after the retrieval tools from Stage 2:
         if ctx.deps.embeddings and content:
             embedding = await ctx.deps.embeddings.embed(content)
 
-        # Get episode_id from the pipeline context for source tracking
-        episode_id = ctx.deps.properties.get("episode_id") if hasattr(ctx.deps, 'properties') else None
+        episode_id = ctx.deps.episode_id
         props = {**(properties or {})}
         if episode_id:
             props["_source_episode"] = episode_id
@@ -138,7 +137,7 @@ Add inside `build_librarian_agent()`, after the retrieval tools from Stage 2:
             target_schema=ctx.deps.target_schema,
         )
 
-        episode_id = ctx.deps.properties.get("episode_id") if hasattr(ctx.deps, 'properties') else None
+        episode_id = ctx.deps.episode_id
         props = {**(properties or {})}
         if episode_id:
             props["_source_episode"] = episode_id
@@ -299,6 +298,9 @@ class CurationSummary(BaseModel):
     This replaces LibrarianPayload — the librarian now executes changes
     via tools and reports what it did, rather than producing a payload
     for blind persistence.
+
+    Counts are computed from the actions list via validator — the LLM
+    only needs to populate `actions` and `summary`, not track counts.
     """
     actions: list[CurationAction] = Field(default_factory=list)
     summary: str = ""
@@ -307,6 +309,16 @@ class CurationSummary(BaseModel):
     entities_archived: int = 0
     edges_created: int = 0
     edges_removed: int = 0
+
+    @model_validator(mode="after")
+    def _recompute_counts(self) -> "CurationSummary":
+        """Derive counts from the actions list so LLM doesn't need to count."""
+        self.entities_created = sum(1 for a in self.actions if a.action == "created_node")
+        self.entities_updated = sum(1 for a in self.actions if a.action == "updated_node")
+        self.entities_archived = sum(1 for a in self.actions if a.action == "archived_node")
+        self.edges_created = sum(1 for a in self.actions if a.action == "created_edge")
+        self.edges_removed = sum(1 for a in self.actions if a.action == "removed_edge")
+        return self
 ```
 
 Update the agent's `output_type`:
@@ -408,7 +420,46 @@ async def run_extraction_pipeline(repo, embeddings, agent_id, episode_id, text, 
     # The librarian's tools handled all persistence
 ```
 
-### 3.7 Keep `_persist_payload` as a fallback
+### 3.7 Handle partial failure in tool-driven curation
+
+With `_persist_payload`, failure was atomic: nothing persisted if the function
+errored. Tool-driven curation makes N independent DB writes. If the LLM call
+fails mid-way (timeout, rate limit), some nodes/edges are already persisted but
+the episode isn't marked consolidated.
+
+**Strategy: idempotent retry via `_source_episode` cleanup.**
+
+Before starting curation, delete any nodes/edges tagged with this episode's ID
+from a prior failed attempt:
+
+```python
+# In pipeline.py, before the librarian run:
+await repo.cleanup_partial_curation(
+    agent_id, episode_id, target_schema=target_schema,
+)
+```
+
+Add `cleanup_partial_curation` to the protocol:
+```python
+async def cleanup_partial_curation(
+    self, agent_id: str, episode_id: int,
+    target_schema: str | None = None,
+) -> int:
+    """Delete nodes and edges tagged with _source_episode = episode_id.
+    Called before retrying a failed curation to ensure idempotency.
+    Returns total items deleted."""
+```
+
+**Adapter SQL:**
+```sql
+DELETE FROM edge WHERE properties->>'_source_episode' = $1::text;
+DELETE FROM node WHERE properties->>'_source_episode' = $1::text;
+```
+
+This makes retries safe: any partial state from the last attempt is cleaned up
+before the librarian starts fresh.
+
+### 3.8 Keep `_persist_payload` as a fallback
 
 Don't delete `_persist_payload` yet — keep it as a fallback for:
 - Non-tool agents (if someone runs with a model that doesn't support tools)
@@ -421,7 +472,24 @@ Add a settings flag:
 librarian_use_tools: bool = True  # False falls back to _persist_payload
 ```
 
-### 3.8 Add structured logging for tool calls
+**Important**: When `librarian_use_tools=False`, the librarian has no dedup
+context (Stage 2 removed `known_node_names`). Re-inject a bounded name list
+in the fallback path:
+
+```python
+if not settings.librarian_use_tools:
+    # Fallback: inject limited dedup context (top 500 by recency)
+    known_names = await repo.list_all_node_names(
+        agent_id, target_schema=target_schema, limit=500,
+    )
+    deps.known_node_names = known_names
+```
+
+This requires keeping `known_node_names` as an `Optional[list[str]] = None`
+field on `LibrarianAgentDeps` and updating `list_all_node_names` to accept
+a `limit` parameter.
+
+### 3.9 Add structured logging for tool calls
 
 Each tool should log its action to the audit trail:
 
@@ -435,12 +503,14 @@ logger.bind(action_log=True).info(
 )
 ```
 
-### 3.9 Add tests
+### 3.10 Add tests
 
 - Test mutation tools against mock repo (create node, update node, archive, edges)
 - Test full pipeline flow: remember → extract → librarian with tools → verify graph state
-- Test fallback to `_persist_payload` when `librarian_use_tools=False`
-- Test CurationSummary output matches actual changes made
+- Test fallback to `_persist_payload` when `librarian_use_tools=False` (with bounded name list)
+- Test CurationSummary validator computes counts from actions
+- Test `cleanup_partial_curation` removes tagged nodes/edges
+- Test retry after partial failure produces clean graph state
 
 ---
 
@@ -472,9 +542,12 @@ uv run pytest tests/ -v
 
 - [ ] 4 mutation tools registered: create_or_update_node, create_or_update_edge, archive_node, remove_edge
 - [ ] `delete_edge` added to protocol and both implementations
+- [ ] `cleanup_partial_curation` added to protocol and both implementations
 - [ ] Pipeline no longer calls `_persist_payload` by default
-- [ ] CurationSummary output model works
-- [ ] Fallback to `_persist_payload` works when `librarian_use_tools=False`
+- [ ] Pipeline calls `cleanup_partial_curation` before librarian run
+- [ ] CurationSummary validator computes counts from actions list
+- [ ] Fallback to `_persist_payload` works when `librarian_use_tools=False` (with bounded names)
+- [ ] `max_tool_calls=50` applied to librarian agent run
 - [ ] Structured logging for all tool calls
 - [ ] Existing tests pass
 
