@@ -12,6 +12,7 @@ from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connectio
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
+from neocortex.normalization import canonicalize_name
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
@@ -518,6 +519,10 @@ class GraphServiceAdapter:
             )
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
+        # Canonicalize the name and extract aliases for registration after insert
+        canonical, canon_aliases = canonicalize_name(name)
+        if canonical:
+            name = canonical
         props_json = json.dumps(props)
         emb_str = str(embedding) if embedding else None
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
@@ -529,6 +534,48 @@ class GraphServiceAdapter:
                 "FROM node WHERE lower(name) = lower($1)",
                 name,
             )
+
+            # Phase 1.5: If no exact match, try alias resolution then trigram.
+            # Only POPULATES `rows` — Phase 2/3 still run on whatever it finds.
+            if not rows:
+                # 1.5a: Check alias table
+                alias_rows = await conn.fetch(
+                    "SELECT n.id, n.type_id, n.name, n.content, n.properties, "
+                    "n.source, n.importance, n.forgotten, n.created_at, n.updated_at "
+                    "FROM node n "
+                    "JOIN node_alias a ON a.node_id = n.id "
+                    "WHERE lower(a.alias) = lower($1) AND n.forgotten = false",
+                    name,
+                )
+                if alias_rows:
+                    rows = list(alias_rows)
+                    logger.bind(action_log=True).info(
+                        "node_alias_resolved",
+                        alias=name,
+                        candidates=[r["name"] for r in rows],
+                        agent_id=agent_id,
+                    )
+                else:
+                    # 1.5b: Trigram similarity fallback
+                    fuzzy_rows = await conn.fetch(
+                        "SELECT id, type_id, name, content, properties, source, "
+                        "importance, forgotten, created_at, updated_at, "
+                        "similarity(name, $1) AS sim "
+                        "FROM node WHERE forgotten = false "
+                        "AND similarity(name, $1) >= $2 "
+                        "ORDER BY sim DESC LIMIT 1",
+                        name,
+                        0.3,
+                    )
+                    if fuzzy_rows:
+                        rows = [fuzzy_rows[0]]
+                        logger.bind(action_log=True).info(
+                            "node_fuzzy_matched",
+                            input=name,
+                            matched=fuzzy_rows[0]["name"],
+                            similarity=float(fuzzy_rows[0]["sim"]),
+                            agent_id=agent_id,
+                        )
 
             row = None
             if rows:
@@ -621,7 +668,17 @@ class GraphServiceAdapter:
                 d = dict(new_row)
                 if isinstance(d.get("properties"), str):
                     d["properties"] = json.loads(d["properties"])
-                return Node(**d)
+                new_node = Node(**d)
+                # Auto-register canonicalization aliases for the new node
+                for alias in canon_aliases:
+                    await conn.execute(
+                        "INSERT INTO node_alias (node_id, alias, source) "
+                        "VALUES ($1, $2, 'canonicalization') "
+                        "ON CONFLICT (alias, node_id) DO NOTHING",
+                        new_node.id,
+                        alias,
+                    )
+                return new_node
 
     async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         if target_schema is None and (self._pool is None or self._router is None):
@@ -636,6 +693,85 @@ class GraphServiceAdapter:
                 name,
             )
         results = []
+        for row in rows:
+            d = dict(row)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append(Node(**d))
+        return results
+
+    # ── Fuzzy Name Matching & Aliases ──
+
+    async def find_nodes_fuzzy(
+        self,
+        agent_id: str,
+        name: str,
+        threshold: float = 0.3,
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[Node, float]]:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            rows = await conn.fetch(
+                "SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source, "
+                "n.importance, n.created_at, n.updated_at, "
+                "similarity(n.name, $1) AS sim "
+                "FROM node n "
+                "WHERE n.forgotten = false "
+                "AND (similarity(n.name, $1) >= $2 "
+                "     OR n.id IN (SELECT node_id FROM node_alias WHERE lower(alias) = lower($1))) "
+                "ORDER BY sim DESC "
+                "LIMIT $3",
+                name,
+                threshold,
+                limit,
+            )
+        results: list[tuple[Node, float]] = []
+        for row in rows:
+            d = dict(row)
+            sim = d.pop("sim", 0.0)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append((Node(**d), float(sim)))
+        return results
+
+    async def register_alias(
+        self,
+        agent_id: str,
+        node_id: int,
+        alias: str,
+        source: str = "extraction",
+        target_schema: str | None = None,
+    ) -> None:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            await conn.execute(
+                "INSERT INTO node_alias (node_id, alias, source) "
+                "VALUES ($1, $2, $3) "
+                "ON CONFLICT (alias, node_id) DO NOTHING",
+                node_id,
+                alias,
+                source,
+            )
+
+    async def resolve_alias(
+        self,
+        agent_id: str,
+        alias: str,
+        target_schema: str | None = None,
+    ) -> list[Node]:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            rows = await conn.fetch(
+                "SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source, "
+                "n.importance, n.forgotten, n.created_at, n.updated_at "
+                "FROM node n "
+                "JOIN node_alias a ON a.node_id = n.id "
+                "WHERE lower(a.alias) = lower($1) "
+                "AND n.forgotten = false",
+                alias,
+            )
+        results: list[Node] = []
         for row in rows:
             d = dict(row)
             if isinstance(d.get("properties"), str):

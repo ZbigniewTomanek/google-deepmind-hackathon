@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS {schema_name}.node (
     updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
+-- Node aliases for name variant resolution
+CREATE TABLE IF NOT EXISTS {schema_name}.node_alias (
+    id          SERIAL PRIMARY KEY,
+    node_id     INT NOT NULL REFERENCES {schema_name}.node(id) ON DELETE CASCADE,
+    alias       TEXT NOT NULL,
+    source      TEXT DEFAULT 'extraction',
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (alias, node_id)
+);
+
 -- Graph edges (relationships between nodes)
 CREATE TABLE IF NOT EXISTS {schema_name}.edge (
     id                  SERIAL PRIMARY KEY,
@@ -91,6 +101,10 @@ CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_tsv
 -- Trigram index on node name for fuzzy matching
 CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_name_trgm
     ON {schema_name}.node USING GIN (name gin_trgm_ops);
+
+-- Alias lookup (case-insensitive)
+CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_alias_lower
+    ON {schema_name}.node_alias (lower(alias));
 
 -- Graph traversal indexes on edges
 CREATE INDEX IF NOT EXISTS idx_{schema_name}_edge_source

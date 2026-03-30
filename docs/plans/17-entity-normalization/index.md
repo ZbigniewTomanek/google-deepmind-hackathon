@@ -112,7 +112,7 @@ Replay Plan 15's 14 scenarios and verify improvement.
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | [Name Canonicalization Utility](stages/01-name-canonicalization.md) | DONE | 4 functions, 38 tests all passing | |
-| 2 | [Fuzzy Name Matching & Alias Table](stages/02-fuzzy-matching.md) | PENDING | | |
+| 2 | [Fuzzy Name Matching & Alias Table](stages/02-fuzzy-matching.md) | DONE | Migration, protocol, adapter (Phase 1.5), mock, 17 tests passing. names_are_similar tightened to require 2+ word overlap to prevent false positives. | |
 | 3 | [Semantic Type Hierarchy](stages/03-type-hierarchy.md) | PENDING | | |
 | 4 | [Edge Type Normalization](stages/04-edge-type-normalization.md) | PENDING | | |
 | 5 | [Enhanced Librarian Dedup Tools](stages/05-librarian-tools.md) | PENDING | | |

@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import asyncpg.exceptions
+from loguru import logger
 
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.graph import GraphInfo
@@ -137,6 +138,48 @@ class SchemaManager:
     def _validate_schema_name(schema_name: str) -> None:
         if not _SCHEMA_NAME_PATTERN.fullmatch(schema_name):
             raise ValueError(f"Invalid graph schema name: {schema_name}")
+
+    async def ensure_alias_tables(self) -> int:
+        """Ensure all registered graph schemas have the node_alias table.
+
+        Uses the per-schema _migration tracking table to apply this only once.
+        Returns the number of schemas migrated.
+        """
+        graphs = await self.list_graphs()
+        migrated = 0
+        for graph in graphs:
+            schema = graph.schema_name
+            try:
+                async with self._pg.pool.acquire() as conn:
+                    already = await conn.fetchval(
+                        f"SELECT 1 FROM {schema}._migration WHERE name = $1",
+                        "009_node_alias",
+                    )
+                    if already:
+                        continue
+                    await conn.execute(f"""
+                        CREATE TABLE IF NOT EXISTS {schema}.node_alias (
+                            id          SERIAL PRIMARY KEY,
+                            node_id     INT NOT NULL REFERENCES {schema}.node(id) ON DELETE CASCADE,
+                            alias       TEXT NOT NULL,
+                            source      TEXT DEFAULT 'extraction',
+                            created_at  TIMESTAMPTZ DEFAULT now(),
+                            UNIQUE (alias, node_id)
+                        )
+                    """)
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{schema}_node_alias_lower
+                            ON {schema}.node_alias (lower(alias))
+                    """)
+                    await conn.execute(
+                        f"INSERT INTO {schema}._migration (name) VALUES ($1)",
+                        "009_node_alias",
+                    )
+                    migrated += 1
+                    logger.info("alias_table_migrated", schema=schema)
+            except Exception:
+                logger.warning("alias_table_migration_failed", schema=schema, exc_info=True)
+        return migrated
 
     def _render_template(self, schema_name: str, is_shared: bool) -> str:
         self._validate_schema_name(schema_name)

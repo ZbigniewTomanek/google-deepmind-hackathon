@@ -5,6 +5,7 @@ from loguru import logger
 
 from neocortex.db.adapter import _types_are_merge_safe
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
+from neocortex.normalization import canonicalize_name, names_are_similar
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import (
     HybridWeights,
@@ -43,6 +44,7 @@ class InMemoryRepository:
         self._next_node_id = 1
         self._next_edge_id = 1
         self._next_type_id = 1
+        self._aliases: dict[str, list[int]] = {}  # lower(alias) -> [node_id, ...]
 
     async def store_episode(
         self,
@@ -388,9 +390,40 @@ class InMemoryRepository:
         del target_schema
         props = properties or {}
 
+        # Canonicalize the name and extract aliases for registration after insert
+        canonical, canon_aliases = canonicalize_name(name)
+        if canonical:
+            name = canonical
+
         # Phase 1: Look up by name only (name-primary dedup)
         # Include forgotten nodes so resurrection-on-upsert still works
         name_matches = [n for n in self._nodes.values() if n.name.lower() == name.lower()]
+
+        # Phase 1.5: If no exact match, try alias resolution then fuzzy matching
+        if not name_matches:
+            # 1.5a: Check alias table
+            alias_key = name.lower()
+            alias_node_ids = self._aliases.get(alias_key, [])
+            alias_nodes = [n for n in self._nodes.values() if n.id in alias_node_ids and not n.forgotten]
+            if alias_nodes:
+                name_matches = alias_nodes
+                logger.bind(action_log=True).info(
+                    "node_alias_resolved",
+                    alias=name,
+                    candidates=[n.name for n in alias_nodes],
+                    agent_id=agent_id,
+                )
+            else:
+                # 1.5b: Fuzzy matching using names_are_similar
+                fuzzy_matches = [n for n in self._nodes.values() if not n.forgotten and names_are_similar(name, n.name)]
+                if fuzzy_matches:
+                    name_matches = [fuzzy_matches[0]]
+                    logger.bind(action_log=True).info(
+                        "node_fuzzy_matched",
+                        input=name,
+                        matched=fuzzy_matches[0].name,
+                        agent_id=agent_id,
+                    )
 
         match: Node | None = None
         # Phase 2: Prefer exact (name, type_id) match
@@ -467,11 +500,73 @@ class InMemoryRepository:
         )
         self._next_node_id += 1
         self._nodes[node.id] = node
+        # Auto-register canonicalization aliases for the new node
+        for alias in canon_aliases:
+            alias_key = alias.lower()
+            self._aliases.setdefault(alias_key, [])
+            if node.id not in self._aliases[alias_key]:
+                self._aliases[alias_key].append(node.id)
         return node
 
     async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         del target_schema
         return [n for n in self._nodes.values() if n.name.lower() == name.lower() and not n.forgotten]
+
+    # ── Fuzzy Name Matching & Aliases ──
+
+    async def find_nodes_fuzzy(
+        self,
+        agent_id: str,
+        name: str,
+        threshold: float = 0.3,
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[Node, float]]:
+        del target_schema, threshold
+        results: list[tuple[Node, float]] = []
+        # Check alias table first
+        alias_key = name.lower()
+        alias_node_ids = self._aliases.get(alias_key, [])
+        seen_ids: set[int] = set()
+        for nid in alias_node_ids:
+            node = self._nodes.get(nid)
+            if node and not node.forgotten and nid not in seen_ids:
+                results.append((node, 1.0))  # Alias match gets perfect score
+                seen_ids.add(nid)
+        # Then check fuzzy name similarity
+        for node in self._nodes.values():
+            if node.forgotten or node.id in seen_ids:
+                continue
+            if names_are_similar(name, node.name):
+                results.append((node, 0.5))
+                seen_ids.add(node.id)
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:limit]
+
+    async def register_alias(
+        self,
+        agent_id: str,
+        node_id: int,
+        alias: str,
+        source: str = "extraction",
+        target_schema: str | None = None,
+    ) -> None:
+        del agent_id, source, target_schema
+        alias_key = alias.lower()
+        self._aliases.setdefault(alias_key, [])
+        if node_id not in self._aliases[alias_key]:
+            self._aliases[alias_key].append(node_id)
+
+    async def resolve_alias(
+        self,
+        agent_id: str,
+        alias: str,
+        target_schema: str | None = None,
+    ) -> list[Node]:
+        del agent_id, target_schema
+        alias_key = alias.lower()
+        node_ids = self._aliases.get(alias_key, [])
+        return [n for n in self._nodes.values() if n.id in node_ids and not n.forgotten]
 
     # ── Edge CRUD ──
 

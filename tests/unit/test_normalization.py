@@ -11,7 +11,6 @@ from neocortex.normalization import (
     normalize_node_type,
 )
 
-
 # --- canonicalize_name ---
 
 
@@ -47,9 +46,7 @@ from neocortex.normalization import (
         ("python", ("Python", [])),
     ],
 )
-def test_canonicalize_name(
-    input_name: str, expected: tuple[str, list[str]]
-) -> None:
+def test_canonicalize_name(input_name: str, expected: tuple[str, list[str]]) -> None:
     assert canonicalize_name(input_name) == expected
 
 
@@ -106,14 +103,16 @@ def test_normalize_node_type(input_type: str, expected: str) -> None:
         # Exact match (case-insensitive)
         ("DataForge", "DataForge", True),
         ("dataforge", "DataForge", True),
-        # Word containment
-        ("Kafka", "Apache Kafka", True),
-        ("Team Atlas", "Atlas", True),  # "Atlas" words ⊆ "Team Atlas" words
+        # Multi-word containment (shorter has 2+ words)
+        ("John Doe", "Doe John", True),
+        # Single-word containment is intentionally rejected to avoid
+        # false positives like "Serotonin" matching "Serotonin Receptor".
+        # PG adapter uses trigram similarity for these cases instead.
+        ("Kafka", "Apache Kafka", False),
+        ("Team Atlas", "Atlas", False),
         # Not similar
         ("Alice", "Bob", False),
         ("Python", "JavaScript", False),
-        # Same words, different order (still contained)
-        ("John Doe", "Doe John", True),
     ],
 )
 def test_names_are_similar(a: str, b: str, expected: bool) -> None:

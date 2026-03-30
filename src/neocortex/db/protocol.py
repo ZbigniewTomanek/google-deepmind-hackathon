@@ -125,6 +125,47 @@ class MemoryRepository(Protocol):
     ) -> bool:
         """Hard-delete an edge by ID. Returns True if deleted."""
 
+    # ── Fuzzy Name Matching & Aliases ──
+
+    async def find_nodes_fuzzy(
+        self,
+        agent_id: str,
+        name: str,
+        threshold: float = 0.3,
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[Node, float]]:
+        """Find nodes by trigram similarity to name.
+        Returns (node, similarity_score) pairs sorted by score descending.
+        Also checks the node_alias table for alias matches.
+        """
+        ...
+
+    async def register_alias(
+        self,
+        agent_id: str,
+        node_id: int,
+        alias: str,
+        source: str = "extraction",
+        target_schema: str | None = None,
+    ) -> None:
+        """Register an alias for an existing node.
+        Silently ignores if alias already exists for same node.
+        """
+        ...
+
+    async def resolve_alias(
+        self,
+        agent_id: str,
+        alias: str,
+        target_schema: str | None = None,
+    ) -> list[Node]:
+        """Resolve an alias to its canonical node(s).
+        Returns all nodes associated with this alias (usually 1).
+        Caller should apply type filtering if multiple matches exist.
+        """
+        ...
+
     # ── Node Search ──
 
     async def search_nodes(

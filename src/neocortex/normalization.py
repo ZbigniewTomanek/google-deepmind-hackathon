@@ -95,6 +95,12 @@ def names_are_similar(a: str, b: str, threshold: float = 0.6) -> bool:
     """Pure-Python string similarity check for use in the mock adapter.
 
     Checks exact match (case-insensitive), then word-level containment.
+    Requires the shorter name to have at least 2 words to prevent
+    false positives like "Serotonin" matching "Serotonin Receptor".
+
+    For single-word containment (e.g., "Kafka" vs "Apache Kafka"),
+    the PostgreSQL adapter uses trigram similarity instead. This function
+    is intentionally conservative to avoid false merges in mock tests.
     """
     a_lower = a.lower()
     b_lower = b.lower()
@@ -103,14 +109,14 @@ def names_are_similar(a: str, b: str, threshold: float = 0.6) -> bool:
     if a_lower == b_lower:
         return True
 
-    # 2. Word-level containment: all words of shorter are in longer
+    # 2. Word-level containment: all words of shorter are in longer,
+    #    but only when the shorter name has 2+ words to avoid false
+    #    positives from single-word matches (e.g., "Serotonin" should
+    #    NOT match "Serotonin Receptor")
     a_words = set(a_lower.split())
     b_words = set(b_lower.split())
     if not a_words or not b_words:
         return False
 
     shorter, longer = (a_words, b_words) if len(a_words) <= len(b_words) else (b_words, a_words)
-    if shorter <= longer:
-        return True
-
-    return False
+    return bool(shorter <= longer and len(shorter) >= 2)
