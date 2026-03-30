@@ -45,6 +45,7 @@ async def test_create_graph(pg_service) -> None:
             "edge_type",
             "episode",
             "node",
+            "node_alias",
             "node_type",
         ]
     finally:

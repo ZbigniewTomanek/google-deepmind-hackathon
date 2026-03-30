@@ -77,18 +77,19 @@ def test_tool_equipped_librarian_has_8_tools() -> None:
     assert "find_node_by_name" in tool_names
     assert "inspect_node_neighborhood" in tool_names
     assert "get_edges_between" in tool_names
-    assert len(tool_names) == 8
+    assert "find_similar_nodes" in tool_names
+    assert len(tool_names) == 9
 
 
-def test_fallback_librarian_has_4_tools() -> None:
-    """Non-tool librarian has only 4 retrieval tools, no mutation tools."""
+def test_fallback_librarian_has_5_tools() -> None:
+    """Non-tool librarian has only 5 retrieval tools, no mutation tools."""
     agent = build_librarian_agent(_TEST_CONFIG, use_tools=False)
     tool_names = sorted(agent._function_toolset.tools.keys())
     assert "create_or_update_node" not in tool_names
     assert "create_or_update_edge" not in tool_names
     assert "archive_node" not in tool_names
     assert "remove_edge" not in tool_names
-    assert len(tool_names) == 4
+    assert len(tool_names) == 5
 
 
 # ── CurationSummary tests ──

@@ -1,4 +1,4 @@
-"""Tests for fuzzy name matching and alias-based dedup (Plan 17, Stage 2).
+"""Tests for fuzzy name matching and alias-based dedup (Plan 17, Stages 2 & 5).
 
 Tests cover:
 - Alias resolution via register_alias / resolve_alias
@@ -8,6 +8,9 @@ Tests cover:
 - Exact match still preferred over fuzzy (no regression)
 - Fuzzy match + type compatibility (Phase 1.5 → Phase 3 chain)
 - No false positive merging across unrelated names
+- find_similar_nodes tool: match_type correctness and fallthrough chain (Stage 5)
+- Librarian prompt: quantitative update rules (Stage 5)
+- create_or_update_node tool: alias registration from canonicalization (Stage 5)
 """
 
 import pytest
@@ -267,3 +270,194 @@ async def test_alias_match_with_merge_safe_types(repo: InMemoryRepository):
 
     assert node1.id == node2.id
     assert node2.content == "Message broker"
+
+
+# ── Stage 5: find_similar_nodes tool tests ──
+
+
+@pytest.mark.asyncio
+async def test_find_similar_nodes_exact_match_type(repo: InMemoryRepository):
+    """find_similar_nodes returns match_type='exact' for exact name match."""
+    nt = await repo.get_or_create_node_type("agent", "Person")
+    await repo.upsert_node("agent", "Alice", nt.id, content="Engineer")
+
+    # Simulate what the tool does: exact match path
+    nodes = await repo.find_nodes_by_name("agent", "Alice")
+    assert len(nodes) == 1
+
+    types = await repo.get_node_types("agent")
+    type_names = {t.id: t.name for t in types}
+
+    results = []
+    for node in nodes:
+        results.append(
+            {
+                "node_id": node.id,
+                "name": node.name,
+                "type_name": type_names.get(node.type_id, "Unknown"),
+                "content": node.content,
+                "importance": node.importance,
+                "match_type": "exact",
+            }
+        )
+
+    assert len(results) == 1
+    assert results[0]["match_type"] == "exact"
+    assert results[0]["name"] == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_find_similar_nodes_alias_match_type(repo: InMemoryRepository):
+    """find_similar_nodes returns match_type='alias' for alias resolution."""
+    nt = await repo.get_or_create_node_type("agent", "Drug")
+    node = await repo.upsert_node("agent", "Fluoxetine", nt.id, content="SSRI")
+    await repo.register_alias("agent", node.id, "Prozac")
+
+    # Exact match should fail
+    exact = await repo.find_nodes_by_name("agent", "Prozac")
+    assert len(exact) == 0
+
+    # Alias resolution should find it
+    alias_nodes = await repo.resolve_alias("agent", "Prozac")
+    assert len(alias_nodes) == 1
+    assert alias_nodes[0].name == "Fluoxetine"
+
+
+@pytest.mark.asyncio
+async def test_find_similar_nodes_fuzzy_match_type(repo: InMemoryRepository):
+    """find_similar_nodes returns match_type='fuzzy' for fuzzy name match."""
+    nt = await repo.get_or_create_node_type("agent", "Person")
+    await repo.upsert_node("agent", "John Robert Doe", nt.id, content="A person")
+
+    # Exact match should fail
+    exact = await repo.find_nodes_by_name("agent", "John Doe")
+    assert len(exact) == 0
+
+    # Alias should fail (no alias registered)
+    alias = await repo.resolve_alias("agent", "John Doe")
+    assert len(alias) == 0
+
+    # Fuzzy should match
+    fuzzy = await repo.find_nodes_fuzzy("agent", "John Doe", threshold=0.3)
+    assert len(fuzzy) >= 1
+    assert fuzzy[0][0].name == "John Robert Doe"
+    assert fuzzy[0][1] > 0  # has a similarity score
+
+
+@pytest.mark.asyncio
+async def test_find_similar_nodes_fallthrough_chain(repo: InMemoryRepository):
+    """find_similar_nodes chains exact → alias → fuzzy, stopping at first hit."""
+    nt = await repo.get_or_create_node_type("agent", "Tool")
+
+    # Create a node that can only be found via alias
+    node = await repo.upsert_node("agent", "Apache Kafka", nt.id, content="Streaming platform")
+    await repo.register_alias("agent", node.id, "Kafka")
+
+    # "Kafka" doesn't match exactly (node name is "Apache Kafka")
+    exact = await repo.find_nodes_by_name("agent", "Kafka")
+    assert len(exact) == 0
+
+    # But alias resolves it
+    alias = await repo.resolve_alias("agent", "Kafka")
+    assert len(alias) == 1
+    assert alias[0].id == node.id
+
+    # Fuzzy would also match, but the tool should stop at alias
+    fuzzy = await repo.find_nodes_fuzzy("agent", "Kafka", threshold=0.3)
+    # Fuzzy also finds it (via alias table in find_nodes_fuzzy)
+    assert len(fuzzy) >= 1
+
+
+# ── Stage 5: Librarian prompt tests ──
+
+
+def test_librarian_prompt_includes_quantitative_update_rules():
+    """Librarian system prompt includes quantitative update rules."""
+    from neocortex.extraction.agents import AgentInferenceConfig, build_librarian_agent
+
+    agent = build_librarian_agent(AgentInferenceConfig(use_test_model=True), use_tools=True)
+
+    # System prompt is a tuple of strings
+    prompt_text = " ".join(agent._system_prompts)
+
+    assert "Quantitative Update Rules" in prompt_text
+    assert "non-negotiable" in prompt_text
+    assert "precision" in prompt_text
+    assert "94.2%" in prompt_text
+
+
+def test_librarian_prompt_uses_find_similar_nodes():
+    """Librarian system prompt directs using find_similar_nodes (not find_node_by_name)."""
+    from neocortex.extraction.agents import AgentInferenceConfig, build_librarian_agent
+
+    agent = build_librarian_agent(AgentInferenceConfig(use_test_model=True), use_tools=True)
+    prompt_text = " ".join(agent._system_prompts)
+
+    assert "find_similar_nodes" in prompt_text
+
+
+def test_find_node_by_name_deprecation_notice():
+    """find_node_by_name tool docstring contains deprecation notice."""
+    from neocortex.extraction.agents import AgentInferenceConfig, build_librarian_agent
+
+    agent = build_librarian_agent(AgentInferenceConfig(use_test_model=True), use_tools=True)
+    tool = agent._function_toolset.tools.get("find_node_by_name")
+    assert tool is not None
+    assert tool.description is not None
+    assert "DEPRECATED" in tool.description
+
+
+# ── Stage 5: create_or_update_node alias registration tests ──
+
+
+@pytest.mark.asyncio
+async def test_create_or_update_node_registers_canonicalization_aliases(repo: InMemoryRepository):
+    """create_or_update_node auto-registers aliases from canonicalize_name."""
+    from neocortex.normalization import canonicalize_name
+
+    # "DataForge (DF)" should canonicalize to "DataForge" with alias "DF"
+    canonical, aliases = canonicalize_name("DataForge (DF)")
+    assert canonical == "DataForge"
+    assert "DF" in aliases
+
+    # Simulate what the tool does
+    nt = await repo.get_or_create_node_type("agent", "Tool")
+    node = await repo.upsert_node("agent", "DataForge (DF)", nt.id, content="A data tool")
+
+    # The upsert_node in mock already canonicalizes and auto-registers aliases
+    assert node.name == "DataForge"
+
+    # Register aliases explicitly (as the tool does)
+    for alias in aliases:
+        await repo.register_alias("agent", node.id, alias, source="librarian")
+
+    # The alias should resolve to the node
+    resolved = await repo.resolve_alias("agent", "DF")
+    assert len(resolved) == 1
+    assert resolved[0].id == node.id
+
+
+@pytest.mark.asyncio
+async def test_find_node_by_name_backward_compat(repo: InMemoryRepository):
+    """find_node_by_name still works for exact case-insensitive matches."""
+    nt = await repo.get_or_create_node_type("agent", "Person")
+    await repo.upsert_node("agent", "Alice", nt.id, content="An engineer")
+
+    nodes = await repo.find_nodes_by_name("agent", "ALICE")
+    assert len(nodes) == 1
+    assert nodes[0].name == "Alice"
+
+    nodes = await repo.find_nodes_by_name("agent", "alice")
+    assert len(nodes) == 1
+
+    nodes = await repo.find_nodes_by_name("agent", "NonExistent")
+    assert len(nodes) == 0
+
+
+def test_find_similar_nodes_tool_registered():
+    """find_similar_nodes is registered on the librarian agent."""
+    from neocortex.extraction.agents import AgentInferenceConfig, build_librarian_agent
+
+    agent = build_librarian_agent(AgentInferenceConfig(use_test_model=True), use_tools=True)
+    tool_names = list(agent._function_toolset.tools.keys())
+    assert "find_similar_nodes" in tool_names

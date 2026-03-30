@@ -115,7 +115,7 @@ Replay Plan 15's 14 scenarios and verify improvement.
 | 2 | [Fuzzy Name Matching & Alias Table](stages/02-fuzzy-matching.md) | DONE | Migration, protocol, adapter (Phase 1.5), mock, 17 tests passing. names_are_similar tightened to require 2+ word overlap to prevent false positives. | |
 | 3 | [Semantic Type Hierarchy](stages/03-type-hierarchy.md) | DONE | 8 merge-safe groups, 4 homonym pairs, _TYPE_TO_GROUP O(1) lookup, prefix fallback retained, 25 new tests + DataForge scenario test | |
 | 4 | [Edge Type Normalization](stages/04-edge-type-normalization.md) | DONE | Edge/node type normalization in adapter + mock, similarity dedup in adapter, 10 new tests passing | |
-| 5 | [Enhanced Librarian Dedup Tools](stages/05-librarian-tools.md) | PENDING | | |
+| 5 | [Enhanced Librarian Dedup Tools](stages/05-librarian-tools.md) | DONE | find_similar_nodes tool (exact→alias→fuzzy→semantic chain), updated prompt with quantitative update rules, deprecated find_node_by_name, auto-alias registration in create_or_update_node, 10 Stage 5 tests + schema_manager test fix | |
 | 6 | [E2E Validation](stages/06-validation.md) | PENDING | | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`

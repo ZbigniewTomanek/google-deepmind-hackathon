@@ -48,25 +48,26 @@ def _make_deps(repo: InMemoryRepository) -> LibrarianAgentDeps:
 
 
 def test_librarian_agent_has_retrieval_tools() -> None:
-    """Verify all 4 retrieval tools are registered on the librarian agent."""
+    """Verify all 5 retrieval tools are registered on the librarian agent."""
     agent = build_librarian_agent(_TEST_CONFIG)
     tool_names = sorted(agent._function_toolset.tools.keys())
     assert "search_existing_nodes" in tool_names
     assert "find_node_by_name" in tool_names
+    assert "find_similar_nodes" in tool_names
     assert "inspect_node_neighborhood" in tool_names
     assert "get_edges_between" in tool_names
 
 
-def test_librarian_agent_has_eight_tools_in_tool_mode() -> None:
-    """Tool-equipped librarian has 4 retrieval + 4 mutation = 8 tools."""
+def test_librarian_agent_has_nine_tools_in_tool_mode() -> None:
+    """Tool-equipped librarian has 5 retrieval + 4 mutation = 9 tools."""
     agent = build_librarian_agent(_TEST_CONFIG, use_tools=True)
-    assert len(agent._function_toolset.tools) == 8
+    assert len(agent._function_toolset.tools) == 9
 
 
-def test_librarian_agent_has_four_tools_in_fallback_mode() -> None:
-    """Fallback librarian has only 4 retrieval tools."""
+def test_librarian_agent_has_five_tools_in_fallback_mode() -> None:
+    """Fallback librarian has only 5 retrieval tools."""
     agent = build_librarian_agent(_TEST_CONFIG, use_tools=False)
-    assert len(agent._function_toolset.tools) == 4
+    assert len(agent._function_toolset.tools) == 5
 
 
 # ── Tool functionality tests via direct mock repo ──
