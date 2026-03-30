@@ -1,0 +1,120 @@
+"""Unit tests for entity name and type normalization utilities."""
+
+from __future__ import annotations
+
+import pytest
+
+from neocortex.normalization import (
+    canonicalize_name,
+    names_are_similar,
+    normalize_edge_type,
+    normalize_node_type,
+)
+
+
+# --- canonicalize_name ---
+
+
+@pytest.mark.parametrize(
+    "input_name, expected",
+    [
+        # Parenthetical alias extraction
+        ("Fluoxetine (Prozac)", ("Fluoxetine", ["Prozac"])),
+        (
+            "serotonin (5-hydroxytryptamine, 5-HT)",
+            ("Serotonin", ["5-hydroxytryptamine, 5-HT"]),
+        ),
+        # No parenthetical
+        ("Apache Kafka", ("Apache Kafka", [])),
+        # Whitespace collapsing + all-lowercase title casing
+        ("  apache   kafka  ", ("Apache Kafka", [])),
+        # Mixed case preservation
+        ("gRPC", ("gRPC", [])),
+        ("iOS", ("iOS", [])),
+        ("PostgreSQL", ("PostgreSQL", [])),
+        ("DataForge", ("DataForge", [])),
+        # Acronym preservation in title-cased output
+        ("5-HT", ("5-HT", [])),
+        # All-lowercase with known acronyms
+        ("rest api", ("REST API", [])),
+        ("sql database", ("SQL Database", [])),
+        # Empty / whitespace-only
+        ("", ("", [])),
+        ("   ", ("", [])),
+        # Single word, already correct
+        ("Python", ("Python", [])),
+        # Single word, all lowercase
+        ("python", ("Python", [])),
+    ],
+)
+def test_canonicalize_name(
+    input_name: str, expected: tuple[str, list[str]]
+) -> None:
+    assert canonicalize_name(input_name) == expected
+
+
+# --- normalize_edge_type ---
+
+
+@pytest.mark.parametrize(
+    "input_type, expected",
+    [
+        ("RelatesTo", "RELATES_TO"),
+        ("relates_to", "RELATES_TO"),
+        ("RELATES_TO", "RELATES_TO"),  # idempotent
+        ("relates-to", "RELATES_TO"),
+        ("hasMember", "HAS_MEMBER"),
+        ("MEMBER_OF", "MEMBER_OF"),  # idempotent
+        ("RELATES TO", "RELATES_TO"),  # space → underscore
+        ("relates  to", "RELATES_TO"),  # multiple spaces
+        ("usedBy", "USED_BY"),
+    ],
+)
+def test_normalize_edge_type(input_type: str, expected: str) -> None:
+    result = normalize_edge_type(input_type)
+    assert result == expected
+    # Verify idempotent
+    assert normalize_edge_type(result) == result
+
+
+# --- normalize_node_type ---
+
+
+@pytest.mark.parametrize(
+    "input_type, expected",
+    [
+        ("SoftwareTool", "SoftwareTool"),  # idempotent
+        ("software_tool", "SoftwareTool"),  # snake_case → PascalCase
+        ("SOFTWARE_TOOL", "SoftwareTool"),  # ALL_CAPS with separator → PascalCase
+        ("SOFTWARETOOL", "SOFTWARETOOL"),  # ALL_CAPS no separator → preserve
+        ("Person", "Person"),  # idempotent
+        ("gRPC", "gRPC"),  # mixed case → preserve
+        ("software tool", "SoftwareTool"),  # space-separated → PascalCase
+    ],
+)
+def test_normalize_node_type(input_type: str, expected: str) -> None:
+    result = normalize_node_type(input_type)
+    assert result == expected
+
+
+# --- names_are_similar ---
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    [
+        # Exact match (case-insensitive)
+        ("DataForge", "DataForge", True),
+        ("dataforge", "DataForge", True),
+        # Word containment
+        ("Kafka", "Apache Kafka", True),
+        ("Team Atlas", "Atlas", True),  # "Atlas" words ⊆ "Team Atlas" words
+        # Not similar
+        ("Alice", "Bob", False),
+        ("Python", "JavaScript", False),
+        # Same words, different order (still contained)
+        ("John Doe", "Doe John", True),
+    ],
+)
+def test_names_are_similar(a: str, b: str, expected: bool) -> None:
+    assert names_are_similar(a, b) == expected

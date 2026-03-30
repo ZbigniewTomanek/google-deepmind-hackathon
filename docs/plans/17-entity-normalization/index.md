@@ -111,7 +111,7 @@ Replay Plan 15's 14 scenarios and verify improvement.
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Name Canonicalization Utility](stages/01-name-canonicalization.md) | PENDING | | |
+| 1 | [Name Canonicalization Utility](stages/01-name-canonicalization.md) | DONE | 4 functions, 38 tests all passing | |
 | 2 | [Fuzzy Name Matching & Alias Table](stages/02-fuzzy-matching.md) | PENDING | | |
 | 3 | [Semantic Type Hierarchy](stages/03-type-hierarchy.md) | PENDING | | |
 | 4 | [Edge Type Normalization](stages/04-edge-type-normalization.md) | PENDING | | |
