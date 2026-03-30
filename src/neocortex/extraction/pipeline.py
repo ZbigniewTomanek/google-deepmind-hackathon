@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from pydantic_ai.usage import UsageLimits
 
 from neocortex.extraction.agents import (
     AgentInferenceConfig,
@@ -86,6 +87,10 @@ async def run_extraction(
         node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
         edge_types = await repo.get_edge_types(agent_id, target_schema=target_schema)
 
+        # Build type description dicts for richer context
+        node_type_descs = {t.name: (t.description or "") for t in node_types}
+        edge_type_descs = {t.name: (t.description or "") for t in edge_types}
+
         # 2. Ontology stage
         ontology_result = await ontology_agent.run(
             f"Analyze this text and propose ontology extensions:\n\n{text}",
@@ -93,6 +98,8 @@ async def run_extraction(
                 episode_text=text,
                 existing_node_types=[t.name for t in node_types],
                 existing_edge_types=[t.name for t in edge_types],
+                node_type_descriptions=node_type_descs,
+                edge_type_descriptions=edge_type_descs,
                 domain_hint=domain_hint,
             ),
             model_settings=ont_cfg.model_settings,
@@ -107,6 +114,8 @@ async def run_extraction(
         # Reload types (now includes newly created)
         node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
         edge_types = await repo.get_edge_types(agent_id, target_schema=target_schema)
+        node_type_descs = {t.name: (t.description or "") for t in node_types}
+        edge_type_descs = {t.name: (t.description or "") for t in edge_types}
 
         # 4. Extraction stage
         extraction_result = await extractor_agent.run(
@@ -115,13 +124,14 @@ async def run_extraction(
                 episode_text=text,
                 node_types=[t.name for t in node_types],
                 edge_types=[t.name for t in edge_types],
+                node_type_descriptions=node_type_descs,
+                edge_type_descriptions=edge_type_descs,
                 domain_hint=domain_hint,
             ),
             model_settings=ext_cfg.model_settings,
         )
 
-        # 5. Librarian stage
-        known_names = await repo.list_all_node_names(agent_id, target_schema=target_schema)
+        # 5. Librarian stage (tools search graph on demand — no unbounded name list)
         librarian_result = await librarian_agent.run(
             "Normalize and deduplicate the extracted data.",
             deps=LibrarianAgentDeps(
@@ -130,9 +140,13 @@ async def run_extraction(
                 edge_types=[t.name for t in edge_types],
                 extracted_entities=extraction_result.output.entities,
                 extracted_relations=extraction_result.output.relations,
-                known_node_names=known_names,
+                repo=repo,
+                embeddings=embeddings,
+                agent_id=agent_id,
+                target_schema=target_schema,
             ),
             model_settings=lib_cfg.model_settings,
+            usage_limits=UsageLimits(tool_calls_limit=50),
         )
 
         # 6. Build fallback map from extractor descriptions (safety net for when
