@@ -36,8 +36,9 @@ Replace the prefix heuristic with a group-based approach:
 # Types within the same group are considered merge-safe (likely type drift, not homonyms)
 _MERGE_SAFE_TYPE_GROUPS: list[frozenset[str]] = [
     # Software entities — LLM often oscillates between these
-    frozenset({"Tool", "Project", "Software", "SoftwareTool", "Framework",
-               "Library", "Platform", "Application", "Service"}),
+    # NOTE: Service, Application, Platform excluded — they are semantically
+    # distinct enough that same-name entities may legitimately differ.
+    frozenset({"Tool", "Project", "Software", "SoftwareTool", "Framework", "Library"}),
     # People — role vs person type drift
     frozenset({"Person", "PersonRole", "TeamMember", "Employee",
                "Researcher", "Engineer", "Scientist"}),
@@ -50,7 +51,9 @@ _MERGE_SAFE_TYPE_GROUPS: list[frozenset[str]] = [
     # Documents / Resources
     frozenset({"Document", "Resource", "Article", "Paper", "Report"}),
     # Events / Milestones
-    frozenset({"Event", "Milestone", "Deadline", "Meeting", "Sprint"}),
+    # NOTE: Meeting, Sprint, Deadline excluded — a meeting ABOUT a sprint
+    # is not the sprint. These have specific semantics worth preserving.
+    frozenset({"Event", "Milestone"}),
     # Metrics / Measurements
     frozenset({"Metric", "Measurement", "Score", "KPI", "Statistic"}),
 ]
@@ -109,8 +112,7 @@ _HOMONYM_TYPE_GROUPS: frozenset[frozenset[str]] = frozenset({
     frozenset({"Drug", "Neurotransmitter"}),
     frozenset({"Person", "Organization"}),
     frozenset({"Language", "Country"}),
-    frozenset({"Event", "Prevent"}),     # substring false positive guard
-    frozenset({"Metric", "MetricUnit"}), # a metric and its unit are different
+    frozenset({"Metric", "MetricUnit"}), # a metric and its unit are different (prefix guard)
 })
 ```
 
@@ -135,6 +137,11 @@ assert _types_are_merge_safe("Drug", "Neurotransmitter") is False
 
 # Prefix heuristic still works for unlisted types
 assert _types_are_merge_safe("CustomType", "CustomTypeExtended") is True
+
+# Types excluded from groups — too distinct to auto-merge
+assert _types_are_merge_safe("Service", "Application") is False  # not in software group
+assert _types_are_merge_safe("Meeting", "Sprint") is False       # not in events group
+assert _types_are_merge_safe("Platform", "Library") is False     # Platform excluded
 
 # Unknown types default to conservative (no merge)
 assert _types_are_merge_safe("Aardvark", "Zebra") is False

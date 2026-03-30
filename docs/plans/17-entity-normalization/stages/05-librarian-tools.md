@@ -71,19 +71,20 @@ async def find_similar_nodes(
     if results:
         return results
 
-    # 2. Alias resolution
-    alias_node = await ctx.deps.repo.resolve_alias(
+    # 2. Alias resolution (may return multiple nodes for ambiguous aliases)
+    alias_nodes = await ctx.deps.repo.resolve_alias(
         ctx.deps.agent_id, name, target_schema=ctx.deps.target_schema
     )
-    if alias_node:
+    for node in alias_nodes:
         results.append({
-            "node_id": alias_node.id,
-            "name": alias_node.name,
-            "type_name": type_names.get(alias_node.type_id, "Unknown"),
-            "content": alias_node.content,
-            "importance": alias_node.importance,
+            "node_id": node.id,
+            "name": node.name,
+            "type_name": type_names.get(node.type_id, "Unknown"),
+            "content": node.content,
+            "importance": node.importance,
             "match_type": "alias",
         })
+    if results:
         return results
 
     # 3. Fuzzy matching

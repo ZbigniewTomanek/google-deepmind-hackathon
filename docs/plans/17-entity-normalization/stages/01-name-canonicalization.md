@@ -41,8 +41,13 @@ Rules (applied in order):
 2. **Extract parenthetical aliases**: `"Fluoxetine (Prozac)"` → canonical=`"Fluoxetine"`, aliases=`["Prozac"]`
    - Pattern: `r"^(.+?)\s*\(([^)]+)\)\s*$"` — extract content before paren as canonical, content inside paren as alias
    - Only for single parenthetical at end, not mid-name
-3. **Title case normalization** for entity names: `"apache kafka"` → `"Apache Kafka"`
-   - Use `str.title()` but preserve known acronyms: `["API", "SQL", "AI", "ML", "LLM", "HTTP", "REST", "gRPC", "OAuth", "SSO", "JWT", "5-HT"]`
+3. **Title case normalization** for entity names — **only when input is all-lowercase**:
+   `"apache kafka"` → `"Apache Kafka"`, but `"gRPC"` → `"gRPC"` (preserved)
+   - If the name already has mixed casing (any uppercase letter present after lowering
+     is not equal to the original), preserve the original casing. This avoids mangling
+     names like `"gRPC"`, `"iOS"`, `"PostgreSQL"`.
+   - Only when ALL characters are lowercase (after stripping whitespace): apply `str.title()`
+     and restore known acronyms: `["API", "SQL", "AI", "ML", "LLM", "HTTP", "REST", "gRPC", "OAuth", "SSO", "JWT", "5-HT"]`
    - Acronym list should be a module-level constant `_KNOWN_ACRONYMS`
 4. **Collapse internal whitespace**: `"  Apache   Kafka  "` → `"Apache Kafka"`
 
@@ -69,8 +74,10 @@ Ensure PascalCase for node type names:
 Rules:
 1. `"software_tool"` → `"SoftwareTool"` (snake_case → PascalCase)
 2. `"software tool"` → `"SoftwareTool"` (space-separated → PascalCase)
-3. `"SOFTWARETOOL"` → `"Softwaretool"` (ALL_CAPS → Title case; not ideal but safe)
-4. Already PascalCase → keep as-is
+3. `"SOFTWARE_TOOL"` → `"SoftwareTool"` (ALL_CAPS with separators → PascalCase)
+4. `"SOFTWARETOOL"` → `"SOFTWARETOOL"` (ALL_CAPS single word, no separators → preserve as-is;
+   cannot reliably infer word boundaries)
+5. Already PascalCase or mixed case (e.g. `"gRPC"`) → keep as-is
 
 #### 1d. `names_are_similar(a: str, b: str, threshold: float = 0.6) -> bool`
 
@@ -93,6 +100,9 @@ Test cases for each function:
 ("Fluoxetine (Prozac)", ("Fluoxetine", ["Prozac"]))
 ("Apache Kafka", ("Apache Kafka", []))
 ("  apache   kafka  ", ("Apache Kafka", []))
+("gRPC", ("gRPC", []))           # mixed case → preserve
+("iOS", ("iOS", []))             # mixed case → preserve
+("PostgreSQL", ("PostgreSQL", []))  # mixed case → preserve
 ("DataForge", ("DataForge", []))
 ("5-HT", ("5-HT", []))  # preserve acronym
 ("serotonin (5-hydroxytryptamine, 5-HT)", ("Serotonin", ["5-hydroxytryptamine, 5-HT"]))
@@ -108,7 +118,10 @@ Test cases for each function:
 # normalize_node_type
 ("SoftwareTool", "SoftwareTool")  # idempotent
 ("software_tool", "SoftwareTool")
+("SOFTWARE_TOOL", "SoftwareTool") # ALL_CAPS with separator → PascalCase
+("SOFTWARETOOL", "SOFTWARETOOL")  # ALL_CAPS no separator → preserve
 ("Person", "Person")  # idempotent
+("gRPC", "gRPC")      # mixed case → preserve
 
 # names_are_similar
 ("Kafka", "Apache Kafka", True)
