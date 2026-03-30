@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NeoCortex — Chat Agent Tree</title>
+<style>
+  body { margin: 0; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  svg { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 800 600" width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="aw" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/>
+    </marker>
+    <marker id="ad" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ffd93d"/>
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="sh">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <rect width="800" height="600" fill="#1a1a2e"/>
+
+  <!-- Title -->
+  <text x="400" y="38" text-anchor="middle" fill="#e0e0e0" font-size="24" font-weight="bold">Chat Agent Tree</text>
+  <text x="400" y="58" text-anchor="middle" fill="#777" font-size="12">Conversational agents with personal memory graphs</text>
+
+  <!-- ============ CHAT WITH MEMORY ============ -->
+  <circle cx="400" cy="160" r="60" fill="#2d2d1f" stroke="#f0e68c" stroke-width="3" filter="url(#glow)"/>
+  <text x="400" y="148" text-anchor="middle" fill="#f0e68c" font-size="13" font-weight="bold">Chat With</text>
+  <text x="400" y="166" text-anchor="middle" fill="#f0e68c" font-size="13" font-weight="bold">Memory</text>
+  <text x="400" y="186" text-anchor="middle" fill="#b8b36c" font-size="10">primary agent</text>
+  <text x="400" y="200" text-anchor="middle" fill="#8a843a" font-size="8">recall + remember via MCP</text>
+
+  <!-- Personal graph for chat-with-memory -->
+  <rect x="600" y="110" width="170" height="65" rx="8" fill="#2d1f3d" stroke="#a78bfa" stroke-width="2" filter="url(#sh)"/>
+  <rect x="600" y="110" width="170" height="3" rx="2" fill="#a78bfa"/>
+  <text x="685" y="140" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="bold">Personal Graph</text>
+  <text x="685" y="160" text-anchor="middle" fill="#9580b5" font-size="10">ncx_chatwithmemory__personal</text>
+
+  <!-- Chat → Personal -->
+  <line x1="460" y1="150" x2="598" y2="145" stroke="#a78bfa" stroke-width="2" marker-end="url(#aw)"/>
+  <text x="530" y="138" fill="#a78bfa" font-size="9">remember() / recall()</text>
+
+  <!-- ============ JOKE SUBAGENT ============ -->
+  <circle cx="220" cy="330" r="48" fill="#2d2d1f" stroke="#f0e68c" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="220" y="320" text-anchor="middle" fill="#f0e68c" font-size="12" font-weight="bold">Joke With</text>
+  <text x="220" y="337" text-anchor="middle" fill="#f0e68c" font-size="12" font-weight="bold">Memory</text>
+  <text x="220" y="357" text-anchor="middle" fill="#b8b36c" font-size="9">subagent</text>
+
+  <!-- Chat → Joke -->
+  <line x1="355" y1="200" x2="260" y2="295" stroke="#ffd93d" stroke-width="2" marker-end="url(#ad)"/>
+  <text x="285" y="240" fill="#ffd93d" font-size="10">delegate jokes</text>
+
+  <!-- Joke personal graph -->
+  <rect x="30" y="310" width="120" height="50" rx="6" fill="#2d1f3d" stroke="#a78bfa" stroke-width="1.5" filter="url(#sh)"/>
+  <rect x="30" y="310" width="120" height="3" rx="2" fill="#a78bfa"/>
+  <text x="90" y="337" text-anchor="middle" fill="#a78bfa" font-size="10" font-weight="bold">Personal</text>
+  <text x="90" y="352" text-anchor="middle" fill="#9580b5" font-size="8">joke preferences</text>
+
+  <!-- Joke → personal -->
+  <line x1="172" y1="330" x2="152" y2="335" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <!-- ============ SEARCH ORCHESTRATOR ============ -->
+  <circle cx="400" cy="330" r="48" fill="#1f3d2d" stroke="#6bff6b" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="400" y="320" text-anchor="middle" fill="#6bff6b" font-size="12" font-weight="bold">Search</text>
+  <text x="400" y="337" text-anchor="middle" fill="#6bff6b" font-size="12" font-weight="bold">Orchestrator</text>
+  <text x="400" y="357" text-anchor="middle" fill="#4ab84a" font-size="9">subagent</text>
+  <text x="400" y="390" text-anchor="middle" fill="#3a8a3a" font-size="8">youtube-search</text>
+  <text x="400" y="402" text-anchor="middle" fill="#3a8a3a" font-size="8">google-search</text>
+
+  <!-- Chat → Search -->
+  <line x1="400" y1="220" x2="400" y2="280" stroke="#ffd93d" stroke-width="2" marker-end="url(#ad)"/>
+  <text x="415" y="255" fill="#ffd93d" font-size="10">delegate search</text>
+
+  <!-- ============ TASK SUBAGENT ============ -->
+  <circle cx="580" cy="330" r="48" fill="#3d1f2d" stroke="#ff9ecd" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="580" y="320" text-anchor="middle" fill="#ff9ecd" font-size="12" font-weight="bold">Task</text>
+  <text x="580" y="337" text-anchor="middle" fill="#ff9ecd" font-size="12" font-weight="bold">Subagent</text>
+  <text x="580" y="357" text-anchor="middle" fill="#c07a9d" font-size="9">subagent</text>
+  <text x="580" y="390" text-anchor="middle" fill="#8a5a70" font-size="8">task-manager tool</text>
+
+  <!-- Chat → Task -->
+  <line x1="445" y1="200" x2="540" y2="295" stroke="#ffd93d" stroke-width="2" marker-end="url(#ad)"/>
+  <text x="510" y="240" fill="#ffd93d" font-size="10">delegate tasks</text>
+
+  <!-- ============ MCP SERVER ============ -->
+  <rect x="250" y="480" width="300" height="55" rx="8" fill="#1f2d1f" stroke="#6bff6b" stroke-width="2" filter="url(#sh)"/>
+  <rect x="250" y="480" width="300" height="3" rx="2" fill="#6bff6b"/>
+  <text x="400" y="507" text-anchor="middle" fill="#6bff6b" font-size="13" font-weight="bold">NeoCortex MCP :8000</text>
+  <text x="400" y="524" text-anchor="middle" fill="#5ab85a" font-size="10">remember | recall | discover</text>
+
+  <!-- Faint MCP lines -->
+  <line x1="400" y1="220" x2="400" y2="478" stroke="#6bff6b" stroke-width="0.7" stroke-dasharray="3,4" opacity="0.2"/>
+  <line x1="220" y1="378" x2="330" y2="478" stroke="#6bff6b" stroke-width="0.7" stroke-dasharray="3,4" opacity="0.2"/>
+
+  <!-- ============ LEGEND ============ -->
+  <rect x="25" y="480" width="190" height="70" rx="6" fill="#222240" stroke="#555" stroke-width="1"/>
+  <text x="42" y="498" fill="#ccc" font-size="11" font-weight="bold">Legend</text>
+  <circle cx="42" cy="515" r="6" fill="none" stroke="#f0e68c" stroke-width="1.5"/>
+  <text x="55" y="519" fill="#aaa" font-size="10">Agent</text>
+  <rect x="36" y="528" width="12" height="9" rx="2" fill="none" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="55" y="537" fill="#aaa" font-size="10">Memory</text>
+  <line x1="110" y1="515" x2="128" y2="515" stroke="#ffd93d" stroke-width="2" marker-end="url(#ad)"/>
+  <text x="135" y="519" fill="#ffd93d" font-size="10">Delegate</text>
+  <line x1="110" y1="533" x2="128" y2="533" stroke="#a78bfa" stroke-width="2" marker-end="url(#aw)"/>
+  <text x="135" y="537" fill="#a78bfa" font-size="10">Memory R/W</text>
+
+</svg>
+</body>
+</html>

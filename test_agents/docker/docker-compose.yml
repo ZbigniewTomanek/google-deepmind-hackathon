@@ -34,6 +34,7 @@ services:
     network_mode: host
     volumes:
       - ${PROJECT_ROOT}/test_agents/build:/app
+      - ${PROJECT_ROOT}/test_agents/agent_workspace/.agent_workspace/input:/app/input
       - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
       <<: *common-env
@@ -56,6 +57,7 @@ services:
       - ${PROJECT_ROOT}:/workspace
       - ${PROJECT_ROOT}/../OpenAgentCompiler:/OpenAgentCompiler:ro
       - ${PROJECT_ROOT}/test_agents/build:/app
+      - ${PROJECT_ROOT}/test_agents/agent_workspace/.agent_workspace/input:/app/input
       - ${OPENCODE_BIN:-${HOME}/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
     environment:
       <<: *common-env

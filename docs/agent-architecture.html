@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NeoCortex Agent Architecture</title>
+<style>
+  body { margin: 0; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  svg { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1200 900" width="1200" height="900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Arrow markers -->
+    <marker id="arrow-write" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4ecdc4"/>
+    </marker>
+    <marker id="arrow-read" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ff6b6b"/>
+    </marker>
+    <marker id="arrow-delegate" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ffd93d"/>
+    </marker>
+    <marker id="arrow-mcp" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/>
+    </marker>
+    <!-- Glow filter -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="900" fill="#1a1a2e"/>
+
+  <!-- Title -->
+  <text x="600" y="45" text-anchor="middle" fill="#e0e0e0" font-size="28" font-weight="bold">NeoCortex Agent Architecture</text>
+  <text x="600" y="70" text-anchor="middle" fill="#888" font-size="14">Research Pipeline &amp; Shared Memory Graph</text>
+
+  <!-- ========== MEMORY STORES (Squares) ========== -->
+
+  <!-- Shared Research Graph -->
+  <rect x="460" y="580" width="280" height="100" rx="8" fill="#1e3a5f" stroke="#4ecdc4" stroke-width="2.5" filter="url(#shadow)"/>
+  <rect x="460" y="580" width="280" height="4" rx="2" fill="#4ecdc4"/>
+  <text x="600" y="618" text-anchor="middle" fill="#4ecdc4" font-size="16" font-weight="bold">ncx_shared__research</text>
+  <text x="600" y="640" text-anchor="middle" fill="#8cb8d0" font-size="12">Shared Knowledge Graph</text>
+  <text x="600" y="660" text-anchor="middle" fill="#6a9ab5" font-size="11">33 episodes | 8 nodes | all agents read</text>
+
+  <!-- Personal Graph - chat-extractions -->
+  <rect x="870" y="380" width="200" height="70" rx="8" fill="#2d1f3d" stroke="#a78bfa" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="870" y="380" width="200" height="3" rx="2" fill="#a78bfa"/>
+  <text x="970" y="413" text-anchor="middle" fill="#a78bfa" font-size="13" font-weight="bold">Personal Graph</text>
+  <text x="970" y="432" text-anchor="middle" fill="#9580b5" font-size="11">ncx_chatextractions__personal</text>
+
+  <!-- Personal Graph - chat-with-memory -->
+  <rect x="870" y="160" width="200" height="70" rx="8" fill="#2d1f3d" stroke="#a78bfa" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="870" y="160" width="200" height="3" rx="2" fill="#a78bfa"/>
+  <text x="970" y="193" text-anchor="middle" fill="#a78bfa" font-size="13" font-weight="bold">Personal Graph</text>
+  <text x="970" y="212" text-anchor="middle" fill="#9580b5" font-size="11">ncx_chatwithmemory__personal</text>
+
+  <!-- /app/input -->
+  <rect x="60" y="280" width="180" height="80" rx="8" fill="#3d2e1f" stroke="#ffd93d" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="60" y="280" width="180" height="3" rx="2" fill="#ffd93d"/>
+  <text x="150" y="315" text-anchor="middle" fill="#ffd93d" font-size="14" font-weight="bold">/app/input</text>
+  <text x="150" y="335" text-anchor="middle" fill="#c4a83d" font-size="11">.mp4 .mp3 .rss</text>
+  <text x="150" y="350" text-anchor="middle" fill="#a08830" font-size="10">Stage runner copies files here</text>
+
+  <!-- MCP Server -->
+  <rect x="430" y="740" width="340" height="70" rx="8" fill="#1f2d1f" stroke="#6bff6b" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="430" y="740" width="340" height="3" rx="2" fill="#6bff6b"/>
+  <text x="600" y="773" text-anchor="middle" fill="#6bff6b" font-size="15" font-weight="bold">NeoCortex MCP Server :8000</text>
+  <text x="600" y="793" text-anchor="middle" fill="#5ab85a" font-size="11">remember() | recall() | discover() | Auth via Bearer tokens</text>
+
+  <!-- ========== AGENTS (Circles) ========== -->
+
+  <!-- Research Orchestrator -->
+  <circle cx="380" cy="220" r="55" fill="#2a1f3d" stroke="#ff6b9d" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="380" y="213" text-anchor="middle" fill="#ff6b9d" font-size="12" font-weight="bold">Research</text>
+  <text x="380" y="230" text-anchor="middle" fill="#ff6b9d" font-size="12" font-weight="bold">Orchestrator</text>
+  <text x="380" y="250" text-anchor="middle" fill="#c05577" font-size="9">primary</text>
+
+  <!-- Video Processor -->
+  <circle cx="280" cy="430" r="45" fill="#1f2a3d" stroke="#4ecdc4" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="280" y="423" text-anchor="middle" fill="#4ecdc4" font-size="11" font-weight="bold">Video</text>
+  <text x="280" y="440" text-anchor="middle" fill="#4ecdc4" font-size="11" font-weight="bold">Processor</text>
+  <text x="280" y="457" text-anchor="middle" fill="#3a9c96" font-size="9">subagent</text>
+
+  <!-- Audio Processor -->
+  <circle cx="480" cy="430" r="45" fill="#1f2a3d" stroke="#4ecdc4" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="480" y="423" text-anchor="middle" fill="#4ecdc4" font-size="11" font-weight="bold">Audio</text>
+  <text x="480" y="440" text-anchor="middle" fill="#4ecdc4" font-size="11" font-weight="bold">Processor</text>
+  <text x="480" y="457" text-anchor="middle" fill="#3a9c96" font-size="9">subagent</text>
+
+  <!-- RSS Processor -->
+  <circle cx="680" cy="430" r="45" fill="#1f2a3d" stroke="#4ecdc4" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="680" y="423" text-anchor="middle" fill="#4ecdc4" font-size="11" font-weight="bold">RSS</text>
+  <text x="680" y="440" text-anchor="middle" fill="#4ecdc4" font-size="11" font-weight="bold">Processor</text>
+  <text x="680" y="457" text-anchor="middle" fill="#3a9c96" font-size="9">subagent</text>
+
+  <!-- Chat With Extractions -->
+  <circle cx="820" cy="530" r="55" fill="#2d1f1f" stroke="#ff6b35" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="820" y="518" text-anchor="middle" fill="#ff6b35" font-size="11" font-weight="bold">Chat With</text>
+  <text x="820" y="535" text-anchor="middle" fill="#ff6b35" font-size="11" font-weight="bold">Extractions</text>
+  <text x="820" y="555" text-anchor="middle" fill="#c05528" font-size="9">primary</text>
+
+  <!-- Chat With Memory -->
+  <circle cx="750" cy="195" r="50" fill="#2d2d1f" stroke="#f0e68c" stroke-width="2.5" filter="url(#glow)"/>
+  <text x="750" y="188" text-anchor="middle" fill="#f0e68c" font-size="11" font-weight="bold">Chat With</text>
+  <text x="750" y="205" text-anchor="middle" fill="#f0e68c" font-size="11" font-weight="bold">Memory</text>
+  <text x="750" y="222" text-anchor="middle" fill="#b8b36c" font-size="9">primary</text>
+
+  <!-- Joke With Memory -->
+  <circle cx="600" cy="140" r="35" fill="#2d2d1f" stroke="#f0e68c" stroke-width="2" filter="url(#glow)"/>
+  <text x="600" y="133" text-anchor="middle" fill="#f0e68c" font-size="10" font-weight="bold">Joke</text>
+  <text x="600" y="148" text-anchor="middle" fill="#f0e68c" font-size="10" font-weight="bold">Subagent</text>
+  <text x="600" y="163" text-anchor="middle" fill="#b8b36c" font-size="8">subagent</text>
+
+  <!-- ========== DATA FLOW ARROWS ========== -->
+
+  <!-- /app/input → Research Orchestrator (reads files) -->
+  <line x1="240" y1="305" x2="330" y2="240" stroke="#ffd93d" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrow-delegate)"/>
+  <text x="270" y="258" fill="#ffd93d" font-size="10" transform="rotate(-25, 270, 258)">list-input-files</text>
+
+  <!-- Research Orchestrator → Video Processor (delegates) -->
+  <line x1="350" y1="270" x2="300" y2="390" stroke="#ffd93d" stroke-width="2" marker-end="url(#arrow-delegate)"/>
+  <text x="305" y="330" fill="#ffd93d" font-size="10">.mp4</text>
+
+  <!-- Research Orchestrator → Audio Processor (delegates) -->
+  <line x1="400" y1="275" x2="470" y2="388" stroke="#ffd93d" stroke-width="2" marker-end="url(#arrow-delegate)"/>
+  <text x="448" y="335" fill="#ffd93d" font-size="10">.mp3</text>
+
+  <!-- Research Orchestrator → RSS Processor (delegates) -->
+  <line x1="430" y1="240" x2="640" y2="405" stroke="#ffd93d" stroke-width="2" marker-end="url(#arrow-delegate)"/>
+  <text x="555" y="310" fill="#ffd93d" font-size="10">.rss/.xml</text>
+
+  <!-- Video Processor → Shared Research (writes via MCP) -->
+  <line x1="305" y1="470" x2="490" y2="580" stroke="#4ecdc4" stroke-width="2.5" marker-end="url(#arrow-write)"/>
+  <text x="370" y="535" fill="#4ecdc4" font-size="10" font-weight="bold">remember()</text>
+
+  <!-- Audio Processor → Shared Research (writes via MCP) -->
+  <line x1="500" y1="475" x2="560" y2="578" stroke="#4ecdc4" stroke-width="2.5" marker-end="url(#arrow-write)"/>
+  <text x="540" y="530" fill="#4ecdc4" font-size="10" font-weight="bold">remember()</text>
+
+  <!-- RSS Processor → Shared Research (writes via MCP) -->
+  <line x1="660" y1="472" x2="630" y2="578" stroke="#4ecdc4" stroke-width="2.5" marker-end="url(#arrow-write)"/>
+  <text x="660" y="530" fill="#4ecdc4" font-size="10" font-weight="bold">remember()</text>
+
+  <!-- Chat With Extractions → Shared Research (reads via MCP) -->
+  <line x1="775" y1="560" x2="742" y2="590" stroke="#ff6b6b" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#arrow-read)"/>
+  <text x="780" y="590" fill="#ff6b6b" font-size="10" font-weight="bold">recall() / discover()</text>
+
+  <!-- Chat With Extractions → Personal Graph -->
+  <line x1="855" y1="495" x2="920" y2="450" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-mcp)"/>
+  <text x="905" y="472" fill="#a78bfa" font-size="9">remember()</text>
+
+  <!-- Chat With Memory → Personal Graph -->
+  <line x1="795" y1="195" x2="870" y2="195" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-mcp)"/>
+
+  <!-- Chat With Memory → Joke Subagent (delegates) -->
+  <line x1="705" y1="175" x2="635" y2="150" stroke="#ffd93d" stroke-width="1.5" marker-end="url(#arrow-delegate)"/>
+  <text x="665" y="155" fill="#ffd93d" font-size="9">delegate</text>
+
+  <!-- All agents → MCP Server (via protocol) -->
+  <line x1="300" y1="475" x2="480" y2="740" stroke="#6bff6b" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+  <line x1="500" y1="475" x2="550" y2="740" stroke="#6bff6b" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+  <line x1="680" y1="475" x2="630" y2="740" stroke="#6bff6b" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+  <line x1="820" y1="585" x2="680" y2="740" stroke="#6bff6b" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+
+  <!-- ========== LEGEND ========== -->
+  <rect x="30" y="750" width="350" height="130" rx="8" fill="#222240" stroke="#555" stroke-width="1"/>
+  <text x="50" y="775" fill="#ccc" font-size="14" font-weight="bold">Legend</text>
+
+  <!-- Agent circle -->
+  <circle cx="55" cy="800" r="10" fill="none" stroke="#ff6b9d" stroke-width="2"/>
+  <text x="75" y="805" fill="#ccc" font-size="12">Agent (primary / subagent)</text>
+
+  <!-- Memory square -->
+  <rect x="45" y="818" width="20" height="14" rx="3" fill="none" stroke="#4ecdc4" stroke-width="2"/>
+  <text x="75" y="832" fill="#ccc" font-size="12">Memory Store (shared / personal)</text>
+
+  <!-- Write arrow -->
+  <line x1="45" y1="850" x2="65" y2="850" stroke="#4ecdc4" stroke-width="2.5" marker-end="url(#arrow-write)"/>
+  <text x="75" y="855" fill="#4ecdc4" font-size="12">Write (remember)</text>
+
+  <!-- Read arrow -->
+  <line x1="215" y1="850" x2="235" y2="850" stroke="#ff6b6b" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#arrow-read)"/>
+  <text x="245" y="855" fill="#ff6b6b" font-size="12">Read (recall)</text>
+
+  <!-- Delegate arrow -->
+  <line x1="45" y1="870" x2="65" y2="870" stroke="#ffd93d" stroke-width="2" marker-end="url(#arrow-delegate)"/>
+  <text x="75" y="875" fill="#ffd93d" font-size="12">Delegate / Route</text>
+
+  <!-- target_graph annotation -->
+  <text x="460" y="570" fill="#4ecdc4" font-size="10" opacity="0.7">target_graph="ncx_shared__research"</text>
+
+  <!-- Token annotations -->
+  <text x="280" y="490" text-anchor="middle" fill="#3a9c96" font-size="8">video-processor-token</text>
+  <text x="480" y="490" text-anchor="middle" fill="#3a9c96" font-size="8">audio-processor-token</text>
+  <text x="680" y="490" text-anchor="middle" fill="#3a9c96" font-size="8">rss-processor-token</text>
+  <text x="820" y="596" text-anchor="middle" fill="#c05528" font-size="8">chat-extractions-token</text>
+
+  <!-- Stage runner annotation -->
+  <rect x="60" y="190" width="180" height="50" rx="6" fill="#2a2a1f" stroke="#888" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="150" y="213" text-anchor="middle" fill="#aaa" font-size="11" font-weight="bold">run_parallel.sh</text>
+  <text x="150" y="230" text-anchor="middle" fill="#888" font-size="10">copies media to input/</text>
+  <line x1="150" y1="240" x2="150" y2="278" stroke="#888" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-delegate)"/>
+
+</svg>
+</body>
+</html>
