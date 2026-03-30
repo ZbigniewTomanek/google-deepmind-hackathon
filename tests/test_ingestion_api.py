@@ -15,7 +15,9 @@ def anon_settings() -> MCPSettings:
 
 @pytest.fixture
 def token_settings() -> MCPSettings:
-    return MCPSettings(auth_mode="dev_token", mock_db=True, dev_token="test-token", dev_user_id="test-agent")
+    return MCPSettings(
+        auth_mode="dev_token", mock_db=True, dev_token="test-token", dev_user_id="test-agent", dev_tokens_file=""
+    )
 
 
 @pytest.fixture
