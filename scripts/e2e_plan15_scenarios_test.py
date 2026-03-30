@@ -48,7 +48,7 @@ MCP_URL = os.environ.get("NEOCORTEX_MCP_URL", f"{BASE_URL}/mcp")
 TOKEN = os.environ.get("NEOCORTEX_ALICE_TOKEN", "alice-token")
 AGENT_SCHEMA = "ncx_alice__personal"
 
-JOB_WAIT_TIMEOUT = 300  # seconds
+JOB_WAIT_TIMEOUT = 600  # seconds (10 min for Gemini API rate limits)
 JOB_POLL_INTERVAL = 3  # seconds
 
 

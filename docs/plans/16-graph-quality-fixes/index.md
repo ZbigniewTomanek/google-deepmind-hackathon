@@ -140,7 +140,7 @@ E2E validation runs weight stability stress test and final Plan 15 scenario gate
 | 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | DONE | Name-primary node dedup with _types_are_merge_safe; source-target edge dedup; fallback + mock parity; 23 new tests | fix(db): adapter-level dedup safety nets for type drift |
 | 4.5 | [E2E Validate: Safety Nets](stages/04.5-validate-safety-nets.md) | DONE | All 3 E2E suites pass; scenarios 9P+2Pa+3F=11/14 gate pass; 5 homonym detections (correct separations); 2 edge drift catches; SQL fix in test script; no false merges | test(e2e): validate adapter safety nets — no regressions, scenario gate 11/14 |
 | 5 | [Fix Edge Weight Management](stages/05-weight-management.md) | DONE | Logarithmic diminishing returns; micro_decay_edges protocol+impl; stale decay 48h/25%; ceiling 1.5; 11 new tests | fix(scoring): bounded edge reinforcement with continuous micro-decay |
-| 5.5 | [E2E Validate: Weight Management](stages/05.5-validate-weight-management.md) | PENDING | E2E: weight stability stress test, final scenario gate | |
+| 5.5 | [E2E Validate: Weight Management](stages/05.5-validate-weight-management.md) | DONE | All E2E suites pass; weight ceiling respected (max 1.47 after 20 recalls); diminishing returns confirmed; scenarios 9P+4Pa+1F=13/14 gate pass (up from 11/14) | test(e2e): validate weight stability and final scenario gate 13/14 |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

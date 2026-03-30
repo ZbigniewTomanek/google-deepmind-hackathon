@@ -1,0 +1,1295 @@
+[1;34m==> Mode: local | Test: scripts/e2e_plan15_scenarios_test.py[0m
+[1;34m==> Ensuring PostgreSQL is running via docker compose...[0m
+ Container neocortex-postgres  Running
+[1;34m==> Waiting for PostgreSQL to be ready...[0m
+[1;32m==> PostgreSQL is ready (0s).[0m
+[1;34m==> Applying any missing migrations...[0m
+[1;34m==> Starting NeoCortex MCP server (port 8000)...[0m
+[1;34m==> Starting NeoCortex ingestion server (port 8001)...[0m
+[1;34m==> Waiting for http://127.0.0.1:8000/health (up to 60s)...[0m
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.1.1                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      NeoCortex, 3.1.1                          │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+2026-03-30 14:06:22.956 | INFO     | neocortex.postgres_service:connect:22 | Connecting to PostgreSQL at localhost:5432
+2026-03-30 14:06:22.985 | INFO     | neocortex.postgres_service:connect:28 | Connection pool created (min=2, max=10)
+/Users/zbigniewtomanek/work/google-deepmind-hackathon/.venv/lib/python3.13/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+  warnings.warn(  # deprecated in 14.0 - 2024-11-09
+/Users/zbigniewtomanek/work/google-deepmind-hackathon/.venv/lib/python3.13/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+  from websockets.server import WebSocketServerProtocol
+INFO:     Started server process [40067]
+INFO:     Waiting for application startup.
+2026-03-30 14:06:23.031 | INFO     | neocortex.postgres_service:connect:22 | Connecting to PostgreSQL at localhost:5432
+2026-03-30 14:06:23.059 | INFO     | neocortex.postgres_service:connect:28 | Connection pool created (min=2, max=10)
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:06:23.231 | INFO     | neocortex.embedding_service:__init__:26 | EmbeddingService initialized with model=gemini-embedding-001
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:06:23.276 | INFO     | neocortex.embedding_service:__init__:26 | EmbeddingService initialized with model=gemini-embedding-001
+[03/30/26 14:06:23] INFO     Starting MCP server 'NeoCortex'    transport.py:273
+                             with transport 'http' on
+                             http://127.0.0.1:8000/mcp
+INFO:     Started server process [40068]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:06:23.345 | INFO     | neocortex.ingestion.media_description:__init__:58 | MediaDescriptionService initialized with model=gemini-3-flash-preview
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:52396 - "GET /health HTTP/1.1" 200 OK
+[1;32m==> Healthy: http://127.0.0.1:8000/health (1s).[0m
+[1;34m==> Waiting for http://127.0.0.1:8001/health (up to 60s)...[0m
+INFO:     127.0.0.1:52397 - "GET /health HTTP/1.1" 200 OK
+[1;32m==> Healthy: http://127.0.0.1:8001/health (0s).[0m
+[1;34m==> Running E2E test: scripts/e2e_plan15_scenarios_test.py[0m
+INFO:     127.0.0.1:52399 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52401 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52402 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52403 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52404 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:24.239 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:24.242 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+2026-03-30 14:06:24.247 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+INFO:     127.0.0.1:52406 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52407 - "DELETE /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:24.345 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+INFO:     127.0.0.1:52408 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52409 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52410 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52411 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:24.642 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:24.648 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52414 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52415 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52416 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52417 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52418 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52419 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:24.979 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:24.985 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52420 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52421 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52422 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52423 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52424 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52425 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:25.298 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:25.302 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52426 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52427 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52428 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52429 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52430 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52431 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:25.623 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:25.627 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52432 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52433 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52434 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52435 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52436 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52437 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:25.928 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:25.932 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52438 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52439 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52440 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52441 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52442 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52443 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:26.250 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:26.254 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52444 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52445 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52446 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52447 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52448 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52449 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:26.553 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:26.556 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52450 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52451 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52452 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52453 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52454 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52455 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:26.880 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:26.884 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52456 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52457 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52458 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52459 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52460 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52461 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:27.167 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:27.170 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52462 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52463 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52464 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52465 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52466 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52467 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:27.467 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:27.471 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52468 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52469 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52470 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52471 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52472 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52473 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:27.771 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:27.774 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52474 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52475 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52476 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52477 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52478 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52479 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:28.095 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:28.098 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52480 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52481 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52482 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52483 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52484 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52485 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:28.392 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:06:28.395 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52486 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52487 - "DELETE /mcp HTTP/1.1" 200 OK
+2026-03-30 14:06:35.666 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:35.667 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:35.668 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:35.669 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:35.670 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:35.672 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:39.120 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:06:39.122 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:06:39.122 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:06:39.129 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:39.130 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:39.130 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:39.131 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:39.131 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:42.328 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:06:42.328 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:06:42.339 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:06:43.513 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:06:43.513 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:06:43.524 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:06:43.617 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:06:55.008 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:55.008 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:55.013 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:55.015 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:55.017 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:55.020 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:06:58.665 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:06:58.676 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:58.677 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:58.678 | INFO     | neocortex.db.adapter:upsert_edge:725 | edge_type_drift_caught
+2026-03-30 14:06:58.678 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:58.678 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:58.679 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:06:58.679 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:01.828 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:07:01.829 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:07:01.840 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:07:03.177 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:07:03.177 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:07:03.184 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:07:03.274 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:07:11.301 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:13.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:13.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:13.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:13.916 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:13.990 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:13.991 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:16.139 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:07:16.140 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:07:16.155 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:07:17.564 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:07:17.565 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:07:17.573 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:07:17.665 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:07:30.165 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:30.165 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:30.165 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:30.175 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:30.183 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:30.196 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:33.207 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:07:33.208 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:33.208 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:33.209 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:33.210 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:33.211 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:33.212 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:07:33.218 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:33.219 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:33.219 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:33.219 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:33.219 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:36.988 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:07:36.989 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:07:37.001 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:07:38.580 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:07:38.581 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:07:38.588 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:07:38.678 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:07:47.447 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:47.448 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:47.448 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:47.449 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:07:50.844 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:50.845 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:07:50.845 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:07:50.856 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:50.856 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:50.856 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:50.856 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:07:53.902 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:07:53.903 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:07:53.914 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:07:55.170 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:07:55.171 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:07:55.179 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:07:55.268 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:08:06.365 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:06.365 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:06.365 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:06.375 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:08.554 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:08:08.556 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:08:08.557 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:08:08.567 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:08.568 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:08.569 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:11.165 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:08:11.166 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:08:11.180 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:08:12.401 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:08:12.402 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:08:12.408 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:08:12.499 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:08:21.059 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:21.060 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:21.069 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:21.074 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:24.352 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:08:24.353 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:08:24.364 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:24.365 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:24.365 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:27.279 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:08:27.280 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:08:27.291 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:08:28.888 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:08:28.888 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:08:28.894 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:08:28.985 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:08:39.275 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:39.275 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:39.281 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:39.285 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:39.286 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:42.657 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:42.658 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:42.658 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:42.658 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:42.660 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:08:45.031 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:08:45.032 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:08:45.041 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:08:46.696 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:08:46.697 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:08:46.703 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:08:46.793 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:08:58.067 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:08:58.342 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:08:58.348 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:58.348 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:58.350 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:58.366 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:58.366 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:08:58.367 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:02.537 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:09:02.538 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:09:02.549 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:09:03.960 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:09:03.960 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:09:03.967 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:09:04.060 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:09:12.836 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:12.837 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:12.837 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:12.854 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:15.494 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:15.495 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:15.495 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:15.496 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:15.722 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:18.548 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:09:18.549 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:09:18.561 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:09:20.013 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:09:20.014 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:09:20.017 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:09:20.088 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:09:35.285 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:09:35.297 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.298 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:09:35.299 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.301 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.303 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:09:35.303 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.304 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.304 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:09:35.305 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.305 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.306 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.307 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.307 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.307 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.308 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.308 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:35.308 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:38.300 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.301 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.301 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.301 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.301 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.301 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.302 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.302 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.302 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.303 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.303 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:38.303 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:41.906 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:09:41.906 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:09:41.915 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:09:43.606 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:09:43.606 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:09:43.616 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:09:43.701 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:09:51.930 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:51.931 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:51.931 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:09:53.176 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:53.177 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:09:55.439 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:09:55.439 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:09:55.449 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:09:56.692 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:09:56.692 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:09:56.696 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:09:56.777 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:10:06.814 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:10:07.493 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:07.494 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:07.494 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:07.495 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:07.495 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:07.495 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:12.246 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:10:12.247 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:12.258 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:10:13.615 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:10:13.616 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:10:13.622 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:13.710 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:10:21.820 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:21.821 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:21.901 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:23.436 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:10:23.440 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:23.440 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:25.614 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:10:25.615 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:25.624 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:10:27.015 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:10:27.015 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:10:27.021 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.114 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.114 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.119 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.181 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.181 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.188 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.248 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.248 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.254 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.315 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.315 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.321 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.382 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.382 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.388 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.447 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.447 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.453 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.512 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.512 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.516 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.576 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.576 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.581 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.642 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.642 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.647 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.707 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.708 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.713 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.773 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.773 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.778 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.838 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.838 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.843 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.903 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.904 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.910 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:27.968 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:27.968 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:27.975 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.034 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.034 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.040 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.100 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.101 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.107 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.165 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.166 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.171 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.233 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.233 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.240 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.299 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.299 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.305 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.363 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.363 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.369 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.429 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.429 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.435 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.493 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.493 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.500 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.561 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.561 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.567 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.625 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.625 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.632 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.693 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.693 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.699 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.757 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.757 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:28.763 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:28.821 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:10:28.821 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+INFO:     127.0.0.1:52657 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52658 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52659 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52660 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:29.166 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:10:29.171 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+2026-03-30 14:10:29.174 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+INFO:     127.0.0.1:52662 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:29.257 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+INFO:     127.0.0.1:52663 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52664 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52665 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52666 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52667 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:29.542 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:10:29.545 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52668 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52669 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52670 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52671 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52672 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52673 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:29.828 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:10:29.832 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52676 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52677 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52678 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52679 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52680 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52681 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:30.117 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:10:30.121 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52682 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52683 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52684 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52685 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52686 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52687 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:30.430 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:10:30.433 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52688 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52689 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52690 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52691 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52692 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52693 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:30.729 | INFO     | neocortex.tools.remember:remember:73 | extraction_enqueued
+2026-03-30 14:10:30.739 | INFO     | neocortex.tools.remember:remember:89 | domain_routing_enqueued
+INFO:     127.0.0.1:52694 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52695 - "DELETE /mcp HTTP/1.1" 200 OK
+2026-03-30 14:10:40.529 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:10:40.533 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:40.534 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:40.534 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:40.534 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:40.534 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:40.534 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:40.535 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:10:44.054 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:10:44.066 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:44.066 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:44.066 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:44.066 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:44.067 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:44.067 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:10:47.551 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:10:47.552 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:10:47.567 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:10:48.868 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:10:48.868 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:10:48.873 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:10:48.961 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:11:03.419 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:11:03.419 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:11:03.431 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:11:05.223 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:11:05.224 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:11:05.230 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:11:05.319 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:11:18.852 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:11:18.854 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:18.855 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:18.855 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:18.855 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:18.857 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:18.868 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:26.645 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:11:26.646 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:11:26.655 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:11:27.928 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:11:27.928 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:11:27.932 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:11:28.012 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:11:42.930 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:42.931 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:42.932 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:42.933 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:42.934 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:42.938 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:42.938 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:11:45.741 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:11:45.742 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:11:45.746 | INFO     | neocortex.db.adapter:upsert_edge:725 | edge_type_drift_caught
+2026-03-30 14:11:45.746 | INFO     | neocortex.db.adapter:upsert_edge:725 | edge_type_drift_caught
+2026-03-30 14:11:45.746 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.747 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.747 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.748 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.748 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.748 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.749 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:45.749 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:11:48.466 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:11:48.466 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:11:48.475 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:11:49.835 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:11:49.835 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:11:49.839 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:11:49.930 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:12:03.402 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.403 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.403 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.404 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.404 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.404 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.404 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:03.417 | INFO     | neocortex.db.adapter:upsert_node:545 | node_type_drift_caught
+2026-03-30 14:12:03.421 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:06.674 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:12:06.675 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:12:06.675 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:12:06.676 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:12:06.676 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:12:06.677 | INFO     | neocortex.extraction.agents:remove_edge:686 | librarian_tool_call
+2026-03-30 14:12:06.684 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:06.684 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:06.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:06.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:06.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:06.685 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:06.686 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:11.589 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:12:11.589 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:11.597 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:12:13.305 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:12:13.306 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:12:13.311 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:13.390 | INFO     | neocortex.extraction.pipeline:run_extraction:81 | extraction_start
+2026-03-30 14:12:25.059 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:25.060 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:25.060 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:25.060 | INFO     | neocortex.extraction.agents:archive_node:652 | librarian_tool_call
+2026-03-30 14:12:25.061 | INFO     | neocortex.db.adapter:upsert_edge:725 | edge_type_drift_caught
+2026-03-30 14:12:25.062 | INFO     | neocortex.extraction.agents:create_or_update_edge:615 | librarian_tool_call
+2026-03-30 14:12:25.392 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:12:25.394 | INFO     | neocortex.db.adapter:upsert_node:555 | node_homonym_detected
+2026-03-30 14:12:25.397 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:25.398 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:25.398 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:25.400 | INFO     | neocortex.extraction.agents:create_or_update_node:539 | librarian_tool_call
+2026-03-30 14:12:28.520 | INFO     | neocortex.extraction.pipeline:run_extraction:177 | curation_complete
+2026-03-30 14:12:28.521 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:28.533 | INFO     | neocortex.jobs.tasks:route_episode:104 | route_episode_started
+2026-03-30 14:12:30.129 | INFO     | neocortex.domains.router:route_and_extract:117 | domain_routing_completed
+2026-03-30 14:12:30.129 | INFO     | neocortex.jobs.tasks:route_episode:118 | route_episode_completed
+2026-03-30 14:12:30.134 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.222 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.222 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.227 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.292 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.292 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.299 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.360 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.360 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.368 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.427 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.427 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.434 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.495 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.495 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.502 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.562 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.562 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.569 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.629 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.629 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.636 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.698 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.698 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.705 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.765 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.765 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.773 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.835 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.835 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.840 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.902 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.902 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+2026-03-30 14:12:30.910 | INFO     | neocortex.jobs.tasks:extract_episode:40 | extract_episode_started
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 14:12:30.972 | WARNING  | neocortex.extraction.pipeline:run_extraction:77 | episode_not_found
+2026-03-30 14:12:30.973 | INFO     | neocortex.jobs.tasks:extract_episode:85 | extract_episode_completed
+INFO:     127.0.0.1:52767 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52768 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52769 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52770 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:34.408 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52772 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52773 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52779 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52780 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52781 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52782 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:34.925 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52783 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52784 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52785 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52786 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52787 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52792 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:35.372 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52793 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52794 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52796 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52797 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52798 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52799 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:35.882 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52800 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52801 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52802 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52803 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52804 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52805 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:36.331 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52806 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52807 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52808 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52809 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52810 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52811 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:36.799 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52812 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52813 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52814 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52815 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52816 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52817 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:37.230 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52818 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52819 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52820 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52821 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52822 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52823 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:37.686 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52824 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52825 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52826 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52827 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52828 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52829 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:38.221 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52830 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52831 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52832 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52833 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52834 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52835 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:38.655 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52836 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52837 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52838 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52839 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52840 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52841 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:39.109 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52842 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52843 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52844 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52845 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52846 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52847 - "POST /mcp HTTP/1.1" 200 OK
+2026-03-30 14:12:39.504 | INFO     | neocortex.tools.recall:recall:210 | recall_with_graph_traversal
+INFO:     127.0.0.1:52848 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52849 - "DELETE /mcp HTTP/1.1" 200 OK
+======================================================================
+Plan 15 Scenario Replay (Plan 16 Stage 3.5)
+MCP:       http://127.0.0.1:8000/mcp
+Ingestion: http://127.0.0.1:8001
+Token:     alice-to...
+Schema:    ncx_alice__personal
+======================================================================
+
+======================================================================
+PHASE A: Ingesting initial episodes
+======================================================================
+  [S01-basic] episode 139: Phoenix Framework is a web framework written in Elixir. It u...
+  [S02-diana-initial] episode 140: Diana Rivera works on the billing team as a senior engineer....
+  [S03-k8s-a] episode 141: Kubernetes is a container orchestration platform originally ...
+  [S03-k8s-b] episode 142: Kubernetes supports auto-scaling and load balancing. It uses...
+  [S05-deadline-initial] episode 143: The Project Zenith deadline is April 15, 2026. The team is t...
+  [S06-marcus-initial] episode 144: Marcus Chen is a backend developer who primarily uses Java f...
+  [S07-cache-initial] episode 145: The infrastructure team decided to use Redis as the primary ...
+  [S08-bert-accuracy] episode 146: The BERT NLP model achieved 92.4 percent accuracy on the ent...
+  [S08-bert-latency] episode 147: The BERT NLP model has 15ms average inference latency on a V...
+  [S09-pipeline-initial] episode 148: The data ingestion pipeline has 4 stages: extraction, cleani...
+  [S10-er-domain] episode 149: Entity Resolution is the process of determining whether diff...
+  [S11-exponent-initial] episode 150: The Plan 42 benchmark showed a scaling exponent of b=0.57, f...
+  [S12-critical] episode 151: CRITICAL: Production API keys for the Zenith service must be...
+  [S12-trivial] episode 152: The office printer on floor 3 needs new toner cartridges....
+
+======================================================================
+PHASE B: Waiting for initial extraction to complete
+======================================================================
+
+  Waiting for extraction jobs (phase-A initial, timeout 600s)...
+    [  0s] pending=27 running=1 completed=0 failed=0 routing=28
+    [  3s] pending=27 running=1 completed=0 failed=0 routing=28
+    [  6s] pending=27 running=1 completed=0 failed=0 routing=28
+    [  9s] pending=27 running=1 completed=0 failed=0 routing=28
+    [ 12s] pending=27 running=1 completed=0 failed=0 routing=28
+    [ 15s] pending=26 running=1 completed=1 failed=0 routing=27
+    [ 18s] pending=27 running=1 completed=2 failed=0 routing=28
+    [ 21s] pending=27 running=1 completed=2 failed=0 routing=28
+    [ 24s] pending=27 running=1 completed=2 failed=0 routing=28
+    [ 27s] pending=27 running=1 completed=2 failed=0 routing=28
+    [ 30s] pending=27 running=1 completed=2 failed=0 routing=28
+    [ 33s] pending=27 running=1 completed=2 failed=0 routing=28
+    [ 36s] pending=27 running=1 completed=4 failed=0 routing=28
+    [ 39s] pending=27 running=1 completed=4 failed=0 routing=28
+    [ 42s] pending=27 running=1 completed=4 failed=0 routing=28
+    [ 45s] pending=27 running=1 completed=4 failed=0 routing=28
+    [ 48s] pending=26 running=1 completed=5 failed=0 routing=27
+    [ 51s] pending=27 running=1 completed=6 failed=0 routing=28
+    [ 54s] pending=27 running=1 completed=6 failed=0 routing=28
+    [ 57s] pending=27 running=1 completed=6 failed=0 routing=28
+    [ 60s] pending=27 running=1 completed=6 failed=0 routing=28
+    [ 63s] pending=27 running=1 completed=6 failed=0 routing=28
+    [ 66s] pending=27 running=1 completed=6 failed=0 routing=28
+    [ 69s] pending=26 running=1 completed=7 failed=0 routing=27
+    [ 72s] pending=27 running=1 completed=8 failed=0 routing=28
+    [ 75s] pending=27 running=1 completed=8 failed=0 routing=28
+    [ 78s] pending=27 running=1 completed=8 failed=0 routing=28
+    [ 81s] pending=27 running=1 completed=8 failed=0 routing=28
+    [ 84s] pending=27 running=1 completed=8 failed=0 routing=28
+    [ 87s] pending=26 running=1 completed=10 failed=0 routing=27
+    [ 90s] pending=26 running=1 completed=10 failed=0 routing=27
+    [ 93s] pending=26 running=1 completed=10 failed=0 routing=27
+    [ 96s] pending=26 running=1 completed=10 failed=0 routing=27
+    [ 99s] pending=26 running=1 completed=10 failed=0 routing=27
+    [102s] pending=26 running=1 completed=10 failed=0 routing=27
+    [105s] pending=26 running=1 completed=12 failed=0 routing=27
+    [108s] pending=26 running=1 completed=12 failed=0 routing=27
+    [111s] pending=26 running=1 completed=12 failed=0 routing=27
+    [114s] pending=26 running=1 completed=12 failed=0 routing=27
+    [117s] pending=26 running=1 completed=12 failed=0 routing=27
+    [120s] pending=25 running=1 completed=13 failed=0 routing=26
+    [123s] pending=26 running=1 completed=14 failed=0 routing=27
+    [126s] pending=26 running=1 completed=14 failed=0 routing=27
+    [129s] pending=26 running=1 completed=14 failed=0 routing=27
+    [132s] pending=26 running=1 completed=14 failed=0 routing=27
+    [135s] pending=26 running=1 completed=14 failed=0 routing=27
+    [138s] pending=25 running=1 completed=15 failed=0 routing=26
+    [141s] pending=26 running=1 completed=16 failed=0 routing=27
+    [144s] pending=26 running=1 completed=16 failed=0 routing=27
+    [147s] pending=26 running=1 completed=16 failed=0 routing=27
+    [150s] pending=26 running=1 completed=16 failed=0 routing=27
+    [153s] pending=26 running=1 completed=16 failed=0 routing=27
+    [156s] pending=26 running=1 completed=18 failed=0 routing=27
+    [159s] pending=26 running=1 completed=18 failed=0 routing=27
+    [162s] pending=26 running=1 completed=18 failed=0 routing=27
+    [165s] pending=26 running=1 completed=18 failed=0 routing=27
+    [168s] pending=26 running=1 completed=18 failed=0 routing=27
+    [171s] pending=25 running=1 completed=19 failed=0 routing=26
+    [174s] pending=26 running=1 completed=20 failed=0 routing=27
+    [177s] pending=26 running=1 completed=20 failed=0 routing=27
+    [180s] pending=26 running=1 completed=20 failed=0 routing=27
+    [183s] pending=26 running=1 completed=20 failed=0 routing=27
+    [186s] pending=26 running=1 completed=20 failed=0 routing=27
+    [189s] pending=26 running=1 completed=20 failed=0 routing=27
+    [192s] pending=26 running=1 completed=20 failed=0 routing=27
+    [195s] pending=27 running=1 completed=22 failed=0 routing=28
+    [198s] pending=27 running=1 completed=22 failed=0 routing=28
+    [201s] pending=27 running=1 completed=22 failed=0 routing=28
+    [204s] pending=27 running=1 completed=22 failed=0 routing=28
+    [207s] pending=26 running=1 completed=23 failed=0 routing=27
+    [210s] pending=27 running=1 completed=24 failed=0 routing=28
+    [213s] pending=27 running=1 completed=24 failed=0 routing=28
+    [216s] pending=27 running=1 completed=24 failed=0 routing=28
+    [219s] pending=27 running=1 completed=24 failed=0 routing=28
+    [222s] pending=27 running=1 completed=24 failed=0 routing=28
+    [225s] pending=27 running=1 completed=26 failed=0 routing=28
+    [228s] pending=27 running=1 completed=26 failed=0 routing=28
+    [231s] pending=27 running=1 completed=26 failed=0 routing=28
+    [234s] pending=27 running=1 completed=26 failed=0 routing=28
+    [237s] pending=26 running=1 completed=27 failed=0 routing=27
+    [240s] pending=0 running=0 completed=55 failed=0 routing=0
+    [OK] Extraction done (55 completed, 0 failed)
+
+======================================================================
+PHASE C: Ingesting update/correction episodes
+======================================================================
+  [S02-diana-update] episode 153: Diana Rivera transferred to the auth team as tech lead. She ...
+  [S05-deadline-update] episode 154: The Project Zenith deadline has been pushed back from April ...
+  [S06-marcus-correction] episode 155: CORRECTION: Marcus Chen actually uses Rust, not Java. He swi...
+  [S07-cache-reversal] episode 156: The infrastructure team reversed the Redis decision and will...
+  [S09-pipeline-update] episode 157: The data ingestion pipeline has been extended to 6 stages: e...
+  [S11-exponent-update] episode 158: UPDATE: After running the 10M benchmark, the Plan 42 scaling...
+
+======================================================================
+PHASE D: Waiting for update extraction to complete
+======================================================================
+
+  Waiting for extraction jobs (phase-C updates, timeout 600s)...
+    [  0s] pending=11 running=1 completed=0 failed=0 routing=12
+    [  3s] pending=11 running=1 completed=0 failed=0 routing=12
+    [  6s] pending=11 running=1 completed=0 failed=0 routing=12
+    [  9s] pending=11 running=1 completed=0 failed=0 routing=12
+    [ 12s] pending=11 running=1 completed=0 failed=0 routing=12
+    [ 15s] pending=11 running=1 completed=0 failed=0 routing=12
+    [ 18s] pending=10 running=1 completed=1 failed=0 routing=11
+    [ 21s] pending=11 running=1 completed=2 failed=0 routing=12
+    [ 24s] pending=11 running=1 completed=2 failed=0 routing=12
+    [ 27s] pending=11 running=1 completed=2 failed=0 routing=12
+    [ 30s] pending=11 running=1 completed=2 failed=0 routing=12
+    [ 33s] pending=10 running=1 completed=3 failed=0 routing=11
+    [ 36s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 39s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 42s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 45s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 48s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 51s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 54s] pending=11 running=1 completed=4 failed=0 routing=12
+    [ 57s] pending=10 running=1 completed=5 failed=0 routing=11
+    [ 60s] pending=11 running=1 completed=6 failed=0 routing=12
+    [ 63s] pending=11 running=1 completed=6 failed=0 routing=12
+    [ 66s] pending=11 running=1 completed=6 failed=0 routing=12
+    [ 69s] pending=11 running=1 completed=6 failed=0 routing=12
+    [ 72s] pending=11 running=1 completed=6 failed=0 routing=12
+    [ 75s] pending=11 running=1 completed=6 failed=0 routing=12
+    [ 78s] pending=10 running=1 completed=7 failed=0 routing=11
+    [ 81s] pending=11 running=1 completed=8 failed=0 routing=12
+    [ 84s] pending=11 running=1 completed=8 failed=0 routing=12
+    [ 87s] pending=11 running=1 completed=8 failed=0 routing=12
+    [ 90s] pending=11 running=1 completed=8 failed=0 routing=12
+    [ 93s] pending=11 running=1 completed=8 failed=0 routing=12
+    [ 96s] pending=11 running=1 completed=8 failed=0 routing=12
+    [ 99s] pending=11 running=1 completed=8 failed=0 routing=12
+    [102s] pending=10 running=1 completed=9 failed=0 routing=11
+    [105s] pending=11 running=1 completed=10 failed=0 routing=12
+    [108s] pending=11 running=1 completed=10 failed=0 routing=12
+    [111s] pending=11 running=1 completed=10 failed=0 routing=12
+    [114s] pending=11 running=1 completed=10 failed=0 routing=12
+    [117s] pending=11 running=1 completed=10 failed=0 routing=12
+    [120s] pending=0 running=1 completed=23 failed=0 routing=1
+    [123s] pending=0 running=0 completed=24 failed=0 routing=0
+    [OK] Extraction done (24 completed, 0 failed)
+
+======================================================================
+PHASE E: Verifying all 14 scenarios
+======================================================================
+
+--- S1: Basic recall — store and retrieve a fact. ---
+  [PASS] S01: Basic recall
+    Phoenix Framework found in recall results
+
+--- S2: Fact update — Diana's team changes from billing to auth. ---
+  [PASS] S02: Fact update (content)
+      node='Diana Rivera' content='diana rivera is the tech lead for the auth team. previously, she was a senior engineer on the billing team for three yea'
+    Content updated: auth team reflected
+
+--- S3: Entity dedup — Kubernetes mentioned in 2 episodes → 1 node. ---
+  [PASS] S03: Entity dedup
+    Kubernetes nodes: 1 exact, 1 total
+    Single Kubernetes node — dedup works
+
+--- S4: Edge accumulation — Diana's team edges should reflect current state. ---
+  [PARTIAL] S04: Edge accumulation
+    Auth edges: ['Diana Rivera --TRANSFERRED_TO--> Auth Team', 'Diana Rivera --LEADS--> Authentication and Authorization Platform', 'Diana Rivera --FOCUSES_ON--> OAuth2 integration', 'Diana Rivera --LEADS--> Authentication and Authorization Platform', 'Diana Rivera --FOCUSES_ON--> OAuth2 Integration', 'Diana Rivera --MEMBER_OF--> Auth Team']
+    Billing edges: ['Diana Rivera --MOVED_FROM--> Billing Team']
+    Total Diana edges: 16
+    Both auth and billing edges coexist
+
+--- S5: Deadline contradiction — Zenith deadline April 15 → May 1. ---
+  [FAIL] S05: Deadline contradiction
+    Zenith node content: 'project zenith is a project currently working towards a beta release milestone. it has a critical deadline set for april 15, 2026. the team is actively targeting this date for the release. the team re'
+    May deadline not found in node content
+
+--- S6: Explicit correction — Marcus uses Rust, not Java. ---
+  [PARTIAL] S06: Explicit correction
+    Marcus node content: 'marcus chen is a developer who focuses on memory safety in payment services. he previously used java but migrated to rust approximately six months ago to leverage its memory safety guarantees for the '
+    Both Rust and Java in content
+
+--- S7: Preference reversal — Redis → Memcached. ---
+  [PARTIAL] S07: Preference reversal
+    Memcached rank: 5, Redis rank: 0
+    Both found but Memcached doesn't rank higher
+
+--- S8: Property accumulation — BERT has both accuracy and latency info. ---
+  [PASS] S08: Property accumulation
+    Accuracy info: True, Latency info: True
+    Both accuracy and latency accessible via recall
+
+--- S9: Property conflict — pipeline stages 4 → 6. ---
+  [PASS] S09: Property conflict
+    Pipeline node content: 'a computational pipeline used for the blocking process, now extended to 6 stages. a sequence of stages responsible for bringing data from various sources into a storage system. the pipeline has been e'
+    6-stage pipeline reflected in content
+
+--- S10: Complex domain queries — ER blocking with graph context. ---
+  [PASS] S10: Complex domain query
+    ER-related results: ['mixed_person_name_city', 'Pairs Per Entity', 'Blocking Rules', 'Scoring', 'Weighted Non-trivial Pairs', 'Blocking', 'Blocking Stage', 'Super-linear Scaling', 'Entity Resolution']
+    Graph context present: True
+    Rich ER recall: 9 relevant results
+
+--- S11: Fact supersession — scaling exponent b=0.57 → b=0.62. ---
+  [PASS] S11: Fact supersession
+    b=0.62 found: True, b=0.57 found: True
+    Updated exponent 0.62 ranks at or above 0.57
+
+--- S12: Importance effect — critical alert (high importance) ranks above trivial fact. ---
+  [PASS] S12: Importance effect
+    Critical alert rank: 0
+    Critical alert found at rank 0
+
+--- S13: Recency effect — newer update episodes rank above older initial episodes. ---
+  [PARTIAL] S13: Recency effect
+    May (newer) rank: None, April (older) rank: 0
+    Cannot determine recency ranking from available data
+
+--- S14: Activation (access count) — repeated recalls increase score. ---
+  [PASS] S14: Activation (access)
+    Scores over 5 recalls: ['0.8897', '0.8998', '0.9016', '0.9029', '0.9040']
+    Score increases: 4/4
+    Scores trend upward — activation works
+
+======================================================================
+SCENARIO RESULTS SUMMARY
+======================================================================
+
+#    Scenario                            Verdict
+----------------------------------------------------
+[+] 1   S01: Basic recall                   PASS
+[+] 2   S02: Fact update (content)          PASS
+[+] 3   S03: Entity dedup                   PASS
+[~] 4   S04: Edge accumulation              PARTIAL
+[x] 5   S05: Deadline contradiction         FAIL
+[~] 6   S06: Explicit correction            PARTIAL
+[~] 7   S07: Preference reversal            PARTIAL
+[+] 8   S08: Property accumulation          PASS
+[+] 9   S09: Property conflict              PASS
+[+] 10  S10: Complex domain query           PASS
+[+] 11  S11: Fact supersession              PASS
+[+] 12  S12: Importance effect              PASS
+[~] 13  S13: Recency effect                 PARTIAL
+[+] 14  S14: Activation (access)            PASS
+
+PASS: 9  PARTIAL: 4  FAIL: 1
+Acceptable (PASS only): 9/14
+Acceptable (PASS + PARTIAL): 13/14
+
+[GATE PASSED] 13/14 >= 11/14 (with partial)
+
+--- Duplicate Node Report ---
+  oauth2 integration: 4x types=['Feature', 'Process', 'Technique', 'Task']
+  session management: 4x types=['Feature', 'Process', 'Technique', 'Task']
+  b=0.57: 2x types=['Result', 'Property']
+  b=0.62: 2x types=['Result', 'Property']
+  compliance: 2x types=['Constraint', 'Concept']
+  computational resources: 2x types=['ComputingResource', 'Infrastructure']
+  credential rotation: 2x types=['Action', 'Task']
+  data: 2x types=['Asset', 'Dataset']
+  deep learning: 2x types=['Technique', 'Concept']
+  deep learning neural networks: 2x types=['Model', 'NeuralNetworkArchitecture']
+  learning: 2x types=['Process', 'CognitiveFunction']
+  lower memory overhead: 2x types=['Metric', 'SystemAttribute']
+  memory safety: 2x types=['SystemAttribute', 'Requirement']
+  merge freeze: 2x types=['Constraint', 'Event']
+  microservices development: 2x types=['Process', 'Task']
+  plan 42: 2x types=['Plan', 'Benchmark']
+  q2 release: 2x types=['Project', 'Milestone']
+  recall shortfall: 2x types=['TechnicalIssue', 'Metric']
+  scaling exponent: 2x types=['Parameter', 'Property']
+  self-attention mechanism: 2x types=['Technique', 'ArchitectureMechanism']
+  super-linear scaling: 2x types=['Concept', 'TechnicalIssue']
+  transformers architecture: 2x types=['ArchitectureStyle', 'NeuralNetworkArchitecture']
+  two-phase pre-scoring: 2x types=['Algorithm', 'Technique']
+  15ms: 2x types=['Duration', 'Result']
+  wnp pruning algorithm: 2x types=['Algorithm', 'Technique']
+  authentication and authorization platform: 2x types=['ArchitectureComponent', 'Platform']
+
+======================================================================
+PLAN 15 SCENARIO REPLAY COMPLETED
+======================================================================
+[1;32m==> E2E TEST PASSED: scripts/e2e_plan15_scenarios_test.py[0m
+[1;34m==> Cleaning up...[0m
+INFO:     Shutting down
+ERROR:    Cancel 0 running task(s), timeout graceful shutdown exceeded
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40068]
+[1;34m==> Stopped process (PID 40063).[0m
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-03-30 14:12:39.982 | INFO     | neocortex.postgres_service:disconnect:35 | Connection pool closed
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40067]
+[1;34m==> Stopped process (PID 40064).[0m
+[1;34m==> PostgreSQL container left running (use 'docker compose stop postgres' to stop).[0m
