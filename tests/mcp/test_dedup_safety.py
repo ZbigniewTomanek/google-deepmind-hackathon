@@ -9,7 +9,7 @@ Tests cover:
 
 import pytest
 
-from neocortex.db.adapter import _HOMONYM_TYPE_GROUPS, _types_are_merge_safe
+from neocortex.db.adapter import _HOMONYM_TYPE_GROUPS, _MERGE_SAFE_TYPE_GROUPS, _TYPE_TO_GROUP, _types_are_merge_safe
 
 # ── _types_are_merge_safe unit tests ──
 
@@ -59,6 +59,109 @@ class TestTypesAreMergeSafe:
         assert isinstance(_HOMONYM_TYPE_GROUPS, frozenset)
         for group in _HOMONYM_TYPE_GROUPS:
             assert isinstance(group, frozenset)
+
+
+# ── Semantic type hierarchy tests ──
+
+
+class TestMergeSafeTypeGroups:
+    """Tests for the configurable merge-safe type group system (Plan 17, Stage 3)."""
+
+    def test_type_to_group_lookup_populated(self):
+        """Pre-computed lookup has entries for all types in all groups."""
+        total_types = sum(len(g) for g in _MERGE_SAFE_TYPE_GROUPS)
+        assert len(_TYPE_TO_GROUP) == total_types
+
+    def test_type_to_group_is_case_insensitive(self):
+        """Lookup keys are lowercase."""
+        for key in _TYPE_TO_GROUP:
+            assert key == key.lower()
+
+    # Software group — sibling types that should merge
+    def test_tool_project_merged(self):
+        assert _types_are_merge_safe("Tool", "Project") is True
+
+    def test_tool_software_merged(self):
+        assert _types_are_merge_safe("Tool", "Software") is True
+
+    def test_framework_library_merged(self):
+        assert _types_are_merge_safe("Framework", "Library") is True
+
+    def test_software_tool_in_group(self):
+        assert _types_are_merge_safe("SoftwareTool", "Library") is True
+
+    # People group
+    def test_person_teammember_merged(self):
+        assert _types_are_merge_safe("Person", "TeamMember") is True
+
+    def test_person_employee_merged(self):
+        assert _types_are_merge_safe("Person", "Employee") is True
+
+    def test_researcher_scientist_merged(self):
+        assert _types_are_merge_safe("Researcher", "Scientist") is True
+
+    # Organization group
+    def test_team_organization_merged(self):
+        assert _types_are_merge_safe("Team", "Organization") is True
+
+    def test_company_department_merged(self):
+        assert _types_are_merge_safe("Company", "Department") is True
+
+    # Concept group
+    def test_concept_topic_merged(self):
+        assert _types_are_merge_safe("Concept", "Topic") is True
+
+    # Technology group
+    def test_technology_protocol_merged(self):
+        assert _types_are_merge_safe("Technology", "Protocol") is True
+
+    # Document group
+    def test_document_article_merged(self):
+        assert _types_are_merge_safe("Document", "Article") is True
+
+    # Event group
+    def test_event_milestone_merged(self):
+        assert _types_are_merge_safe("Event", "Milestone") is True
+
+    # Metric group
+    def test_metric_measurement_merged(self):
+        assert _types_are_merge_safe("Metric", "Measurement") is True
+
+    # Homonym blacklist overrides group membership
+    def test_homonym_overrides_person_organization(self):
+        """Person and Organization are both in groups, but the homonym blacklist wins."""
+        assert _types_are_merge_safe("Person", "Organization") is False
+
+    def test_homonym_overrides_metric_metricunit(self):
+        """Metric/MetricUnit: homonym blacklist prevents prefix merge."""
+        assert _types_are_merge_safe("Metric", "MetricUnit") is False
+
+    # Types excluded from groups — too distinct to auto-merge
+    def test_service_application_not_merged(self):
+        assert _types_are_merge_safe("Service", "Application") is False
+
+    def test_meeting_sprint_not_merged(self):
+        assert _types_are_merge_safe("Meeting", "Sprint") is False
+
+    def test_platform_library_not_merged(self):
+        assert _types_are_merge_safe("Platform", "Library") is False
+
+    # Cross-group types should not merge
+    def test_person_tool_not_merged(self):
+        assert _types_are_merge_safe("Person", "Tool") is False
+
+    def test_organization_document_not_merged(self):
+        assert _types_are_merge_safe("Organization", "Document") is False
+
+    # Unknown types default to conservative
+    def test_unknown_types_not_merged(self):
+        assert _types_are_merge_safe("Aardvark", "Zebra") is False
+
+    # Case insensitivity for group lookup
+    def test_group_lookup_case_insensitive(self):
+        assert _types_are_merge_safe("tool", "project") is True
+        assert _types_are_merge_safe("TOOL", "PROJECT") is True
+        assert _types_are_merge_safe("Tool", "project") is True
 
 
 # ── Node dedup safety tests (InMemoryRepository) ──
@@ -157,6 +260,21 @@ async def test_node_dedup_properties_merged(mock_repo):
     assert node2.content == "Bob Smith"
     assert node2.properties["role"] == "engineer"  # preserved from first
     assert node2.properties["team"] == "infra"  # added from second
+
+
+@pytest.mark.asyncio
+async def test_node_dedup_tool_project_merges(mock_repo):
+    """Same name, Tool/Project types (same merge group) → merges. Validates DataForge fix."""
+    nt_tool = await mock_repo.get_or_create_node_type("agent", "Tool")
+    nt_project = await mock_repo.get_or_create_node_type("agent", "Project")
+
+    node1 = await mock_repo.upsert_node("agent", "DataForge", nt_tool.id, content="Data processing tool")
+    node2 = await mock_repo.upsert_node("agent", "DataForge", nt_project.id, content="Data processing project")
+
+    assert node1.id == node2.id
+    assert node2.content == "Data processing project"
+    all_names = await mock_repo.list_all_node_names("agent")
+    assert all_names.count("DataForge") == 1
 
 
 # ── Edge dedup safety tests (InMemoryRepository) ──

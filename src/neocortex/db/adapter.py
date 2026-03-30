@@ -32,29 +32,71 @@ _HOMONYM_TYPE_GROUPS: frozenset[frozenset[str]] = frozenset(
         frozenset({"Drug", "Neurotransmitter"}),
         frozenset({"Person", "Organization"}),
         frozenset({"Language", "Country"}),
+        frozenset({"Metric", "MetricUnit"}),  # a metric and its unit are different (prefix guard)
     }
 )
+
+# Types within the same group are considered merge-safe (likely type drift, not homonyms)
+_MERGE_SAFE_TYPE_GROUPS: list[frozenset[str]] = [
+    # Software entities — LLM often oscillates between these
+    # NOTE: Service, Application, Platform excluded — they are semantically
+    # distinct enough that same-name entities may legitimately differ.
+    frozenset({"Tool", "Project", "Software", "SoftwareTool", "Framework", "Library"}),
+    # People — role vs person type drift
+    frozenset({"Person", "PersonRole", "TeamMember", "Employee", "Researcher", "Engineer", "Scientist"}),
+    # Organizations
+    frozenset({"Organization", "Company", "Team", "Group", "Department"}),
+    # Concepts / Topics
+    frozenset({"Concept", "Topic", "Subject", "Theme", "Idea"}),
+    # Technologies (specific)
+    frozenset({"Technology", "Protocol", "Standard", "Specification"}),
+    # Documents / Resources
+    frozenset({"Document", "Resource", "Article", "Paper", "Report"}),
+    # Events / Milestones
+    # NOTE: Meeting, Sprint, Deadline excluded — a meeting ABOUT a sprint
+    # is not the sprint. These have specific semantics worth preserving.
+    frozenset({"Event", "Milestone"}),
+    # Metrics / Measurements
+    frozenset({"Metric", "Measurement", "Score", "KPI", "Statistic"}),
+]
+
+# Pre-compute a lookup: type_name_lower -> group_index for O(1) group check
+_TYPE_TO_GROUP: dict[str, int] = {}
+for _i, _group in enumerate(_MERGE_SAFE_TYPE_GROUPS):
+    for _t in _group:
+        _TYPE_TO_GROUP[_t.lower()] = _i
 
 
 def _types_are_merge_safe(existing: str | None, requested: str | None) -> bool:
     """Return True if two type names likely refer to the same entity
     (LLM type drift) rather than a legitimate homonym.
 
-    Conservative: returns False when uncertain → creates separate node.
+    Uses three checks in order:
+    1. Exact match → True
+    2. Known homonym pairs → False (never merge)
+    3. Same merge-safe group → True
+    4. Prefix heuristic (backward compat) → True
+    5. Default → False (conservative)
     """
     if not existing or not requested:
         return False
     if existing == requested:
         return True
+
+    # Known homonym pairs — never merge
     pair = frozenset({existing, requested})
     if pair in _HOMONYM_TYPE_GROUPS:
-        return False  # Known homonym pair — don't merge
-    # Heuristic: one must be a case-insensitive prefix of the other.
-    # This catches type hierarchy patterns (Person/PersonRole, Software/SoftwareTool)
-    # while avoiding false positives from arbitrary substring matches
-    # (API/Capital, Event/Prevent, Fact/Artifact).
-    e, r = existing.lower(), requested.lower()
-    return e.startswith(r) or r.startswith(e)
+        return False
+
+    # Same merge-safe group → merge
+    e_lower, r_lower = existing.lower(), requested.lower()
+    e_group = _TYPE_TO_GROUP.get(e_lower)
+    r_group = _TYPE_TO_GROUP.get(r_lower)
+    if e_group is not None and r_group is not None and e_group == r_group:
+        return True
+
+    # Backward compat: prefix heuristic for types not in any group
+    return e_lower.startswith(r_lower) or r_lower.startswith(e_lower)
 
 
 class GraphServiceAdapter:
