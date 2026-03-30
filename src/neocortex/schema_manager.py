@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import asyncpg.exceptions
+
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.graph import GraphInfo
 
@@ -26,31 +28,40 @@ class SchemaManager:
         schema_name = self.make_schema_name(agent_id=agent_id, purpose=purpose)
         sql = self._render_template(schema_name=schema_name, is_shared=is_shared)
 
-        async with self._pg.pool.acquire() as conn, conn.transaction():
-            duplicate = await conn.fetchrow(
-                """
-                SELECT id, agent_id, purpose, schema_name, is_shared, created_at
-                FROM graph_registry
-                WHERE agent_id = $1 AND purpose = $2
-                """,
-                agent_id,
-                purpose,
-            )
-            if duplicate is not None:
-                return str(duplicate["schema_name"])
+        try:
+            async with self._pg.pool.acquire() as conn, conn.transaction():
+                duplicate = await conn.fetchrow(
+                    """
+                    SELECT id, agent_id, purpose, schema_name, is_shared, created_at
+                    FROM graph_registry
+                    WHERE agent_id = $1 AND purpose = $2
+                    """,
+                    agent_id,
+                    purpose,
+                )
+                if duplicate is not None:
+                    return str(duplicate["schema_name"])
 
-            await conn.execute(sql)
-            row = await conn.fetchrow(
-                """
-                INSERT INTO graph_registry (agent_id, purpose, schema_name, is_shared)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, agent_id, purpose, schema_name, is_shared, created_at
-                """,
-                agent_id,
-                purpose,
-                schema_name,
-                is_shared,
-            )
+                await conn.execute(sql)
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO graph_registry (agent_id, purpose, schema_name, is_shared)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id, agent_id, purpose, schema_name, is_shared, created_at
+                    """,
+                    agent_id,
+                    purpose,
+                    schema_name,
+                    is_shared,
+                )
+        except asyncpg.exceptions.UniqueViolationError:
+            # CREATE SCHEMA IF NOT EXISTS has a race condition under concurrent
+            # transactions — the catalog check and insert aren't atomic, so a
+            # parallel process can win the race.  Re-check the registry.
+            existing = await self.get_graph(agent_id=agent_id, purpose=purpose)
+            if existing is not None:
+                return existing.schema_name
+            return schema_name
 
         if row is None:
             raise RuntimeError(f"Failed to register graph schema '{schema_name}'.")
