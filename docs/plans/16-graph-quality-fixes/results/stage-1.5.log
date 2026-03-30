@@ -1,0 +1,149 @@
+[1;34m==> Mode: local | Test: scripts/e2e_content_update_test.py[0m
+[1;34m==> Ensuring PostgreSQL is running via docker compose...[0m
+ Container neocortex-postgres  Running
+[1;34m==> Waiting for PostgreSQL to be ready...[0m
+[1;32m==> PostgreSQL is ready (0s).[0m
+[1;34m==> Applying any missing migrations...[0m
+[1;34m==> Killing existing process on port 8000 (PID 19409
+93569)...[0m
+[1;34m==> Starting NeoCortex MCP server (port 8000)...[0m
+[1;34m==> Starting NeoCortex ingestion server (port 8001)...[0m
+[1;34m==> Waiting for http://127.0.0.1:8000/health (up to 60s)...[0m
+[1;32m==> Healthy: http://127.0.0.1:8000/health (0s).[0m
+[1;34m==> Waiting for http://127.0.0.1:8001/health (up to 60s)...[0m
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.1.1                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      NeoCortex, 3.1.1                          │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+2026-03-30 12:03:48.854 | INFO     | neocortex.postgres_service:connect:22 | Connecting to PostgreSQL at localhost:5432
+2026-03-30 12:03:48.883 | INFO     | neocortex.postgres_service:connect:28 | Connection pool created (min=2, max=10)
+/Users/zbigniewtomanek/work/google-deepmind-hackathon/.venv/lib/python3.13/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+  warnings.warn(  # deprecated in 14.0 - 2024-11-09
+/Users/zbigniewtomanek/work/google-deepmind-hackathon/.venv/lib/python3.13/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+  from websockets.server import WebSocketServerProtocol
+INFO:     Started server process [21132]
+INFO:     Waiting for application startup.
+2026-03-30 12:03:48.935 | INFO     | neocortex.postgres_service:connect:22 | Connecting to PostgreSQL at localhost:5432
+2026-03-30 12:03:48.966 | INFO     | neocortex.postgres_service:connect:28 | Connection pool created (min=2, max=10)
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 12:03:49.149 | INFO     | neocortex.embedding_service:__init__:26 | EmbeddingService initialized with model=gemini-embedding-001
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 12:03:49.198 | INFO     | neocortex.embedding_service:__init__:26 | EmbeddingService initialized with model=gemini-embedding-001
+[03/30/26 12:03:49] INFO     Starting MCP server 'NeoCortex'    transport.py:273
+                             with transport 'http' on
+                             http://127.0.0.1:8000/mcp
+INFO:     Started server process [21133]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 48] error while attempting to bind on address ('127.0.0.1', 8000): [errno 48] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 12:03:49.221 | INFO     | neocortex.postgres_service:disconnect:35 | Connection pool closed
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2026-03-30 12:03:49.275 | INFO     | neocortex.ingestion.media_description:__init__:58 | MediaDescriptionService initialized with model=gemini-3-flash-preview
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:63249 - "GET /health HTTP/1.1" 200 OK
+[1;32m==> Healthy: http://127.0.0.1:8001/health (2s).[0m
+[1;34m==> Running E2E test: scripts/e2e_content_update_test.py[0m
+============================================================
+E2E Content Update Test (Plan 16 Stage 1.5)
+MCP:       http://127.0.0.1:8000/mcp
+Ingestion: http://127.0.0.1:8001
+Token:     alice-to...
+============================================================
+
+=== Step 1: Ingest initial text (Alice on billing team) ===
+  Stored episode 29
+  Text: Alice works on the billing team as a senior engineer. She specializes in payment...
+
+=== Step 2: Wait for initial extraction ===
+
+  Waiting for extraction jobs (initial, timeout 300s)...
+    [  0s] pending=1 running=1 completed=0 failed=0
+    [  3s] pending=1 running=1 completed=0 failed=0
+    [  6s] pending=1 running=1 completed=0 failed=0
+    [  9s] pending=1 running=1 completed=0 failed=0
+    [ 12s] pending=1 running=1 completed=0 failed=0
+    [ 15s] pending=1 running=1 completed=0 failed=0
+    [ 18s] pending=1 running=1 completed=0 failed=0
+    [ 21s] pending=1 running=1 completed=0 failed=0
+    [ 24s] pending=1 running=1 completed=0 failed=0
+    [ 27s] pending=1 running=1 completed=0 failed=0
+    [ 30s] pending=0 running=1 completed=1 failed=0
+    [ 33s] pending=0 running=0 completed=4 failed=0
+    [PASS] Extraction done (4 completed, 0 failed)
+
+=== Step 3: Verify initial content (billing team) ===
+  Recall returned 10 results
+    Match: name='Alice' content='Senior engineer on the billing team....'
+    [PASS] Found billing-related content for Alice
+
+  Direct DB query: 1 Alice node(s)
+    name='Alice' type='Person' content='Senior engineer on the billing team....'
+  [PASS] Initial content verified: Alice associated with billing
+
+=== Step 4: Ingest updated text (Alice to auth team) ===
+  Stored episode 30
+  Text: Alice transferred to the auth team as tech lead. She now leads the authenticatio...
+
+=== Step 5: Wait for update extraction ===
+
+  Waiting for extraction jobs (update, timeout 300s)...
+    [  0s] pending=1 running=1 completed=0 failed=0
+    [  3s] pending=1 running=1 completed=0 failed=0
+    [  6s] pending=1 running=1 completed=0 failed=0
+    [  9s] pending=1 running=1 completed=0 failed=0
+    [ 12s] pending=1 running=1 completed=0 failed=0
+    [ 15s] pending=1 running=1 completed=0 failed=0
+    [ 18s] pending=0 running=1 completed=1 failed=0
+    [ 21s] pending=0 running=0 completed=4 failed=0
+    [PASS] Extraction done (4 completed, 0 failed)
+
+=== Step 6: Verify updated content (auth team) ===
+  Recall returned 10 results
+    Match: name='Alice' content='An individual who transitioned to the auth team as tech lead....'
+    [PASS] Found auth-related content for Alice
+
+  Direct DB query: 1 Alice node(s)
+    name='Alice' type='Person' content='An individual who transitioned to the auth team as tech lead....'
+  [PASS] Node content updated: Alice now associated with auth team
+  [PASS] Billing is not the sole content (content was updated or merged)
+
+=== Step 7: Verify no duplicate Alice nodes ===
+  Total nodes matching 'alice': 1
+  Exact 'Alice' name matches: 1
+    name='Alice' type='Person' forgotten=False
+  [PASS] No duplicate Alice nodes (found 1)
+
+============================================================
+SUMMARY
+  Alice nodes in graph: 1
+    Alice [Person]: An individual who transitioned to the auth team as tech lead.
+============================================================
+CONTENT UPDATE E2E TEST COMPLETED
+[1;32m==> E2E TEST PASSED: scripts/e2e_content_update_test.py[0m
+[1;34m==> Cleaning up...[0m
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-03-30 12:04:47.275 | INFO     | neocortex.postgres_service:disconnect:35 | Connection pool closed
+INFO:     Application shutdown complete.
+INFO:     Finished server process [21132]
+[1;34m==> Stopped process (PID 21128).[0m
+[1;34m==> PostgreSQL container left running (use 'docker compose stop postgres' to stop).[0m

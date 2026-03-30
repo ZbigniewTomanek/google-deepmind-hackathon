@@ -133,7 +133,7 @@ E2E validation runs weight stability stress test and final Plan 15 scenario gate
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | [Fix Node Content Updates](stages/01-content-updates.md) | DONE | Librarian prompt requires descriptions; pipeline fallback to extractor; mock parity fix; 5 new tests | fix(extraction): ensure node content updates on re-extraction |
-| 1.5 | [E2E Validate: Content Updates](stages/01.5-validate-content-updates.md) | PENDING | E2E: content update scenario + extraction regression | |
+| 1.5 | [E2E Validate: Content Updates](stages/01.5-validate-content-updates.md) | DONE | Extraction pipeline E2E passes; content update E2E: Alice billing→auth, no dupes, 1 node | test(e2e): validate content updates end-to-end |
 | 2 | [Librarian Retrieval Tools](stages/02-librarian-retrieval.md) | PENDING | P0: Read-only graph query tools via @agent.tool | |
 | 3 | [Librarian Mutation Tools & Pipeline Redesign](stages/03-librarian-mutation.md) | PENDING | P0: Write tools + replace _persist_payload + partial failure handling | |
 | 3.5 | [E2E Validate: Tool Pipeline](stages/03.5-validate-tool-pipeline.md) | PENDING | E2E: Plan 15 scenarios, tool metrics, partial failure recovery | |
