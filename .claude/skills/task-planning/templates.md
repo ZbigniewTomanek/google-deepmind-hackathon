@@ -1,31 +1,94 @@
 # Templates & Examples
 
-## Full Plan Template
+## Directory Structure
 
-Use this template when materializing a complex plan. The plan document is
-**self-contained**: any AI agent can read it cold and know exactly how to execute it.
+```
+plan-name/
+├── index.md              # Central overview, progress tracker, success criteria
+├── stages/
+│   ├── 01-stage-name.md  # Individual stage details
+│   ├── 02-stage-name.md
+│   └── ...
+└── resources/
+    ├── queries.md        # Investigation queries, SQL templates
+    └── commands.md       # Pipeline execution commands
+```
+
+---
+
+## index.md Template
 
 ````markdown
 # Plan: [Task Name]
 
-## Overview
-[What this plan implements and why — one paragraph]
+**Date**: YYYY-MM-DD
+**Branch**: [branch-name]
+**Predecessors**: [Links to predecessor plans, or "None"]
+**Goal**: [One-sentence goal]
+
+---
+
+## Context
+
+[Problem statement, background data, why this matters. Include tables, measurements,
+and references to prior work. This section should give a cold reader enough context
+to understand every stage.]
+
+---
+
+## Strategy
+
+[High-level approach. If stages group into phases, describe them here.]
+
+**Phase A** (Stages 1-2): [Description]
+**Phase B** (Stages 3-5): [Description]
+
+---
+
+## Success Criteria
+
+| Metric | Baseline | Target | Rationale |
+|--------|----------|--------|-----------|
+| [metric] | [current value] | [target value] | [why this target] |
+
+---
+
+## Files That May Be Changed
+
+### [Category]
+- `path/to/file` -- [What changes and why]
+
+---
+
+## Progress Tracker
+
+| # | Stage | Status | Notes | Commit |
+|---|-------|--------|-------|--------|
+| 1 | [Stage Name](stages/01-stage-name.md) | PENDING | | |
+| 2 | [Stage Name](stages/02-stage-name.md) | PENDING | | |
+| 3 | [Stage Name](stages/03-stage-name.md) | PENDING | | |
+
+Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
+
+---
 
 ## Execution Protocol
 
 To execute this plan, follow this loop for each stage:
 
-1. **Read the progress tracker** below and find the first stage that is not DONE
-2. **Read the stage details** — understand the goal, dependencies, and steps
-3. **Clarify ambiguities** — if anything is unclear or multiple approaches exist,
+1. **Read the progress tracker** above and find the first stage that is not DONE
+2. **Read the stage file** -- follow the link in the tracker to the stage's .md file
+3. **Read resources** -- if the stage references shared resources,
+   find them in the `resources/` directory
+4. **Clarify ambiguities** -- if anything is unclear or multiple approaches exist,
    ask the user before implementing. Do not guess.
-4. **Implement** — execute the steps described in the stage
-5. **Validate** — run the verification checks listed in the stage.
+5. **Implement** -- execute the steps described in the stage
+6. **Validate** -- run the verification checks listed in the stage.
    If validation fails, fix the issue before proceeding. Do not skip verification.
-6. **Update this plan** — mark the stage as DONE in the progress tracker,
-   add brief notes about what was done and any deviations from the original steps
-7. **Commit** — create an atomic commit with the message specified in the stage.
-   Include all changed files (code, config, docs, and this plan file).
+7. **Update this index** -- mark the stage as DONE in the progress tracker,
+   add brief notes about what was done and any deviations
+8. **Commit** -- create an atomic commit with the message specified in the stage.
+   Include all changed files (code, config, docs, and this plan's index.md).
 
 Repeat until all stages are DONE or a stage is BLOCKED.
 
@@ -35,52 +98,10 @@ explaining why, and stop. Do not proceed to subsequent stages.
 **If assumptions are wrong**: stop, document the issue in the Issues section below,
 revise affected stages, and get user confirmation before continuing.
 
-## Progress Tracker
-
-| # | Stage | Status | Notes | Commit |
-|---|-------|--------|-------|--------|
-| 1 | [Stage Name] | PENDING | | |
-| 2 | [Stage Name] | PENDING | | |
-| 3 | [Stage Name] | PENDING | | |
-
-Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
-
 ---
-
-## Stage 1: [Name]
-**Goal**: [What this stage accomplishes — one sentence]
-**Dependencies**: [What must be done first, or "None"]
-
-**Steps**:
-1. [Specific action — include file paths, line references, exact values]
-2. [Specific action]
-
-**Verification**:
-- [ ] [Concrete test command or check with expected outcome]
-- [ ] [Another verification step]
-
-**Commit**: `type(scope): description`
-
----
-
-## Stage 2: [Name]
-**Goal**: [What this stage accomplishes]
-**Dependencies**: Stage 1
-
-**Steps**:
-1. [Specific action]
-
-**Verification**:
-- [ ] [Test command or check]
-
-**Commit**: `type(scope): description`
-
----
-
-## Overall Verification
-[End-to-end validation command or checklist to run after all stages are complete]
 
 ## Issues
+
 [Document any problems discovered during execution]
 
 ### Issue: [Title]
@@ -89,7 +110,10 @@ Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 - **Impact**: [How this affects the plan]
 - **Resolution**: [What was done or proposed]
 
+---
+
 ## Decisions
+
 [Record architectural or approach decisions made during planning or execution]
 
 ### Decision: [Title]
@@ -100,15 +124,73 @@ Statuses: `PENDING` → `IN_PROGRESS` → `DONE` | `BLOCKED`
 
 ---
 
-## Simple Plan Template
+## Stage File Template
 
-For tasks with fewer than 5 steps that don't need stages:
+File: `stages/NN-stage-name.md`
+
+````markdown
+# Stage N: [Name]
+
+**Goal**: [What this stage accomplishes -- one sentence]
+**Dependencies**: [What must be DONE first, or "None"]
+
+---
+
+## Steps
+
+1. [Specific action -- include file paths, line references, exact values]
+   - File: `path/to/file`
+   - Details: [What to change, with before/after if helpful]
+
+2. [Specific action]
+   - File: `path/to/file`
+   - Details: [What to change]
+
+---
+
+## Verification
+
+- [ ] [Concrete test command or check with expected outcome]
+- [ ] [Another verification step]
+
+---
+
+## Commit
+
+`type(scope): description`
+````
+
+---
+
+## resources/ — Shared Reference Material
+
+The `resources/` directory holds any shared material that stages reference.
+It is not prescriptive -- add whatever files the plan needs. Common examples:
+
+| File | Purpose | Example content |
+|------|---------|-----------------|
+| `queries.md` | Investigation queries | SQL, GraphQL, API calls, curl commands |
+| `commands.md` | Build/test/deploy commands | Shell commands for each environment |
+| `configs.md` | Reference configurations | Env vars, feature flags, YAML snippets |
+| `data.md` | Sample data, fixtures | Test inputs, seed values, expected outputs |
+| `api-reference.md` | Endpoint specs | Request/response examples, auth setup |
+| `migration.md` | Schema/data migration | DDL, migration scripts, rollback steps |
+
+Use placeholders (e.g., `{schema}`, `{env}`, `${API_URL}`) for portability
+across environments. Stages reference resources by relative path
+(e.g., `see [queries](../resources/queries.md#q3)`).
+
+---
+
+## Simple Plan Template (Single File)
+
+For tasks with fewer than 5 steps that don't need a directory:
 
 ````markdown
 # Plan: [Task Name]
 
 ## Overview
-[What and why — one paragraph]
+[What and why -- one paragraph]
 
 ## Steps
 1. [Action verb] [specific change]
@@ -126,143 +208,88 @@ For tasks with fewer than 5 steps that don't need stages:
 
 ---
 
-## Example 1: Simple Task
+## Example: Complex Plan Directory
 
-**Task**: "Fix the scoring threshold for matching"
+**Task**: "Migrate mixed person features from coarse to precise Metaphone3"
 
-**Analysis** — Read config, found threshold at 22.0, evaluation shows 21.5 is optimal.
-
-**Clarification** — Skipped (straightforward change).
-
-**Plan**:
-
-```markdown
-# Plan: Lower Scoring Threshold
-
-## Overview
-Lower threshold from 22.0 to 21.5 based on evaluation results.
-Converts ~130 borderline predictions to matches, improving recall by ~2-3%.
-
-## Steps
-1. Update `match_threshold` in `config/base.yaml` line ~45
-   - Change: `match_threshold: 22.0` → `match_threshold: 21.5`
-2. Run scoring pipeline to validate
-3. Run evaluation to confirm recall improvement
-
-## Verification
-- [ ] Scoring runs without errors
-- [ ] Recall improved to ~71-73%
-- [ ] Precision remains >99%
-
-## Commit
-`feat(scoring): lower match threshold to 21.5 for improved recall`
+Deployed with:
+```bash
+deploy_plan.sh --name "36f-mixed-person-precision-migration" --stages 3
 ```
 
-**Execution** — All steps done, recall 68.6% → 71.2%, committed.
-
----
-
-## Example 2: Complex Task with Stages
-
-**Task**: "Add email address matching support"
-
-**Analysis** — Existing pipeline has email features but doesn't use them for scoring.
-
-**Clarification** — Asked user to choose between exact-only vs exact+domain matching. User chose exact-only.
-
-**Plan**:
+### index.md (abbreviated)
 
 ```markdown
-# Plan: Add Email Matching
+# Plan: Mixed Person Precision Migration & Block Size Tuning
 
-## Overview
-Add email as a high-confidence matching signal. Features already exist
-in the pipeline; this adds the matching rule and scoring weight.
+**Date**: 2026-03-30
+**Branch**: CTO-3138
+**Predecessors**: Plan 36d, Plan 36b
+**Goal**: Eliminate coarse-metaphone3 bottleneck in mixed person composed features
 
-## Execution Protocol
+## Context
+Plan 36d migrated org features but left mixed person features on 4-char coarse.
+At 30M, mixed_person_name_city generates 212M pairs (6.60x super-linear scaling).
 
-To execute this plan, follow this loop for each stage:
+## Strategy
+**Phase A** (Stage 1): YAML-only config migration + sandbox validation
+**Phase B** (Stages 2-3): 30M benchmark + scaling analysis
 
-1. Read the progress tracker and find the first stage that is not DONE
-2. Read the stage details — understand the goal, dependencies, and steps
-3. Clarify ambiguities — ask the user if anything is unclear
-4. Implement — execute the steps described in the stage
-5. Validate — run verification checks; fix failures before proceeding
-6. Update this plan — mark stage DONE, add notes
-7. Commit — atomic commit with message from the stage, including this plan file
+## Success Criteria
+| Metric | Baseline | Target |
+|--------|----------|--------|
+| Sandbox blocking recall | 79.64% | >= 78% |
+| 30M total pairs | 661M | < 500M |
 
 ## Progress Tracker
-
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | Add Matching Rule | DONE | Generated 1,171 pairs | abc1234 |
-| 2 | Add Scoring Weight | DONE | Weight 15.0 applied | def5678 |
-| 3 | Validation | DONE | +0.44% recall, 99.95% precision | ghi9012 |
+| 1 | [Config Migration](stages/01-config-migration.md) | DONE | 4 features switched, 2 caps tightened | abc1234 |
+| 2 | [Sandbox Validation](stages/02-sandbox-validation.md) | DONE | Recall 79.1%, pairs/entity 2.3 | def5678 |
+| 3 | [30M Benchmark](stages/03-30m-benchmark.md) | PENDING | | |
 
----
+## Execution Protocol
+[standard protocol]
+```
 
-## Stage 1: Add Matching Rule
-**Goal**: Generate candidate pairs from exact email matches
-**Dependencies**: None (feature data already exists)
+### stages/01-config-migration.md
 
-**Steps**:
-1. Add `email_exact` rule to `config/matching.yaml`
-   - Copy pattern from `phone_exact` rule (lines 23-29)
-   - Set source to email features table
-   - Set confidence tier to highest
+```markdown
+# Stage 1: Config Migration
 
-**Verification**:
-- [x] Config validates: `pytest tests/test_config.py`
-- [x] Pipeline generates candidate pairs from email matches
+**Goal**: Switch 4 mixed person composed features from coarse to precise Metaphone3
+**Dependencies**: None
 
-**Commit**: `feat(matching): add exact email matching rule`
+## Steps
+1. Update feature sources in `app/config/organization/features.yaml`
+   - Lines 807, 827, 847, 867: change `features_mixed_person_name_metaphone3`
+     to `features_mixed_person_name_metaphone3_precise`
+2. Lower `mixed_person_name_only` cap from 500 to 200
+   - File: `app/config/organization/blocking.yaml`, line 157
+3. Lower `org_name_cleaned_exact` cap from 100 to 50
+   - File: `app/config/organization/blocking.yaml`, line 129
+4. Update test assertion
+   - File: `tests/test_config_loader.py`, line 260: 100 -> 50
 
----
+## Verification
+- [ ] `poetry run pytest tests/test_config_loader.py` passes
+- [ ] Config validates: all 4 composed features reference precise source
 
-## Stage 2: Add Scoring Weight
-**Goal**: Score email matches as high-confidence signals
-**Dependencies**: Stage 1
+## Commit
+`feat(blocking): migrate mixed person composed features to precise metaphone3`
+```
 
-**Steps**:
-1. Add weight for `email_exact` in `config/scoring.yaml`
-   - Weight: 15.0 (same tier as phone match)
+### resources/queries.md (abbreviated)
 
-**Verification**:
-- [x] Config validates
-- [x] Email matches score >15 in output
+```markdown
+# Investigation Queries
 
-**Commit**: `feat(scoring): add weight 15.0 for exact email match`
+## Connection
+/opt/vertica/bin/vsql -h host -p 5433 -U user -w pass -c "..."
 
----
+### Q-ALL: Combined metrics
+SELECT entity_count, total_pairs, surviving_pairs, pairs_per_entity ...
 
-## Stage 3: Validation
-**Goal**: Confirm improvement without regression
-**Dependencies**: Stage 2
-
-**Steps**:
-1. Run full evaluation pipeline
-2. Update documentation with results
-
-**Verification**:
-- [x] Recall improved (~+1%)
-- [x] Precision maintained (>99.5%)
-- [x] Docs updated
-
-**Commit**: `docs(matching): add email matching validation results`
-
----
-
-## Overall Verification
-Run end-to-end pipeline and check metrics show improvement
-without regression in existing match quality.
-
-## Issues
-None encountered.
-
-## Decisions
-
-### Decision: Email matching approach
-- **Options**: A) Exact match only B) Exact + domain matching
-- **Chosen**: A
-- **Rationale**: Higher precision, simpler to validate. Domain matching can be added later.
+### Q6: Blocking rule pair counts
+SELECT blocking_rule, COUNT(*) AS pair_count FROM {schema}.er_blocking_rules ...
 ```

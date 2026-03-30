@@ -12,7 +12,7 @@
 #   - All stages are DONE (signal file contains "DONE")
 #   - A stage is BLOCKED (signal file contains "BLOCKED: <reason>")
 #   - Max stage count is reached
-#   - The agent exits with an error
+#   - The agent exits with an error after exhausting retries
 #
 # Usage:
 #   plan_runner.sh --plan <path-to-plan.md> [options]
@@ -25,6 +25,8 @@
 #   --max-stages N       Max stages to execute before stopping (default: 20)
 #   --signal-file PATH   Signal file path (default: .plan_runner_done)
 #   --test-command CMD   Test command to run after each stage (default: auto-detect)
+#   --max-retries N      Max retries per stage on transient failure (default: 3)
+#   --retry-delay N      Seconds to wait between retries (default: 10)
 #   --dry-run            Print prompts without executing
 #   --verbose            Pass --verbose to claude CLI
 #
@@ -40,6 +42,8 @@ AGENT="${AGENT:-claude}"
 MODEL=""
 MAX_TURNS=200
 MAX_STAGES=20
+MAX_RETRIES=3
+RETRY_DELAY=10
 SIGNAL_FILE=""
 TEST_COMMAND=""
 DRY_RUN=false
@@ -55,6 +59,8 @@ while [[ $# -gt 0 ]]; do
         --max-stages)    MAX_STAGES="$2"; shift 2 ;;
         --signal-file)   SIGNAL_FILE="$2"; shift 2 ;;
         --test-command)  TEST_COMMAND="$2"; shift 2 ;;
+        --max-retries)   MAX_RETRIES="$2"; shift 2 ;;
+        --retry-delay)   RETRY_DELAY="$2"; shift 2 ;;
         --dry-run)       DRY_RUN=true; shift ;;
         --verbose)       VERBOSE="--verbose"; shift ;;
         -h|--help)
@@ -221,6 +227,8 @@ The plan is at: $PLAN_REL
 5. **Set the stage status to IN_PROGRESS** in the tracker.
 6. **Implement the stage**:
    - Read the stage's steps from the plan.
+   - If the stage links to a separate file (e.g., \`stages/01-name.md\`), read that file.
+   - If the stage references shared resources (e.g., \`resources/queries.md\`), read those too.
    - Implement each step carefully, following the project's coding conventions.
    - Only implement what the current stage specifies. Do not skip ahead.
 $test_cmd_section
@@ -262,6 +270,7 @@ log "Signal file: $SIGNAL_FILE"
 log "Model:       $MODEL"
 [[ "$AGENT" == "claude" ]] && log "Max turns:   $MAX_TURNS"
 log "Max stages:  $MAX_STAGES"
+log "Max retries: $MAX_RETRIES (delay: ${RETRY_DELAY}s)"
 log "Test cmd:    ${TEST_COMMAND:-<none>}"
 log "Dry run:     $DRY_RUN"
 log ""
@@ -280,9 +289,24 @@ for (( stage_num=1; stage_num<=MAX_STAGES; stage_num++ )); do
         break
     fi
 
-    if ! run_agent "$stage_num" "$PROMPT"; then
-        log "ERROR: $AGENT failed on iteration $stage_num. Stopping."
-        echo "FAILED: iteration $stage_num" > "$SIGNAL_FILE"
+    retries=0
+    agent_ok=false
+    while (( retries <= MAX_RETRIES )); do
+        if run_agent "$stage_num" "$PROMPT"; then
+            agent_ok=true
+            break
+        fi
+        retries=$((retries + 1))
+        if (( retries > MAX_RETRIES )); then
+            break
+        fi
+        log "WARN: $AGENT failed on iteration $stage_num (attempt $retries/$MAX_RETRIES). Retrying in ${RETRY_DELAY}s..."
+        sleep "$RETRY_DELAY"
+    done
+
+    if ! $agent_ok; then
+        log "ERROR: $AGENT failed on iteration $stage_num after $MAX_RETRIES retries. Stopping."
+        echo "FAILED: iteration $stage_num (after $MAX_RETRIES retries)" > "$SIGNAL_FILE"
         break
     fi
 

@@ -1,11 +1,14 @@
 ---
 name: task-planning
-description: "Systematic task planning and execution framework. Guides through analysis, clarification, plan materialization with stages, progress tracking, verification, and atomic commits. Supports both interactive stage-by-stage execution and headless automation via companion bash script. Use for multi-step tasks, architectural changes, or complex problem-solving. Trigger when user asks to plan, break down, structure, or execute implementation of a non-trivial task."
+description: "Systematic task planning framework. Guides through analysis, clarification, and plan materialization as a directory with central index, per-stage files, and shared resources. Plans are designed for review by the user and autonomous execution by an AI agent via plan_runner.sh. Use for multi-step tasks, architectural changes, or complex problem-solving. Trigger when user asks to plan, break down, structure, or design implementation of a non-trivial task."
 ---
 
 # Task Planning
 
-Systematic workflow for planning and executing non-trivial tasks.
+Systematic workflow for planning non-trivial tasks. Produces a **plan directory**
+with a central index, individual stage files, and shared resources. The user
+reviews and refines the plan; execution is handled separately by an autonomous
+agent via `plan_runner.sh`.
 
 ## Contents
 
@@ -13,20 +16,16 @@ Systematic workflow for planning and executing non-trivial tasks.
 - [Phase 1: Analysis](#phase-1-analysis)
 - [Phase 2: Clarification](#phase-2-clarification)
 - [Phase 3: Plan Materialization](#phase-3-plan-materialization)
-- [Phase 4: Execution](#phase-4-execution)
 - [Headless Execution](headless.md)
 - [Templates & Examples](templates.md)
 
 ## Quick Start Checklist
 
-Copy and track progress:
-
 ```
 Planning Progress:
 - [ ] Phase 1: Analyze context (read docs, explore code, identify root cause)
 - [ ] Phase 2: Clarify ambiguity (ask questions if needed)
-- [ ] Phase 3: Write plan (stages, steps, verification)
-- [ ] Phase 4: Execute (implement, verify, commit per stage)
+- [ ] Phase 3: Write plan directory (deploy scaffold, fill index + stages + resources)
 ```
 
 ---
@@ -35,7 +34,7 @@ Planning Progress:
 
 **Goal**: Understand the problem space before proposing solutions.
 
-1. **Read relevant docs** -- project README, CLAUDE.md, architecture docs, recent work summaries
+1. **Read relevant docs** -- project README, CLAUDE.md, architecture docs, related plans
 2. **Explore the codebase** -- entry points, execution flow, data structures, existing tests
 3. **Identify root cause** -- don't treat symptoms; use git history, dependency analysis, impact analysis
 4. **Synthesize findings** -- document problem statement, context, and 2-3 potential approaches with trade-offs
@@ -92,146 +91,131 @@ Skip Phase 2 entirely if the task is straightforward with clear requirements.
 
 ## Phase 3: Plan Materialization
 
-**Goal**: Write a clear, actionable plan.
+**Goal**: Produce a plan directory that an autonomous agent can execute cold.
 
 ### Simple tasks (<5 steps)
 
-```markdown
-## Plan: [Task Name]
+Use a single markdown file (no directory needed):
 
-### Overview
+```markdown
+# Plan: [Task Name]
+
+## Overview
 [What and why -- one paragraph]
 
-### Steps
+## Steps
 1. [Action verb] [specific change]
    - File: [path]
    - Details: [what to change]
 2. [Action verb] [specific change]
    ...
 
-### Verification
+## Verification
 - [ ] [Test command or check]
 
-### Commit
+## Commit
 `type(scope): brief description`
 ```
 
-### Complex tasks (>=5 steps or multiple areas)
+### Complex tasks (>=5 steps or multiple concerns)
 
-Split into stages. Each stage must be:
+**Deploy the directory scaffold** using the helper script:
+
+```bash
+~/.claude/skills/task-planning/scripts/deploy_plan.sh \
+  --name "36g-token-blocking" \
+  --stages 5 \
+  --dir docs/plans
+```
+
+This creates:
+
+```
+docs/plans/36g-token-blocking/
+├── index.md                  # Central overview, progress tracker, success criteria
+├── stages/
+│   ├── 01-.md                # One file per stage
+│   ├── 02-.md
+│   ├── 03-.md
+│   ├── 04-.md
+│   └── 05-.md
+└── resources/
+    ├── queries.md            # Investigation queries, SQL templates
+    └── commands.md           # Pipeline/build/test commands
+```
+
+Then fill in the templates. See [templates.md](templates.md) for the full template
+reference with field descriptions.
+
+### Directory structure principles
+
+| Component | Purpose | Rule |
+|-----------|---------|------|
+| `index.md` | Central overview + progress tracker | Everything an agent needs to orient itself |
+| `stages/NN-name.md` | One stage per file | Self-contained: goal, steps, verification, commit |
+| `resources/` | Shared queries, commands, data | Referenced from stages, not duplicated |
+
+### Writing the index.md
+
+The index is the **single entry point** for both human reviewers and the autonomous
+agent. It must contain:
+
+1. **Metadata** -- date, branch, predecessors, goal
+2. **Context** -- problem statement, background data, why this matters
+3. **Strategy** -- high-level approach, phases if stages group logically
+4. **Success criteria** -- measurable targets with baselines
+5. **Files that may be changed** -- helps reviewers scope the blast radius
+6. **Progress tracker** -- table with links to stage files
+7. **Execution protocol** -- instructions for the autonomous agent (use the template)
+8. **Issues & Decisions** -- empty sections for runtime findings
+
+### Writing stage files
+
+Each stage file must be:
 
 - **Independently testable** -- can verify without completing later stages
 - **Committable** -- leaves codebase in a working state
 - **Logically cohesive** -- groups related changes together
+- **Self-contained** -- an agent reading only this file + index can implement it
 
-The plan document must include an **Execution Protocol** section so any AI agent
-can pick it up and execute it autonomously. See [templates.md](templates.md) for
-the full plan template with embedded execution instructions.
+Each stage contains:
 
-### Writing effective steps
+- **Goal** -- one sentence
+- **Dependencies** -- which stages must be DONE first
+- **Steps** -- specific, actionable, testable (include file paths, line refs, exact values)
+- **Verification** -- concrete commands with expected outcomes
+- **Commit message** -- conventional commit format
 
-Each step must be:
+### Writing resources
 
-- **Specific** -- "Add `timeout: 30` to `config/settings.yaml` line 45" not "Update config"
-- **Actionable** -- can be done without further research
-- **Testable** -- has a verification criterion
+The `resources/` directory holds any shared reference material that stages need.
+It is **not** prescriptive -- add whatever files the plan requires. Common examples:
+
+- **queries.md** -- investigation queries (SQL, GraphQL, API calls, etc.)
+- **commands.md** -- build, test, deploy, and pipeline execution commands
+- **configs.md** -- reference configurations, environment variables, feature flags
+- **data.md** -- sample data, test fixtures, seed values
+- **api-reference.md** -- endpoint specs, request/response examples
+- **migration.md** -- database migration steps, schema change scripts
+
+Use placeholders (e.g., `{schema}`, `{env}`, `${API_URL}`) for portability
+across environments. Only create resource files the plan actually needs.
 
 ### Stage design principles
 
 1. **Logical dependencies** -- Stage 2 depends on Stage 1 explicitly
 2. **Incremental value** -- each stage adds usable functionality, not just "setup"
 3. **Clear boundaries** -- no overlap between stages
-
-For detailed templates and examples, see [templates.md](templates.md).
-
----
-
-## Phase 4: Execution
-
-**Goal**: Implement the plan stage by stage with progress tracking, verification, and atomic commits.
-
-Works in two modes:
-- **Interactive**: Within a Claude Code session (this workflow)
-- **Headless**: Via `scripts/plan_runner.sh` for unattended execution -- see [headless.md](headless.md)
-
-### Step 1: Plan Analysis
-
-1. **Read the plan file** completely
-2. **Identify all stages** -- look for `## Stage N:` headings or numbered top-level sections
-3. **Locate the progress tracker** -- search for "Progress Tracker"
-4. **If no tracker exists**, create one at the bottom of the plan using the template from [templates.md](templates.md)
-5. **Report to the user**: number of stages, which are already DONE (if resuming), which stage is next
-6. **Ask for confirmation** before starting execution
-
-### Step 2: Stage Execution Loop
-
-For each stage (in order), starting from the first non-DONE stage:
-
-#### Pre-flight Check
-- Read the progress tracker to confirm prior stages are DONE
-- If a dependency is not met, mark the current stage BLOCKED and stop
-- Set the current stage status to `IN_PROGRESS` in the tracker
-
-#### Implement
-- Read the stage's steps from the plan
-- Implement each step, following the project's CLAUDE.md coding discipline
-- Only implement what the current stage specifies -- do not skip ahead
-
-#### Verify
-- Run the verification commands/checks listed in the stage
-- Run project tests if available (`poetry run pytest`, `npm test`, etc.)
-- If verification fails, attempt to fix. If unfixable, mark BLOCKED with details
-
-#### Update Tracker
-- Set the stage status to `DONE` in the tracker table
-- Add brief notes about what was implemented
-- Update "Last stage completed" and "Last updated by"
-
-#### Commit
-- Stage all changed files relevant to this stage
-- Commit with the message specified in the plan stage
-- If pre-commit hooks reformat files, re-stage and retry (do NOT use `--no-verify`)
-- Append `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
-- One stage = one commit. Never batch multiple stages.
-- Include the plan file update (tracker status change) in the commit
-
-#### Continue or Stop
-- If all stages are DONE, report summary and create signal file: `echo 'DONE' > .plan_runner_done`
-- If BLOCKED, create signal file with reason and stop
-- Otherwise, proceed to the next stage
-
-### Step 3: Completion
-
-After all stages are done:
-1. Update the tracker -- all stages DONE
-2. Create signal file `.plan_runner_done` with contents `DONE`
-3. Report summary: stages completed, commits made, any issues encountered
-
-### Handling Issues
-
-If assumptions turn out wrong during execution:
-
-1. **Stop** -- don't proceed with an invalid plan
-2. **Document** -- update the plan's Issues section (expected vs actual)
-3. **Revise** -- update affected stages, get user confirmation if the change is significant
-4. **Continue** -- execute the revised plan
-
-### Commit Conventions
-
-```
-type(scope): brief description
-
-- Specific change 1
-- Specific change 2
-
-Co-Authored-By: Claude <model> <noreply@anthropic.com>
-```
-
-Types: `feat`, `fix`, `refactor`, `docs`, `test`, `perf`, `chore`
+4. **One stage = one commit** -- never batch multiple stages
 
 ### Tips
 
-- **Resumable**: If execution is interrupted, just run again. The tracker persists state -- completed stages won't be re-executed.
-- **Incremental plans**: You can add stages while execution is in progress. New stages will be picked up in the next iteration.
-- **Stage isolation**: Each stage should leave the codebase in a working state. If a stage would break things mid-way, restructure it.
-- **Validation stage**: Consider adding a final "Validation" stage that runs the full test suite to confirm everything works end-to-end.
+- **Phase grouping**: If stages form logical phases (e.g., Phase A: sandbox validation,
+  Phase B: corporate benchmarks), note this in the index.md strategy section and
+  the progress tracker. But keep individual stage files -- the agent processes one at a time.
+- **Plan families**: When plans form a series (36, 36b, 36c, ...), link predecessors
+  in the index metadata. Shared investigation queries can reference a parent plan's
+  resources directory.
+- **Living documents**: Plans evolve. The autonomous agent updates the progress tracker
+  and adds notes. Issues and decisions sections capture runtime findings.
+  The user may also revise stages between agent runs.
