@@ -1,6 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
+from loguru import logger
+
+from neocortex.db.adapter import _types_are_merge_safe
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import (
@@ -384,35 +387,71 @@ class InMemoryRepository:
     ) -> Node:
         del target_schema
         props = properties or {}
-        # Look for existing node by (name, type_id)
-        for node in self._nodes.values():
-            if node.name.lower() == name.lower() and node.type_id == type_id:
-                merged_props = {**node.properties, **props}
-                now = datetime.now(UTC)
-                # Resurrect forgotten nodes on re-upsert
-                new_forgotten = node.forgotten if not node.forgotten else False
-                new_forgotten_at = node.forgotten_at if not node.forgotten else None
-                new_access_count = node.access_count + 1 if node.forgotten else node.access_count
-                new_last_accessed = now if node.forgotten else node.last_accessed_at
-                updated = Node(
-                    id=node.id,
-                    type_id=node.type_id,
+
+        # Phase 1: Look up by name only (name-primary dedup)
+        # Include forgotten nodes so resurrection-on-upsert still works
+        name_matches = [n for n in self._nodes.values() if n.name.lower() == name.lower()]
+
+        match: Node | None = None
+        # Phase 2: Prefer exact (name, type_id) match
+        for node in name_matches:
+            if node.type_id == type_id:
+                match = node
+                break
+
+        # Phase 3: If no exact match but exactly 1 node exists,
+        # check whether the types are semantically compatible before merging.
+        if match is None and len(name_matches) == 1:
+            existing_node = name_matches[0]
+            existing_type = next((nt.name for nt in self._node_types.values() if nt.id == existing_node.type_id), None)
+            requested_type = next((nt.name for nt in self._node_types.values() if nt.id == type_id), None)
+            if _types_are_merge_safe(existing_type, requested_type):
+                match = existing_node
+                logger.bind(action_log=True).info(
+                    "node_type_drift_caught",
                     name=name,
-                    # Match COALESCE($1, content) semantics: only keep old when new is None
-                    content=content if content is not None else node.content,
-                    properties=merged_props,
-                    embedding=embedding or node.embedding,
-                    source=source or node.source,
-                    importance=max(node.importance, importance),
-                    access_count=new_access_count,
-                    last_accessed_at=new_last_accessed,
-                    forgotten=new_forgotten,
-                    forgotten_at=new_forgotten_at,
-                    created_at=node.created_at,
-                    updated_at=now,
+                    existing_type=existing_type,
+                    requested_type=requested_type,
+                    action="merged",
+                    agent_id=agent_id,
                 )
-                self._nodes[node.id] = updated
-                return updated
+            else:
+                logger.bind(action_log=True).info(
+                    "node_homonym_detected",
+                    name=name,
+                    existing_type=existing_type,
+                    requested_type=requested_type,
+                    action="created_separate",
+                    agent_id=agent_id,
+                )
+
+        if match is not None:
+            merged_props = {**match.properties, **props}
+            now = datetime.now(UTC)
+            # Resurrect forgotten nodes on re-upsert
+            new_forgotten = match.forgotten if not match.forgotten else False
+            new_forgotten_at = match.forgotten_at if not match.forgotten else None
+            new_access_count = match.access_count + 1 if match.forgotten else match.access_count
+            new_last_accessed = now if match.forgotten else match.last_accessed_at
+            updated = Node(
+                id=match.id,
+                type_id=match.type_id,
+                name=name,
+                # Match COALESCE($1, content) semantics: only keep old when new is None
+                content=content if content is not None else match.content,
+                properties=merged_props,
+                embedding=embedding or match.embedding,
+                source=source or match.source,
+                importance=max(match.importance, importance),
+                access_count=new_access_count,
+                last_accessed_at=new_last_accessed,
+                forgotten=new_forgotten,
+                forgotten_at=new_forgotten_at,
+                created_at=match.created_at,
+                updated_at=now,
+            )
+            self._nodes[match.id] = updated
+            return updated
         now = datetime.now(UTC)
         node = Node(
             id=self._next_node_id,
@@ -448,9 +487,38 @@ class InMemoryRepository:
     ) -> Edge:
         del target_schema
         props = properties or {}
-        # Look for existing edge by (source_id, target_id, type_id)
-        for edge in self._edges.values():
-            if edge.source_id == source_id and edge.target_id == target_id and edge.type_id == type_id:
+
+        # Source-target primary edge dedup
+        st_edges = [e for e in self._edges.values() if e.source_id == source_id and e.target_id == target_id]
+
+        if len(st_edges) == 1 and st_edges[0].type_id != type_id:
+            # Single edge with different type → drift, update it
+            old = st_edges[0]
+            merged_props = {**old.properties, **props}
+            logger.bind(action_log=True).info(
+                "edge_type_drift_caught",
+                source_id=source_id,
+                target_id=target_id,
+                old_type_id=old.type_id,
+                new_type_id=type_id,
+            )
+            now = datetime.now(UTC)
+            updated = Edge(
+                id=old.id,
+                source_id=source_id,
+                target_id=target_id,
+                type_id=type_id,
+                weight=weight,
+                properties=merged_props,
+                created_at=old.created_at,
+                last_reinforced_at=now,
+            )
+            self._edges[old.id] = updated
+            return updated
+
+        # Normal path: exact (source_id, target_id, type_id) match or insert
+        for edge in st_edges:
+            if edge.type_id == type_id:
                 merged_props = {**edge.properties, **props}
                 updated = Edge(
                     id=edge.id,

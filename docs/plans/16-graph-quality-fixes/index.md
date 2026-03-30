@@ -137,7 +137,7 @@ E2E validation runs weight stability stress test and final Plan 15 scenario gate
 | 2 | [Librarian Retrieval Tools](stages/02-librarian-retrieval.md) | DONE | 4 tools registered; type descriptions to ont/ext; pipeline passes repo; 14 new tests | feat(extraction): add graph retrieval tools to librarian agent |
 | 3 | [Librarian Mutation Tools & Pipeline Redesign](stages/03-librarian-mutation.md) | DONE | 4 mutation tools; delete_edge + cleanup_partial_curation in protocol; CurationSummary output; pipeline rewired; fallback mode; 16 new tests | feat(extraction): librarian mutation tools + tool-driven graph curation |
 | 3.5 | [E2E Validate: Tool Pipeline](stages/03.5-validate-tool-pipeline.md) | DONE | E2E test + Plan 15 scenario replay (14 scenarios); fixed 2 pre-existing test failures (test_jobs source_schema, test_ingestion_api dev_tokens_file leak) | test(e2e): Plan 15 scenario replay for tool-equipped librarian |
-| 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | PENDING | P1: Defense-in-depth dedup with homonym guard | |
+| 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | DONE | Name-primary node dedup with _types_are_merge_safe; source-target edge dedup; fallback + mock parity; 23 new tests | fix(db): adapter-level dedup safety nets for type drift |
 | 4.5 | [E2E Validate: Safety Nets](stages/04.5-validate-safety-nets.md) | PENDING | E2E: drift/homonym monitoring, scenario score comparison | |
 | 5 | [Fix Edge Weight Management](stages/05-weight-management.md) | PENDING | P2: Diminishing reinforcement + bounded micro-decay | |
 | 5.5 | [E2E Validate: Weight Management](stages/05.5-validate-weight-management.md) | PENDING | E2E: weight stability stress test, final scenario gate | |

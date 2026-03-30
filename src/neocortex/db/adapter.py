@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import asyncpg
+from loguru import logger
 
 from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connection
 from neocortex.graph_service import GraphService
@@ -22,6 +23,35 @@ if TYPE_CHECKING:
 def _escape_ilike(query: str) -> str:
     """Escape special ILIKE characters for use with ``ESCAPE '\\'``."""
     return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# Type pairs that should NOT be auto-merged (known homonym categories)
+_HOMONYM_TYPE_GROUPS: frozenset[frozenset[str]] = frozenset(
+    {
+        frozenset({"Drug", "Neurotransmitter"}),
+        frozenset({"Person", "Organization"}),
+        frozenset({"Language", "Country"}),
+    }
+)
+
+
+def _types_are_merge_safe(existing: str | None, requested: str | None) -> bool:
+    """Return True if two type names likely refer to the same entity
+    (LLM type drift) rather than a legitimate homonym.
+
+    Conservative: returns False when uncertain → creates separate node.
+    """
+    if not existing or not requested:
+        return False
+    if existing == requested:
+        return True
+    pair = frozenset({existing, requested})
+    if pair in _HOMONYM_TYPE_GROUPS:
+        return False  # Known homonym pair — don't merge
+    # Heuristic: if one type name is a substring of the other,
+    # they're likely related (Person/PersonRole, Software/SoftwareTool)
+    e, r = existing.lower(), requested.lower()
+    return e in r or r in e
 
 
 class GraphServiceAdapter:
@@ -427,20 +457,53 @@ class GraphServiceAdapter:
     ) -> Node:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
-            # Fallback: use GraphService directly
-            nodes = await self._graph.list_nodes(type_id=type_id, limit=10000)
-            for node in nodes:
-                if node.name.lower() == name.lower() and node.type_id == type_id:
-                    merged_props = {**node.properties, **props}
-                    # Content: prefer new value, keep old only when new is None/empty
-                    updated = await self._graph.update_node(
-                        node.id,
+            # Fallback: use GraphService directly with name-primary dedup
+            all_nodes = await self._graph.list_nodes(limit=10000)
+            name_matches = [n for n in all_nodes if n.name.lower() == name.lower()]
+
+            match: Node | None = None
+            # Phase 1: Prefer exact (name, type_id) match
+            for node in name_matches:
+                if node.type_id == type_id:
+                    match = node
+                    break
+            # Phase 2: Single name match with compatible type → merge
+            if match is None and len(name_matches) == 1:
+                existing_node = name_matches[0]
+                # Look up type names for merge-safety check
+                all_types = {nt.id: nt.name for nt in await self._graph.list_node_types()}
+                existing_type = all_types.get(existing_node.type_id)
+                requested_type = all_types.get(type_id)
+                if _types_are_merge_safe(existing_type, requested_type):
+                    match = existing_node
+                    logger.bind(action_log=True).info(
+                        "node_type_drift_caught",
                         name=name,
-                        content=content or node.content,
-                        properties=merged_props,
-                        embedding=embedding,
+                        existing_type=existing_type,
+                        requested_type=requested_type,
+                        action="merged",
+                        agent_id=agent_id,
                     )
-                    return updated if updated is not None else node
+                else:
+                    logger.bind(action_log=True).info(
+                        "node_homonym_detected",
+                        name=name,
+                        existing_type=existing_type,
+                        requested_type=requested_type,
+                        action="created_separate",
+                        agent_id=agent_id,
+                    )
+
+            if match is not None:
+                merged_props = {**match.properties, **props}
+                updated = await self._graph.update_node(
+                    match.id,
+                    name=name,
+                    content=content or match.content,
+                    properties=merged_props,
+                    embedding=embedding,
+                )
+                return updated if updated is not None else match
             return await self._graph.create_node(
                 type_id=type_id,
                 name=name,
@@ -454,12 +517,50 @@ class GraphServiceAdapter:
         props_json = json.dumps(props)
         emb_str = str(embedding) if embedding else None
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            row = await conn.fetchrow(
-                "SELECT id, type_id, name, content, properties, source, importance, created_at, updated_at "
-                "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
+            # Phase 1: Look up by name only (name-primary dedup)
+            # Include forgotten nodes so resurrection-on-upsert still works
+            rows = await conn.fetch(
+                "SELECT id, type_id, name, content, properties, source, importance, "
+                "forgotten, created_at, updated_at "
+                "FROM node WHERE lower(name) = lower($1)",
                 name,
-                type_id,
             )
+
+            row = None
+            if rows:
+                # Phase 2: Prefer exact (name, type_id) match
+                for r in rows:
+                    if r["type_id"] == type_id:
+                        row = r
+                        break
+
+                # Phase 3: If no exact match but exactly 1 node exists,
+                # check whether the types are semantically compatible before merging.
+                if row is None and len(rows) == 1:
+                    existing_type_id = rows[0]["type_id"]
+                    existing_type = await conn.fetchval("SELECT name FROM node_type WHERE id = $1", existing_type_id)
+                    requested_type = await conn.fetchval("SELECT name FROM node_type WHERE id = $1", type_id)
+                    if _types_are_merge_safe(existing_type, requested_type):
+                        row = rows[0]
+                        logger.bind(action_log=True).info(
+                            "node_type_drift_caught",
+                            name=name,
+                            existing_type=existing_type,
+                            requested_type=requested_type,
+                            action="merged",
+                            agent_id=agent_id,
+                        )
+                    else:
+                        # Legitimate homonym — create separate node, log for monitoring
+                        logger.bind(action_log=True).info(
+                            "node_homonym_detected",
+                            name=name,
+                            existing_type=existing_type,
+                            requested_type=requested_type,
+                            action="created_separate",
+                            agent_id=agent_id,
+                        )
+
             if row is not None:
                 existing_props = row["properties"]
                 if isinstance(existing_props, str):
@@ -550,11 +651,33 @@ class GraphServiceAdapter:
     ) -> Edge:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
-            edges = await self._graph.get_edges_from(source_id, type_id=type_id)
-            for edge in edges:
-                if edge.target_id == target_id:
-                    # Update existing edge — no direct update method on GraphService,
-                    # so delete and recreate
+            # Source-target primary edge dedup via GraphService
+            all_edges = await self._graph.get_edges_from(source_id)
+            st_edges = [e for e in all_edges if e.target_id == target_id]
+
+            if len(st_edges) == 1 and st_edges[0].type_id != type_id:
+                # Single edge with different type → drift, update it
+                old = st_edges[0]
+                merged = {**old.properties, **props}
+                logger.bind(action_log=True).info(
+                    "edge_type_drift_caught",
+                    source_id=source_id,
+                    target_id=target_id,
+                    old_type_id=old.type_id,
+                    new_type_id=type_id,
+                )
+                await self._graph.delete_edge(old.id)
+                return await self._graph.create_edge(
+                    source_id=source_id,
+                    target_id=target_id,
+                    type_id=type_id,
+                    weight=weight,
+                    properties=merged,
+                )
+
+            # Normal path: exact type match or 0/2+ existing
+            for edge in st_edges:
+                if edge.type_id == type_id:
                     merged = {**edge.properties, **props}
                     await self._graph.delete_edge(edge.id)
                     return await self._graph.create_edge(
@@ -575,20 +698,53 @@ class GraphServiceAdapter:
         schema_name = await self._resolve_schema(agent_id, target_schema)
         props_json = json.dumps(props)
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            row = await conn.fetchrow(
-                """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
-                   VALUES ($1, $2, $3, $4, $5::jsonb)
-                   ON CONFLICT (source_id, target_id, type_id)
-                   DO UPDATE SET
-                       weight = $4,
-                       properties = edge.properties || $5::jsonb
-                   RETURNING *""",
+            # Source-target primary edge dedup: check existing edges between this pair
+            existing = await conn.fetch(
+                "SELECT id, type_id, weight, properties FROM edge " "WHERE source_id = $1 AND target_id = $2",
                 source_id,
                 target_id,
-                type_id,
-                weight,
-                props_json,
             )
+
+            if len(existing) == 1 and existing[0]["type_id"] != type_id:
+                # Single edge with different type → drift, update the existing one
+                old = existing[0]
+                old_props = old["properties"]
+                if isinstance(old_props, str):
+                    old_props = json.loads(old_props)
+                merged = {**(old_props or {}), **props}
+                merged_json = json.dumps(merged)
+                row = await conn.fetchrow(
+                    "UPDATE edge SET type_id = $1, weight = $2, "
+                    "properties = $3::jsonb, last_reinforced_at = now() "
+                    "WHERE id = $4 RETURNING *",
+                    type_id,
+                    weight,
+                    merged_json,
+                    old["id"],
+                )
+                logger.bind(action_log=True).info(
+                    "edge_type_drift_caught",
+                    source_id=source_id,
+                    target_id=target_id,
+                    old_type_id=old["type_id"],
+                    new_type_id=type_id,
+                )
+            else:
+                # Normal path: INSERT...ON CONFLICT (exact match or 0/2+ existing)
+                row = await conn.fetchrow(
+                    """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
+                       VALUES ($1, $2, $3, $4, $5::jsonb)
+                       ON CONFLICT (source_id, target_id, type_id)
+                       DO UPDATE SET
+                           weight = $4,
+                           properties = edge.properties || $5::jsonb
+                       RETURNING *""",
+                    source_id,
+                    target_id,
+                    type_id,
+                    weight,
+                    props_json,
+                )
             if row is None:
                 raise RuntimeError("Failed to upsert edge")
             d = dict(row)
