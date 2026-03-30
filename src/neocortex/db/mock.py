@@ -5,7 +5,7 @@ from loguru import logger
 
 from neocortex.db.adapter import _types_are_merge_safe
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
-from neocortex.normalization import canonicalize_name, names_are_similar
+from neocortex.normalization import canonicalize_name, names_are_similar, normalize_edge_type, normalize_node_type
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import (
     HybridWeights,
@@ -331,6 +331,7 @@ class InMemoryRepository:
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
     ) -> NodeType:
         del target_schema
+        name = normalize_node_type(name)
         if name in self._node_types:
             return self._node_types[name]
         now = datetime.now(UTC)
@@ -343,6 +344,7 @@ class InMemoryRepository:
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
     ) -> EdgeType:
         del target_schema
+        name = normalize_edge_type(name)
         if name in self._edge_types:
             return self._edge_types[name]
         now = datetime.now(UTC)

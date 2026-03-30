@@ -475,3 +475,83 @@ class TestTypesAreMergeSafePrefixOnly:
     def test_event_eventtype_merged(self):
         """Prefix match at type hierarchy boundary should still merge."""
         assert _types_are_merge_safe("Event", "EventType") is True
+
+
+# ── Edge type normalization tests (Plan 17, Stage 4) ──
+
+
+@pytest.mark.asyncio
+async def test_edge_type_normalization_pascal_to_screaming(mock_repo):
+    """PascalCase → SCREAMING_SNAKE before storage."""
+    et1 = await mock_repo.get_or_create_edge_type("agent", "RelatesTo")
+    et2 = await mock_repo.get_or_create_edge_type("agent", "RELATES_TO")
+    assert et1.id == et2.id  # same type
+    assert et1.name == "RELATES_TO"
+
+
+@pytest.mark.asyncio
+async def test_edge_type_normalization_camel_case(mock_repo):
+    """camelCase → SCREAMING_SNAKE before storage."""
+    et1 = await mock_repo.get_or_create_edge_type("agent", "hasMember")
+    et2 = await mock_repo.get_or_create_edge_type("agent", "HAS_MEMBER")
+    assert et1.id == et2.id
+    assert et1.name == "HAS_MEMBER"
+
+
+@pytest.mark.asyncio
+async def test_edge_type_normalization_lower_with_spaces(mock_repo):
+    """lower case with spaces → SCREAMING_SNAKE before storage."""
+    et1 = await mock_repo.get_or_create_edge_type("agent", "works on")
+    et2 = await mock_repo.get_or_create_edge_type("agent", "WORKS_ON")
+    assert et1.id == et2.id
+    assert et1.name == "WORKS_ON"
+
+
+@pytest.mark.asyncio
+async def test_edge_type_idempotent(mock_repo):
+    """Normalization is idempotent — already SCREAMING_SNAKE stays the same."""
+    et = await mock_repo.get_or_create_edge_type("agent", "MEMBER_OF")
+    assert et.name == "MEMBER_OF"
+
+
+@pytest.mark.asyncio
+async def test_node_type_normalization_snake_to_pascal(mock_repo):
+    """snake_case → PascalCase before storage."""
+    nt1 = await mock_repo.get_or_create_node_type("agent", "software_tool")
+    nt2 = await mock_repo.get_or_create_node_type("agent", "SoftwareTool")
+    assert nt1.id == nt2.id
+    assert nt1.name == "SoftwareTool"
+
+
+@pytest.mark.asyncio
+async def test_node_type_normalization_idempotent(mock_repo):
+    """Already PascalCase stays the same."""
+    nt = await mock_repo.get_or_create_node_type("agent", "Person")
+    assert nt.name == "Person"
+
+
+@pytest.mark.asyncio
+async def test_node_type_normalization_with_spaces(mock_repo):
+    """Space-separated → PascalCase before storage."""
+    nt1 = await mock_repo.get_or_create_node_type("agent", "software tool")
+    nt2 = await mock_repo.get_or_create_node_type("agent", "SoftwareTool")
+    assert nt1.id == nt2.id
+    assert nt1.name == "SoftwareTool"
+
+
+@pytest.mark.asyncio
+async def test_edge_type_normalization_kebab_case(mock_repo):
+    """kebab-case → SCREAMING_SNAKE before storage."""
+    et1 = await mock_repo.get_or_create_edge_type("agent", "works-with")
+    et2 = await mock_repo.get_or_create_edge_type("agent", "WORKS_WITH")
+    assert et1.id == et2.id
+    assert et1.name == "WORKS_WITH"
+
+
+@pytest.mark.asyncio
+async def test_edge_type_normalization_mixed_format(mock_repo):
+    """Mixed Has_Member → HAS_MEMBER before storage."""
+    et1 = await mock_repo.get_or_create_edge_type("agent", "Has_Member")
+    et2 = await mock_repo.get_or_create_edge_type("agent", "HAS_MEMBER")
+    assert et1.id == et2.id
+    assert et1.name == "HAS_MEMBER"

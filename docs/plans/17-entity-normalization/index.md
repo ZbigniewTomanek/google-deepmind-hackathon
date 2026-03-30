@@ -114,7 +114,7 @@ Replay Plan 15's 14 scenarios and verify improvement.
 | 1 | [Name Canonicalization Utility](stages/01-name-canonicalization.md) | DONE | 4 functions, 38 tests all passing | |
 | 2 | [Fuzzy Name Matching & Alias Table](stages/02-fuzzy-matching.md) | DONE | Migration, protocol, adapter (Phase 1.5), mock, 17 tests passing. names_are_similar tightened to require 2+ word overlap to prevent false positives. | |
 | 3 | [Semantic Type Hierarchy](stages/03-type-hierarchy.md) | DONE | 8 merge-safe groups, 4 homonym pairs, _TYPE_TO_GROUP O(1) lookup, prefix fallback retained, 25 new tests + DataForge scenario test | |
-| 4 | [Edge Type Normalization](stages/04-edge-type-normalization.md) | PENDING | | |
+| 4 | [Edge Type Normalization](stages/04-edge-type-normalization.md) | DONE | Edge/node type normalization in adapter + mock, similarity dedup in adapter, 10 new tests passing | |
 | 5 | [Enhanced Librarian Dedup Tools](stages/05-librarian-tools.md) | PENDING | | |
 | 6 | [E2E Validation](stages/06-validation.md) | PENDING | | |
 

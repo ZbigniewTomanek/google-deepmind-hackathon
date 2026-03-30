@@ -12,7 +12,7 @@ from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connectio
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
-from neocortex.normalization import canonicalize_name
+from neocortex.normalization import canonicalize_name, normalize_edge_type, normalize_node_type
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
 from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
@@ -416,6 +416,7 @@ class GraphServiceAdapter:
     async def get_or_create_node_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
     ) -> NodeType:
+        name = normalize_node_type(name)
         if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_node_type_by_name(name)
             if existing is not None:
@@ -442,6 +443,7 @@ class GraphServiceAdapter:
     async def get_or_create_edge_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
     ) -> EdgeType:
+        name = normalize_edge_type(name)
         if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_edge_type_by_name(name)
             if existing is not None:
@@ -461,9 +463,26 @@ class GraphServiceAdapter:
                 return EdgeType(**dict(row))
             # Concurrent insert won — fetch the existing row
             row = await conn.fetchrow("SELECT * FROM edge_type WHERE name = $1", name)
-            if row is None:
-                raise RuntimeError(f"Failed to create edge type: {name}")
-            return EdgeType(**dict(row))
+            if row is not None:
+                return EdgeType(**dict(row))
+
+            # Fallback: check for very similar existing type (e.g., after normalization
+            # both are SCREAMING_SNAKE but differ by a word like singular/plural)
+            similar = await conn.fetchrow(
+                "SELECT * FROM edge_type WHERE similarity(name, $1) >= 0.8 "
+                "ORDER BY similarity(name, $1) DESC LIMIT 1",
+                name,
+            )
+            if similar:
+                logger.bind(action_log=True).info(
+                    "edge_type_similar_reuse",
+                    requested=name,
+                    reused=similar["name"],
+                    similarity=await conn.fetchval("SELECT similarity($1, $2)", name, similar["name"]),
+                )
+                return EdgeType(**dict(similar))
+
+            raise RuntimeError(f"Failed to create edge type: {name}")
 
     # ── Episode Read ──
 
