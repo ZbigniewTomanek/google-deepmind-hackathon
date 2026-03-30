@@ -87,3 +87,43 @@ def build_video_screenshot():
         .from_script(str(SCRIPTS_DIR / "video_screenshot.py"))
         .build()
     )
+
+
+def build_list_input_files():
+    return (
+        ToolBuilder()
+        .name("list-input-files")
+        .description("List files in a directory with file types and sizes")
+        .from_script(str(SCRIPTS_DIR / "list_input_files.py"))
+        .build()
+    )
+
+
+def build_transcribe_local_video():
+    return (
+        ToolBuilder()
+        .name("transcribe-local-video")
+        .description("Transcribe a local video file via Gemini with timestamps and visual descriptions")
+        .from_script(str(SCRIPTS_DIR / "transcribe_local_video.py"))
+        .build()
+    )
+
+
+def build_transcribe_local_audio():
+    return (
+        ToolBuilder()
+        .name("transcribe-local-audio")
+        .description("Transcribe a local audio file via Gemini with timestamps")
+        .from_script(str(SCRIPTS_DIR / "transcribe_local_audio.py"))
+        .build()
+    )
+
+
+def build_parse_local_rss():
+    return (
+        ToolBuilder()
+        .name("parse-local-rss")
+        .description("Parse a local RSS/Atom feed file and return structured items")
+        .from_script(str(SCRIPTS_DIR / "parse_local_rss.py"))
+        .build()
+    )
