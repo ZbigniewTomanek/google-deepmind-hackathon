@@ -261,6 +261,10 @@ def build_librarian_agent(
                 "- Reject relations that reference missing entities or types.",
                 "- Mark entities as is_new=False if they match a known node name.",
                 "- Normalize names to canonical form (proper casing, full names).",
+                "- ALWAYS provide a description for every entity, even if is_new=False.",
+                "- For existing entities, write an UPDATED description that "
+                "incorporates new information from the text.",
+                "- The description becomes the entity's canonical summary " "— make it comprehensive and current.",
             ]
         )
 

@@ -432,6 +432,7 @@ class GraphServiceAdapter:
             for node in nodes:
                 if node.name.lower() == name.lower() and node.type_id == type_id:
                     merged_props = {**node.properties, **props}
+                    # Content: prefer new value, keep old only when new is None/empty
                     updated = await self._graph.update_node(
                         node.id,
                         name=name,
@@ -467,6 +468,7 @@ class GraphServiceAdapter:
                 merged_json = json.dumps(merged)
                 updated_row = await conn.fetchrow(
                     """UPDATE node SET
+                        -- Content: prefer new value, keep old only when new is NULL
                         content = COALESCE($1, content),
                         properties = $2::jsonb,
                         embedding = COALESCE($3::vector, embedding),

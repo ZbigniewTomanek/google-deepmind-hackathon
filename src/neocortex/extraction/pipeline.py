@@ -135,9 +135,23 @@ async def run_extraction(
             model_settings=lib_cfg.model_settings,
         )
 
-        # 6. Persist graph data
+        # 6. Build fallback map from extractor descriptions (safety net for when
+        # the librarian returns description=None for existing entities)
+        extractor_descriptions: dict[str, str] = {
+            e.name: e.description for e in extraction_result.output.entities if e.description
+        }
+
+        # 7. Persist graph data
         payload = librarian_result.output
-        await _persist_payload(repo, embeddings, agent_id, episode_id, payload, target_schema=target_schema)
+        await _persist_payload(
+            repo,
+            embeddings,
+            agent_id,
+            episode_id,
+            payload,
+            target_schema=target_schema,
+            extractor_descriptions=extractor_descriptions,
+        )
 
         logger.info(
             "extraction_complete",
@@ -156,6 +170,7 @@ async def _persist_payload(
     episode_id: int,
     payload: LibrarianPayload,
     target_schema: str | None = None,
+    extractor_descriptions: dict[str, str] | None = None,
 ) -> None:
     """Persist librarian output to the knowledge graph."""
 
@@ -191,17 +206,20 @@ async def _persist_payload(
             ), f"Embedding batch size mismatch: expected {batch_idx}, got {len(batch_results)}"
 
     # Persist entities as nodes
+    _extractor_desc = extractor_descriptions or {}
     name_to_node_id: dict[str, int] = {}
     for i, entity in enumerate(payload.entities):
         node_type = await repo.get_or_create_node_type(agent_id, entity.type_name, target_schema=target_schema)
         entity_importance = entity.importance
         if importance_hint is not None:
             entity_importance = max(entity_importance, importance_hint)
+        # Fallback to extractor description when librarian returns None
+        description = entity.description or _extractor_desc.get(entity.name)
         node = await repo.upsert_node(
             agent_id=agent_id,
             name=entity.name,
             type_id=node_type.id,
-            content=entity.description,
+            content=description,
             properties={**entity.properties, "_source_episode": episode_id},
             embedding=entity_embeddings[i],
             target_schema=target_schema,

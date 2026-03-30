@@ -398,7 +398,8 @@ class InMemoryRepository:
                     id=node.id,
                     type_id=node.type_id,
                     name=name,
-                    content=content or node.content,
+                    # Match COALESCE($1, content) semantics: only keep old when new is None
+                    content=content if content is not None else node.content,
                     properties=merged_props,
                     embedding=embedding or node.embedding,
                     source=source or node.source,
