@@ -648,7 +648,7 @@ class InMemoryRepository:
 
     # ── Soft-Forget ──
 
-    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int], target_schema: str | None = None) -> int:
         now = datetime.now(UTC)
         count = 0
         for nid in node_ids:

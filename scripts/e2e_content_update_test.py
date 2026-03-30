@@ -246,8 +246,11 @@ async def step_ingest_updated() -> int:
     return baseline
 
 
-async def step_verify_updated() -> None:
-    """Verify Alice node content reflects auth team after re-extraction."""
+async def step_verify_updated() -> bool:
+    """Verify Alice node content reflects auth team after re-extraction.
+
+    Returns True if the core assertion passes (auth content found).
+    """
     print("\n=== Step 6: Verify updated content (auth team) ===")
 
     # Check via recall
@@ -280,22 +283,30 @@ async def step_verify_updated() -> None:
         if "billing" in content and "auth" not in content:
             billing_still_primary = True
 
+    passed = True
     if auth_in_db:
         print("  [PASS] Node content updated: Alice now associated with auth team")
     elif found_auth:
         print("  [PASS] Recall finds auth content for Alice (may be in episode)")
     else:
-        print("  [WARN] Auth-related content not found for Alice in nodes.")
+        print("  [FAIL] Auth-related content not found for Alice in nodes.")
         print("         Content update may not have propagated, or LLM summarized differently.")
+        passed = False
 
     if billing_still_primary:
-        print("  [WARN] Billing is still the primary content — content update may not have worked")
+        print("  [FAIL] Billing is still the primary content — content update did not work")
+        passed = False
     else:
         print("  [PASS] Billing is not the sole content (content was updated or merged)")
 
+    return passed
 
-async def step_verify_no_duplicates() -> None:
-    """Verify only 1 node named 'Alice' exists (no duplicates from type drift)."""
+
+async def step_verify_no_duplicates() -> bool:
+    """Verify only 1 node named 'Alice' exists (no duplicates from type drift).
+
+    Returns True if no duplicates detected.
+    """
     print("\n=== Step 7: Verify no duplicate Alice nodes ===")
     alice_nodes = await _find_alice_nodes()
 
@@ -308,11 +319,13 @@ async def step_verify_no_duplicates() -> None:
 
     if len(exact_alice) <= 1:
         print(f"  [PASS] No duplicate Alice nodes (found {len(exact_alice)})")
+        return True
     else:
         # Multiple nodes named "Alice" with different types = type drift duplication
         types = [n["type_name"] for n in exact_alice]
-        print(f"  [WARN] {len(exact_alice)} nodes named 'Alice' with types: {types}")
-        print("         This indicates type drift duplication (Stage 4 will add safety nets)")
+        print(f"  [FAIL] {len(exact_alice)} nodes named 'Alice' with types: {types}")
+        print("         This indicates type drift duplication")
+        return False
 
 
 # --- Main ---
@@ -346,10 +359,10 @@ async def main() -> None:
     await _wait_for_extraction(baseline2, "update")
 
     # Step 6: Verify updated content
-    await step_verify_updated()
+    content_ok = await step_verify_updated()
 
     # Step 7: Verify no duplicates
-    await step_verify_no_duplicates()
+    dedup_ok = await step_verify_no_duplicates()
 
     # Summary
     print("\n" + "=" * 60)
@@ -359,12 +372,17 @@ async def main() -> None:
     for node in alice_nodes:
         print(f"    {node['name']} [{node['type_name']}]: {str(node.get('content', ''))[:100]}")
 
-    # Final assertions (soft — we report but don't fail on LLM non-determinism)
-    exact_alice = [n for n in alice_nodes if n["name"].lower().strip() == "alice"]
-    if len(exact_alice) > 1:
-        print("\n  [WARN] Multiple Alice nodes detected — dedup issue (expected, Stage 4 fix)")
-    if len(alice_nodes) == 0:
-        print("\n  [WARN] No Alice nodes — LLM may not have extracted a Person entity")
+    failures = []
+    if not content_ok:
+        failures.append("content update verification")
+    if not dedup_ok:
+        failures.append("duplicate node detection")
+
+    if failures:
+        print(f"\n  [FAIL] Failed checks: {', '.join(failures)}")
+        print("=" * 60)
+        print("CONTENT UPDATE E2E TEST FAILED")
+        raise SystemExit(1)
 
     print("=" * 60)
     print("CONTENT UPDATE E2E TEST COMPLETED")

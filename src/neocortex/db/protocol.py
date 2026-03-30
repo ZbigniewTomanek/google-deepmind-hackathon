@@ -179,7 +179,7 @@ class MemoryRepository(Protocol):
 
     # ── Soft-Forget ──
 
-    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int], target_schema: str | None = None) -> int:
         """Soft-delete nodes by setting forgotten=true. Returns count."""
 
     async def resurrect_node(self, agent_id: str, node_id: int) -> None:

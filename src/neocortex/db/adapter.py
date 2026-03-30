@@ -48,10 +48,12 @@ def _types_are_merge_safe(existing: str | None, requested: str | None) -> bool:
     pair = frozenset({existing, requested})
     if pair in _HOMONYM_TYPE_GROUPS:
         return False  # Known homonym pair — don't merge
-    # Heuristic: if one type name is a substring of the other,
-    # they're likely related (Person/PersonRole, Software/SoftwareTool)
+    # Heuristic: one must be a case-insensitive prefix of the other.
+    # This catches type hierarchy patterns (Person/PersonRole, Software/SoftwareTool)
+    # while avoiding false positives from arbitrary substring matches
+    # (API/Capital, Event/Prevent, Fact/Artifact).
     e, r = existing.lower(), requested.lower()
-    return e in r or r in e
+    return e.startswith(r) or r.startswith(e)
 
 
 class GraphServiceAdapter:
@@ -495,11 +497,13 @@ class GraphServiceAdapter:
                     )
 
             if match is not None:
+                # Note: on merge-safe type drift, the node retains its original
+                # type_id — we don't update the type to avoid flip-flopping.
                 merged_props = {**match.properties, **props}
                 updated = await self._graph.update_node(
                     match.id,
                     name=name,
-                    content=content or match.content,
+                    content=content if content is not None else match.content,
                     properties=merged_props,
                     embedding=embedding,
                 )
@@ -562,6 +566,8 @@ class GraphServiceAdapter:
                         )
 
             if row is not None:
+                # Note: on merge-safe type drift, the node retains its original
+                # type_id — we don't update the type to avoid flip-flopping.
                 existing_props = row["properties"]
                 if isinstance(existing_props, str):
                     existing_props = json.loads(existing_props)
@@ -1069,14 +1075,14 @@ class GraphServiceAdapter:
 
     # ── Soft-Forget ──
 
-    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int], target_schema: str | None = None) -> int:
         if not node_ids:
             return 0
         if self._pool is None or self._router is None:
             return 0
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             result = await conn.execute(
                 "UPDATE node SET forgotten = true, forgotten_at = now() "
                 "WHERE id = ANY($1::int[]) AND forgotten = false",
@@ -1129,7 +1135,7 @@ class GraphServiceAdapter:
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
         episode_str = str(episode_id)
-        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn, conn.transaction():
             r1 = await conn.execute(
                 "DELETE FROM edge WHERE properties->>'_source_episode' = $1",
                 episode_str,

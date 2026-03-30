@@ -648,6 +648,7 @@ def build_librarian_agent(
             count = await ctx.deps.repo.mark_forgotten(
                 ctx.deps.agent_id,
                 [node_id],
+                target_schema=ctx.deps.target_schema,
             )
             logger.bind(action_log=True).info(
                 "librarian_tool_call",
@@ -682,6 +683,7 @@ def build_librarian_agent(
             deleted = await ctx.deps.repo.delete_edge(
                 ctx.deps.agent_id,
                 edge_id,
+                target_schema=ctx.deps.target_schema,
             )
             logger.bind(action_log=True).info(
                 "librarian_tool_call",

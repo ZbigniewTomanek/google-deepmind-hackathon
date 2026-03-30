@@ -80,6 +80,7 @@ async def extract_episode(
             model_name=settings.librarian_model,
             thinking_effort=settings.librarian_thinking_effort,
         ),
+        librarian_use_tools=settings.librarian_use_tools,
         domain_hint=domain_hint,
     )
     logger.info(

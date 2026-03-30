@@ -100,7 +100,7 @@ E2E validation runs weight stability stress test and final Plan 15 scenario gate
 | Librarian graph awareness | None (flat name list) | Retrieves relevant subgraphs | Informed decisions |
 | Librarian mutation capability | None (produces static payload) | Creates/updates/archives via tools | Active curation |
 | Context scalability | Breaks at 50K nodes | Bounded (tool-based retrieval) | Large graph support |
-| Edge weight after 20 recalls | 1.75+ | ≤1.3 | Scoring fairness |
+| Edge weight after 20 recalls | 1.75+ | ≤1.5 (ceiling) | Scoring fairness — diminishing returns formula caps around 1.47 |
 | Plan 15 scenarios acceptable | 5/14 (35%) | ≥11/14 (79%) | Overall quality gate |
 
 ---

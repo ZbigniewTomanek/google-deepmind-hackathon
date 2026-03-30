@@ -264,3 +264,96 @@ async def test_edge_dedup_exact_type_match_preferred(mock_repo):
 
     assert edge1.id == edge2.id
     assert edge2.weight == 0.8
+
+
+# ── Drift/homonym log emission tests ──
+
+
+@pytest.mark.asyncio
+async def test_node_type_drift_emits_log(mock_repo):
+    """Verify node_type_drift_caught is logged when merge-safe types drift."""
+    from loguru import logger
+
+    nt_person = await mock_repo.get_or_create_node_type("agent", "Person")
+    nt_employee = await mock_repo.get_or_create_node_type("agent", "PersonEmployee")
+
+    await mock_repo.upsert_node("agent", "Alice", nt_person.id, content="Engineer")
+
+    messages = []
+    handler_id = logger.add(lambda msg: messages.append(msg.record["message"]), level="INFO")
+    try:
+        await mock_repo.upsert_node("agent", "Alice", nt_employee.id, content="Senior Engineer")
+    finally:
+        logger.remove(handler_id)
+
+    assert any("node_type_drift_caught" in m for m in messages), f"Expected drift log, got: {messages}"
+
+
+@pytest.mark.asyncio
+async def test_node_homonym_emits_log(mock_repo):
+    """Verify node_homonym_detected is logged for incompatible types."""
+    from loguru import logger
+
+    nt_drug = await mock_repo.get_or_create_node_type("agent", "Drug")
+    nt_neuro = await mock_repo.get_or_create_node_type("agent", "Neurotransmitter")
+
+    await mock_repo.upsert_node("agent", "Serotonin", nt_drug.id, content="SSRI target")
+
+    messages = []
+    handler_id = logger.add(lambda msg: messages.append(msg.record["message"]), level="INFO")
+    try:
+        await mock_repo.upsert_node("agent", "Serotonin", nt_neuro.id, content="5-HT")
+    finally:
+        logger.remove(handler_id)
+
+    assert any("node_homonym_detected" in m for m in messages), f"Expected homonym log, got: {messages}"
+
+
+@pytest.mark.asyncio
+async def test_edge_type_drift_emits_log(mock_repo):
+    """Verify edge_type_drift_caught is logged on single-edge type update."""
+    from loguru import logger
+
+    nt = await mock_repo.get_or_create_node_type("agent", "Person")
+    et1 = await mock_repo.get_or_create_edge_type("agent", "WORKS_WITH")
+    et2 = await mock_repo.get_or_create_edge_type("agent", "COLLABORATES_WITH")
+
+    alice = await mock_repo.upsert_node("agent", "Alice", nt.id)
+    bob = await mock_repo.upsert_node("agent", "Bob", nt.id)
+
+    await mock_repo.upsert_edge("agent", alice.id, bob.id, et1.id)
+
+    messages = []
+    handler_id = logger.add(lambda msg: messages.append(msg.record["message"]), level="INFO")
+    try:
+        await mock_repo.upsert_edge("agent", alice.id, bob.id, et2.id)
+    finally:
+        logger.remove(handler_id)
+
+    assert any("edge_type_drift_caught" in m for m in messages), f"Expected edge drift log, got: {messages}"
+
+
+# ── Prefix heuristic tests (no arbitrary substring false positives) ──
+
+
+class TestTypesAreMergeSafePrefixOnly:
+    """Verify that the merge heuristic uses prefix matching, not arbitrary substring."""
+
+    def test_api_capital_not_merged(self):
+        assert _types_are_merge_safe("API", "Capital") is False
+
+    def test_event_prevent_not_merged(self):
+        assert _types_are_merge_safe("Event", "Prevent") is False
+
+    def test_fact_artifact_not_merged(self):
+        assert _types_are_merge_safe("Fact", "Artifact") is False
+
+    def test_log_catalog_not_merged(self):
+        assert _types_are_merge_safe("Log", "Catalog") is False
+
+    def test_ai_mountain_not_merged(self):
+        assert _types_are_merge_safe("AI", "Mountain") is False
+
+    def test_event_eventtype_merged(self):
+        """Prefix match at type hierarchy boundary should still merge."""
+        assert _types_are_merge_safe("Event", "EventType") is True
