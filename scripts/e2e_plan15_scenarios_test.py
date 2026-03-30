@@ -317,7 +317,7 @@ async def _get_duplicate_nodes() -> list[dict]:
     conn = await asyncpg.connect(dsn=PostgresConfig().dsn)
     try:
         schema = _quote(AGENT_SCHEMA)
-        rows = await conn.fetch(f"""SELECT n.name, COUNT(*) AS count,
+        rows = await conn.fetch(f"""SELECT lower(n.name) AS name, COUNT(*) AS count,
                        array_agg(nt.name ORDER BY n.id) AS types
                 FROM {schema}.node n
                 JOIN {schema}.node_type nt ON n.type_id = nt.id
