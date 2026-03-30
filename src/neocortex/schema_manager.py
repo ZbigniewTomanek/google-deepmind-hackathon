@@ -169,7 +169,7 @@ class SchemaManager:
             f"DROP POLICY IF EXISTS node_delete_policy ON {schema_name}.node;",
             (
                 f"CREATE POLICY node_select_policy ON {schema_name}.node FOR SELECT "
-                "USING (owner_role = current_user OR owner_role IS NULL);"
+                "USING (true);"
             ),
             (
                 f"CREATE POLICY node_insert_policy ON {schema_name}.node FOR INSERT "
@@ -186,7 +186,7 @@ class SchemaManager:
             f"DROP POLICY IF EXISTS edge_delete_policy ON {schema_name}.edge;",
             (
                 f"CREATE POLICY edge_select_policy ON {schema_name}.edge FOR SELECT "
-                "USING (owner_role = current_user OR owner_role IS NULL);"
+                "USING (true);"
             ),
             (
                 f"CREATE POLICY edge_insert_policy ON {schema_name}.edge FOR INSERT "
@@ -202,7 +202,7 @@ class SchemaManager:
             f"DROP POLICY IF EXISTS episode_delete_policy ON {schema_name}.episode;",
             (
                 f"CREATE POLICY episode_select_policy ON {schema_name}.episode FOR SELECT "
-                "USING (owner_role = current_user);"
+                "USING (true);"
             ),
             (
                 f"CREATE POLICY episode_insert_policy ON {schema_name}.episode FOR INSERT "
