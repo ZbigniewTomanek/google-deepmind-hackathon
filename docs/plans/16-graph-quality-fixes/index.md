@@ -135,7 +135,7 @@ E2E validation runs weight stability stress test and final Plan 15 scenario gate
 | 1 | [Fix Node Content Updates](stages/01-content-updates.md) | DONE | Librarian prompt requires descriptions; pipeline fallback to extractor; mock parity fix; 5 new tests | fix(extraction): ensure node content updates on re-extraction |
 | 1.5 | [E2E Validate: Content Updates](stages/01.5-validate-content-updates.md) | DONE | Extraction pipeline E2E passes; content update E2E: Alice billing→auth, no dupes, 1 node | test(e2e): validate content updates end-to-end |
 | 2 | [Librarian Retrieval Tools](stages/02-librarian-retrieval.md) | DONE | 4 tools registered; type descriptions to ont/ext; pipeline passes repo; 14 new tests | feat(extraction): add graph retrieval tools to librarian agent |
-| 3 | [Librarian Mutation Tools & Pipeline Redesign](stages/03-librarian-mutation.md) | PENDING | P0: Write tools + replace _persist_payload + partial failure handling | |
+| 3 | [Librarian Mutation Tools & Pipeline Redesign](stages/03-librarian-mutation.md) | DONE | 4 mutation tools; delete_edge + cleanup_partial_curation in protocol; CurationSummary output; pipeline rewired; fallback mode; 16 new tests | feat(extraction): librarian mutation tools + tool-driven graph curation |
 | 3.5 | [E2E Validate: Tool Pipeline](stages/03.5-validate-tool-pipeline.md) | PENDING | E2E: Plan 15 scenarios, tool metrics, partial failure recovery | |
 | 4 | [Adapter Safety Nets](stages/04-adapter-safety.md) | PENDING | P1: Defense-in-depth dedup with homonym guard | |
 | 4.5 | [E2E Validate: Safety Nets](stages/04.5-validate-safety-nets.md) | PENDING | E2E: drift/homonym monitoring, scenario score comparison | |

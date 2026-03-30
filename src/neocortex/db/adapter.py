@@ -596,6 +596,24 @@ class GraphServiceAdapter:
                 d["properties"] = json.loads(d["properties"])
             return Edge(**d)
 
+    async def delete_edge(
+        self,
+        agent_id: str,
+        edge_id: int,
+        target_schema: str | None = None,
+    ) -> bool:
+        if target_schema is None and (self._pool is None or self._router is None):
+            await self._graph.delete_edge(edge_id)
+            return True
+
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            result = await conn.execute(
+                "DELETE FROM edge WHERE id = $1",
+                edge_id,
+            )
+        return result == "DELETE 1"
+
     # ── Node Search ──
 
     async def search_nodes(
@@ -850,14 +868,17 @@ class GraphServiceAdapter:
 
     # ── Bulk Queries ──
 
-    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
+    async def list_all_node_names(
+        self, agent_id: str, target_schema: str | None = None, limit: int | None = None
+    ) -> list[str]:
         if target_schema is None and (self._pool is None or self._router is None):
-            nodes = await self._graph.list_nodes(limit=100000)
+            nodes = await self._graph.list_nodes(limit=limit or 100000)
             return [n.name for n in nodes]
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
+        limit_clause = f" LIMIT {int(limit)}" if limit is not None else ""
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            rows = await conn.fetch("SELECT name FROM node WHERE forgotten = false ORDER BY name")
+            rows = await conn.fetch(f"SELECT name FROM node WHERE forgotten = false ORDER BY name{limit_clause}")
         return [str(row["name"]) for row in rows]
 
     # ── Access Tracking ──
@@ -938,6 +959,32 @@ class GraphServiceAdapter:
                 importance_floor,
             )
         return [int(row["id"]) for row in rows]
+
+    # ── Partial Curation Cleanup ──
+
+    async def cleanup_partial_curation(
+        self,
+        agent_id: str,
+        episode_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        episode_str = str(episode_id)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            r1 = await conn.execute(
+                "DELETE FROM edge WHERE properties->>'_source_episode' = $1",
+                episode_str,
+            )
+            r2 = await conn.execute(
+                "DELETE FROM node WHERE properties->>'_source_episode' = $1",
+                episode_str,
+            )
+        edges_deleted = int(r1.split()[-1]) if r1 else 0
+        nodes_deleted = int(r2.split()[-1]) if r2 else 0
+        return edges_deleted + nodes_deleted
 
     # ── Episodic Consolidation ──
 

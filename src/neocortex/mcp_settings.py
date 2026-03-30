@@ -83,6 +83,7 @@ class MCPSettings(BaseSettings):
 
     # Extraction pipeline
     extraction_enabled: bool = True
+    librarian_use_tools: bool = True  # False falls back to _persist_payload
     # Per-agent inference config (env: NEOCORTEX_<AGENT>_MODEL / _THINKING_EFFORT)
     # Thinking effort: minimal|low|medium|high|xhigh (maps to token budgets)
     ontology_model: str = "gemini-3-flash-preview"

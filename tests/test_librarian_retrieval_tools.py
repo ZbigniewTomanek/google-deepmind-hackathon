@@ -57,9 +57,15 @@ def test_librarian_agent_has_retrieval_tools() -> None:
     assert "get_edges_between" in tool_names
 
 
-def test_librarian_agent_has_exactly_four_tools() -> None:
-    """No extra tools beyond the 4 retrieval tools."""
-    agent = build_librarian_agent(_TEST_CONFIG)
+def test_librarian_agent_has_eight_tools_in_tool_mode() -> None:
+    """Tool-equipped librarian has 4 retrieval + 4 mutation = 8 tools."""
+    agent = build_librarian_agent(_TEST_CONFIG, use_tools=True)
+    assert len(agent._function_toolset.tools) == 8
+
+
+def test_librarian_agent_has_four_tools_in_fallback_mode() -> None:
+    """Fallback librarian has only 4 retrieval tools."""
+    agent = build_librarian_agent(_TEST_CONFIG, use_tools=False)
     assert len(agent._function_toolset.tools) == 4
 
 
@@ -166,7 +172,7 @@ async def test_get_edges_between_no_nodes(repo: InMemoryRepository) -> None:
 
 @pytest.mark.asyncio
 async def test_pipeline_no_longer_calls_list_all_node_names(repo: InMemoryRepository) -> None:
-    """Pipeline should pass repo to librarian deps, not call list_all_node_names."""
+    """Pipeline in tool mode should NOT call list_all_node_names."""
     from unittest.mock import AsyncMock, patch
 
     from neocortex.extraction.pipeline import run_extraction
@@ -183,10 +189,10 @@ async def test_pipeline_no_longer_calls_list_all_node_names(repo: InMemoryReposi
         mock_agent = AsyncMock()
         mock_agent._function_tools = {}
 
-        from neocortex.extraction.schemas import LibrarianPayload
+        from neocortex.extraction.schemas import CurationSummary
 
         mock_result = AsyncMock()
-        mock_result.output = LibrarianPayload()
+        mock_result.output = CurationSummary()
         mock_agent.run = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
 
@@ -198,9 +204,10 @@ async def test_pipeline_no_longer_calls_list_all_node_names(repo: InMemoryReposi
             ontology_config=_TEST_CONFIG,
             extractor_config=_TEST_CONFIG,
             librarian_config=_TEST_CONFIG,
+            librarian_use_tools=True,
         )
 
-    # list_all_node_names should NOT have been called
+    # list_all_node_names should NOT have been called in tool mode
     spy.assert_not_called()
 
 
@@ -210,7 +217,6 @@ async def test_pipeline_passes_repo_to_librarian_deps(repo: InMemoryRepository) 
     from unittest.mock import AsyncMock, patch
 
     from neocortex.extraction.pipeline import run_extraction
-    from neocortex.extraction.schemas import LibrarianPayload
 
     eid = await repo.store_episode(AGENT, "Alice works on billing.")
 
@@ -218,16 +224,18 @@ async def test_pipeline_passes_repo_to_librarian_deps(repo: InMemoryRepository) 
 
     original_build = build_librarian_agent
 
-    def patched_build(config=None):
-        agent = original_build(config)
+    def patched_build(config=None, use_tools=True):
+        agent = original_build(config, use_tools=use_tools)
 
         async def capturing_run(*args, **kwargs):
             deps = kwargs.get("deps")
             if deps is not None:
                 captured_deps.append(deps)
             # Return a mock result instead of actually running the LLM
+            from neocortex.extraction.schemas import CurationSummary
+
             result = AsyncMock()
-            result.output = LibrarianPayload()
+            result.output = CurationSummary()
             return result
 
         agent.run = capturing_run  # type: ignore[assignment]  # ty: ignore[invalid-assignment]

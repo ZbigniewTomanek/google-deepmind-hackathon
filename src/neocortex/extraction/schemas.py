@@ -6,7 +6,7 @@ persisted to the knowledge graph.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ── LLM Output Schemas (what agents produce) ──
 
@@ -81,3 +81,46 @@ class LibrarianPayload(BaseModel):
     entities: list[NormalizedEntity] = Field(default_factory=list)
     relations: list[NormalizedRelation] = Field(default_factory=list)
     summary: str = ""
+
+
+# ── Tool-driven curation output (Stage 3, Plan 16) ──
+
+
+class CurationAction(BaseModel):
+    """A single action taken by the librarian during graph curation."""
+
+    action: str  # "created_node", "updated_node", "archived_node", "created_edge", "removed_edge"
+    entity_name: str | None = None
+    edge_source: str | None = None
+    edge_target: str | None = None
+    details: str = ""
+
+
+class CurationSummary(BaseModel):
+    """Summary of all curation actions taken by the librarian.
+
+    This replaces LibrarianPayload — the librarian now executes changes
+    via tools and reports what it did, rather than producing a payload
+    for blind persistence.
+
+    Counts are computed from the actions list via validator — the LLM
+    only needs to populate `actions` and `summary`, not track counts.
+    """
+
+    actions: list[CurationAction] = Field(default_factory=list)
+    summary: str = ""
+    entities_created: int = 0
+    entities_updated: int = 0
+    entities_archived: int = 0
+    edges_created: int = 0
+    edges_removed: int = 0
+
+    @model_validator(mode="after")
+    def _recompute_counts(self) -> CurationSummary:
+        """Derive counts from the actions list so LLM doesn't need to count."""
+        self.entities_created = sum(1 for a in self.actions if a.action == "created_node")
+        self.entities_updated = sum(1 for a in self.actions if a.action == "updated_node")
+        self.entities_archived = sum(1 for a in self.actions if a.action == "archived_node")
+        self.edges_created = sum(1 for a in self.actions if a.action == "created_edge")
+        self.edges_removed = sum(1 for a in self.actions if a.action == "removed_edge")
+        return self

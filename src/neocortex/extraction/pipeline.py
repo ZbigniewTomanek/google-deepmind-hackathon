@@ -20,7 +20,7 @@ from neocortex.extraction.agents import (
     build_librarian_agent,
     build_ontology_agent,
 )
-from neocortex.extraction.schemas import LibrarianPayload
+from neocortex.extraction.schemas import CurationSummary, LibrarianPayload
 
 if TYPE_CHECKING:
     from neocortex.db.protocol import MemoryRepository
@@ -40,6 +40,7 @@ async def run_extraction(
     extractor_config: AgentInferenceConfig | None = None,
     librarian_config: AgentInferenceConfig | None = None,
     domain_hint: str | None = None,
+    librarian_use_tools: bool = True,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -57,6 +58,8 @@ async def run_extraction(
         librarian_config: Inference config for the librarian agent.
         domain_hint: Optional domain context (e.g. "Technical Knowledge: Programming languages, ...")
                      passed to ontology and extractor agents to guide type proposals.
+        librarian_use_tools: When True (default), the librarian curates the graph
+                             via tools. When False, falls back to _persist_payload.
     """
     ont_cfg = ontology_config or AgentInferenceConfig()
     ext_cfg = extractor_config or AgentInferenceConfig()
@@ -66,7 +69,7 @@ async def run_extraction(
 
     ontology_agent = build_ontology_agent(ont_cfg)
     extractor_agent = build_extractor_agent(ext_cfg)
-    librarian_agent = build_librarian_agent(lib_cfg)
+    librarian_agent = build_librarian_agent(lib_cfg, use_tools=librarian_use_tools)
 
     for episode_id in episode_ids:
         episode = await repo.get_episode(agent_id, episode_id, target_schema=read_schema)
@@ -131,50 +134,110 @@ async def run_extraction(
             model_settings=ext_cfg.model_settings,
         )
 
-        # 5. Librarian stage (tools search graph on demand — no unbounded name list)
-        librarian_result = await librarian_agent.run(
-            "Normalize and deduplicate the extracted data.",
-            deps=LibrarianAgentDeps(
-                episode_text=text,
-                node_types=[t.name for t in node_types],
-                edge_types=[t.name for t in edge_types],
-                extracted_entities=extraction_result.output.entities,
-                extracted_relations=extraction_result.output.relations,
-                repo=repo,
-                embeddings=embeddings,
+        # 5. Librarian stage
+        if librarian_use_tools:
+            # Tool-driven curation: librarian persists directly via tools
+            # Clean up any partial state from a previous failed attempt
+            cleaned = await repo.cleanup_partial_curation(
+                agent_id,
+                episode_id,
+                target_schema=target_schema,
+            )
+            if cleaned > 0:
+                logger.info(
+                    "cleanup_partial_curation",
+                    episode_id=episode_id,
+                    items_deleted=cleaned,
+                )
+
+            librarian_result = await librarian_agent.run(
+                "Integrate the extracted entities and relations into the knowledge graph.",
+                deps=LibrarianAgentDeps(
+                    episode_text=text,
+                    node_types=[t.name for t in node_types],
+                    edge_types=[t.name for t in edge_types],
+                    extracted_entities=extraction_result.output.entities,
+                    extracted_relations=extraction_result.output.relations,
+                    repo=repo,
+                    embeddings=embeddings,
+                    agent_id=agent_id,
+                    target_schema=target_schema,
+                    episode_id=episode_id,
+                ),
+                model_settings=lib_cfg.model_settings,
+                usage_limits=UsageLimits(tool_calls_limit=50),
+            )
+
+            # Mark episode as consolidated
+            await repo.mark_episode_consolidated(agent_id, episode_id)
+
+            # Log the curation summary
+            summary = librarian_result.output
+            assert isinstance(summary, CurationSummary)
+            logger.bind(action_log=True).info(
+                "curation_complete",
+                episode_id=episode_id,
+                agent_id=agent_id,
+                created=summary.entities_created,
+                updated=summary.entities_updated,
+                archived=summary.entities_archived,
+                edges_created=summary.edges_created,
+                edges_removed=summary.edges_removed,
+                summary=summary.summary,
+            )
+        else:
+            # Fallback: non-tool librarian → _persist_payload
+            # Inject bounded name list for dedup context
+            known_names = await repo.list_all_node_names(
+                agent_id,
+                target_schema=target_schema,
+                limit=500,
+            )
+
+            librarian_result = await librarian_agent.run(
+                "Normalize and deduplicate the extracted data.",
+                deps=LibrarianAgentDeps(
+                    episode_text=text,
+                    node_types=[t.name for t in node_types],
+                    edge_types=[t.name for t in edge_types],
+                    extracted_entities=extraction_result.output.entities,
+                    extracted_relations=extraction_result.output.relations,
+                    repo=repo,
+                    embeddings=embeddings,
+                    agent_id=agent_id,
+                    target_schema=target_schema,
+                    episode_id=episode_id,
+                    known_node_names=known_names,
+                ),
+                model_settings=lib_cfg.model_settings,
+                usage_limits=UsageLimits(tool_calls_limit=50),
+            )
+
+            # Build fallback map from extractor descriptions
+            extractor_descriptions: dict[str, str] = {
+                e.name: e.description for e in extraction_result.output.entities if e.description
+            }
+
+            payload = librarian_result.output
+            assert isinstance(payload, LibrarianPayload)
+            await _persist_payload(
+                repo,
+                embeddings,
+                agent_id,
+                episode_id,
+                payload,
+                target_schema=target_schema,
+                extractor_descriptions=extractor_descriptions,
+            )
+
+            logger.info(
+                "extraction_complete",
+                episode_id=episode_id,
                 agent_id=agent_id,
                 target_schema=target_schema,
-            ),
-            model_settings=lib_cfg.model_settings,
-            usage_limits=UsageLimits(tool_calls_limit=50),
-        )
-
-        # 6. Build fallback map from extractor descriptions (safety net for when
-        # the librarian returns description=None for existing entities)
-        extractor_descriptions: dict[str, str] = {
-            e.name: e.description for e in extraction_result.output.entities if e.description
-        }
-
-        # 7. Persist graph data
-        payload = librarian_result.output
-        await _persist_payload(
-            repo,
-            embeddings,
-            agent_id,
-            episode_id,
-            payload,
-            target_schema=target_schema,
-            extractor_descriptions=extractor_descriptions,
-        )
-
-        logger.info(
-            "extraction_complete",
-            episode_id=episode_id,
-            agent_id=agent_id,
-            target_schema=target_schema,
-            entities=len(payload.entities),
-            relations=len(payload.relations),
-        )
+                entities=len(payload.entities),
+                relations=len(payload.relations),
+            )
 
 
 async def _persist_payload(
@@ -186,7 +249,10 @@ async def _persist_payload(
     target_schema: str | None = None,
     extractor_descriptions: dict[str, str] | None = None,
 ) -> None:
-    """Persist librarian output to the knowledge graph."""
+    """Persist librarian output to the knowledge graph.
+
+    Kept as fallback for non-tool mode (librarian_use_tools=False).
+    """
 
     # Fetch source episode to read importance_hint
     importance_hint: float | None = None

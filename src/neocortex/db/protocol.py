@@ -117,6 +117,14 @@ class MemoryRepository(Protocol):
         If an edge with the same triple exists, merge properties and update weight.
         """
 
+    async def delete_edge(
+        self,
+        agent_id: str,
+        edge_id: int,
+        target_schema: str | None = None,
+    ) -> bool:
+        """Hard-delete an edge by ID. Returns True if deleted."""
+
     # ── Node Search ──
 
     async def search_nodes(
@@ -153,8 +161,10 @@ class MemoryRepository(Protocol):
 
     # ── Bulk Queries (for extraction pipeline) ──
 
-    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
-        """Return all node names in the agent's graph."""
+    async def list_all_node_names(
+        self, agent_id: str, target_schema: str | None = None, limit: int | None = None
+    ) -> list[str]:
+        """Return node names in the agent's graph, optionally limited."""
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         """Return all edge signatures (source→type→target) in the agent's graph."""
@@ -185,6 +195,20 @@ class MemoryRepository(Protocol):
         accepted for future use but currently unused by both implementations.
         ``importance_floor`` is applied: nodes with importance >= floor are
         never forgettable.
+        """
+
+    # ── Partial Curation Cleanup ──
+
+    async def cleanup_partial_curation(
+        self,
+        agent_id: str,
+        episode_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        """Delete nodes and edges tagged with _source_episode = episode_id.
+
+        Called before retrying a failed curation to ensure idempotency.
+        Returns total items deleted.
         """
 
     # ── Episodic Consolidation ──

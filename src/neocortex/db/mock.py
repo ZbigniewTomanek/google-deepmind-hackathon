@@ -477,6 +477,18 @@ class InMemoryRepository:
         self._edges[edge.id] = edge
         return edge
 
+    async def delete_edge(
+        self,
+        agent_id: str,
+        edge_id: int,
+        target_schema: str | None = None,
+    ) -> bool:
+        del agent_id, target_schema
+        if edge_id in self._edges:
+            del self._edges[edge_id]
+            return True
+        return False
+
     # ── Node Search ──
 
     async def search_nodes(
@@ -557,9 +569,14 @@ class InMemoryRepository:
 
     # ── Bulk Queries ──
 
-    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
+    async def list_all_node_names(
+        self, agent_id: str, target_schema: str | None = None, limit: int | None = None
+    ) -> list[str]:
         del target_schema
-        return sorted(n.name for n in self._nodes.values() if not n.forgotten)
+        names = sorted(n.name for n in self._nodes.values() if not n.forgotten)
+        if limit is not None:
+            return names[:limit]
+        return names
 
     # ── Soft-Forget ──
 
@@ -604,6 +621,33 @@ class InMemoryRepository:
                 continue
             forgettable.append(node.id)
         return forgettable
+
+    # ── Partial Curation Cleanup ──
+
+    async def cleanup_partial_curation(
+        self,
+        agent_id: str,
+        episode_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        del agent_id, target_schema
+        episode_str = str(episode_id)
+        deleted = 0
+        # Delete edges tagged with this episode
+        edge_ids_to_delete = [
+            eid for eid, edge in self._edges.items() if str(edge.properties.get("_source_episode", "")) == episode_str
+        ]
+        for eid in edge_ids_to_delete:
+            del self._edges[eid]
+            deleted += 1
+        # Delete nodes tagged with this episode
+        node_ids_to_delete = [
+            nid for nid, node in self._nodes.items() if str(node.properties.get("_source_episode", "")) == episode_str
+        ]
+        for nid in node_ids_to_delete:
+            del self._nodes[nid]
+            deleted += 1
+        return deleted
 
     # ── Episodic Consolidation ──
 

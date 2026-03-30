@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from neocortex.embedding_service import EmbeddingService
 
 from neocortex.extraction.schemas import (
+    CurationSummary,
     ExtractedEntity,
     ExtractedRelation,
     ExtractionResult,
@@ -225,32 +226,72 @@ class LibrarianAgentDeps:
     embeddings: EmbeddingService | None
     agent_id: str
     target_schema: str | None = None
+    episode_id: int | None = None  # Source tracking in mutation tools
+    known_node_names: list[str] | None = None  # Fallback dedup context (non-tool mode)
 
 
 def build_librarian_agent(
     config: AgentInferenceConfig | None = None,
-) -> Agent[LibrarianAgentDeps, LibrarianPayload]:
+    use_tools: bool = True,
+) -> Agent[LibrarianAgentDeps, CurationSummary] | Agent[LibrarianAgentDeps, LibrarianPayload]:
+    """Build the librarian agent.
+
+    When use_tools=True (default), the agent gets mutation tools and returns
+    CurationSummary. When use_tools=False, it returns LibrarianPayload for
+    backward-compatible _persist_payload flow.
+    """
     cfg = config or AgentInferenceConfig()
     model = _build_model(cfg)
-    agent = Agent(
-        model,
-        output_type=LibrarianPayload,
-        deps_type=LibrarianAgentDeps,
-        system_prompt=(
-            "You are a knowledge graph librarian with access to the existing graph. "
-            "Your job is to integrate new extracted knowledge into the graph intelligently.",
-            "Before creating or updating entities, use your tools to check what already exists.",
+
+    output_type = CurationSummary if use_tools else LibrarianPayload
+
+    system_prompt: tuple[str, ...]
+    if use_tools:
+        system_prompt = (
+            "You are a knowledge graph curator. You receive extracted entities and relations "
+            "from a text, and your job is to integrate them into the existing knowledge graph "
+            "using the tools available to you.",
+            "",
+            "## Workflow",
             "For each extracted entity:",
-            "  1. Use find_node_by_name or search_existing_nodes to check if it exists",
-            "  2. If it exists, inspect its current state and decide: update content? keep as-is?",
-            "  3. If it's new, verify the type assignment against existing types",
+            "  1. Use find_node_by_name to check if it already exists",
+            "  2. If it exists: compare the extracted description with the existing content. "
+            "     If the new info adds or updates knowledge, use create_or_update_node with "
+            "     a COMPREHENSIVE updated description that merges old and new information.",
+            "  3. If it doesn't exist: use create_or_update_node to create it.",
+            "  4. If the extracted info CONTRADICTS an existing node, update the node with "
+            "     correct information and note the contradiction in properties.",
+            "",
             "For each extracted relation:",
-            "  1. Use get_edges_between to check for existing relationships",
-            "  2. If an edge exists with a different type, prefer the existing type unless "
-            "the new type is clearly more accurate",
+            "  1. Use get_edges_between to check for existing relationships between the two nodes",
+            "  2. If an edge exists with a similar meaning (even different type name), keep it — "
+            "     do NOT create a duplicate with a slightly different type name.",
+            "  3. If an edge exists that is now WRONG (e.g., Alice MEMBER_OF Billing, but she "
+            "     moved to Auth), use remove_edge on the stale edge and create the correct one.",
+            "  4. If no relevant edge exists, use create_or_update_edge.",
+            "",
+            "## Rules",
+            "- ALWAYS provide comprehensive content when creating/updating nodes.",
+            "- ALWAYS check for existing entities before creating new ones.",
+            "- Prefer updating existing nodes over creating duplicates.",
+            "- Normalize names to canonical form (proper casing, full names).",
+            "- When in doubt about type assignment, match the existing node's type.",
+            "",
+            "After all curation actions, return a CurationSummary describing what you did.",
+        )
+    else:
+        system_prompt = (
+            "You are a knowledge graph librarian. " "Your job is to normalize and deduplicate extracted knowledge.",
             "Normalize entity names to canonical forms.",
             "Preserve importance scores from extractor (max semantics if merging).",
-        ),
+            "ALWAYS provide a description for every entity.",
+        )
+
+    agent = Agent(
+        model,
+        output_type=output_type,
+        deps_type=LibrarianAgentDeps,
+        system_prompt=system_prompt,
     )
 
     # ── Read-only retrieval tools ──
@@ -439,6 +480,222 @@ def build_librarian_agent(
                     )
         return result
 
+    # ── Mutation tools (Stage 3) ──
+
+    if use_tools:
+
+        @agent.tool
+        async def create_or_update_node(
+            ctx: RunContext[LibrarianAgentDeps],
+            name: str,
+            type_name: str,
+            content: str,
+            properties: dict | None = None,
+            importance: float = 0.5,
+        ) -> dict:
+            """Create a new node or update an existing one.
+            Searches by name first — if a node with this name exists,
+            updates its content and merges properties. If not, creates new.
+
+            ALWAYS provide a content description, even for existing nodes.
+            The content should be a comprehensive, up-to-date summary.
+
+            Args:
+                name: Canonical entity name
+                type_name: Node type (must be from available types)
+                content: Description of the entity (REQUIRED — always provide this)
+                properties: Optional key-value properties
+                importance: 0.0-1.0 importance score
+
+            Returns:
+                Dict with node_id, name, type_name, is_new, action taken
+            """
+            node_type = await ctx.deps.repo.get_or_create_node_type(
+                ctx.deps.agent_id,
+                type_name,
+                target_schema=ctx.deps.target_schema,
+            )
+            embedding = None
+            if ctx.deps.embeddings and content:
+                embedding = await ctx.deps.embeddings.embed(content)
+
+            episode_id = ctx.deps.episode_id
+            props = {**(properties or {})}
+            if episode_id:
+                props["_source_episode"] = episode_id
+
+            node = await ctx.deps.repo.upsert_node(
+                agent_id=ctx.deps.agent_id,
+                name=name,
+                type_id=node_type.id,
+                content=content,
+                properties=props,
+                embedding=embedding,
+                target_schema=ctx.deps.target_schema,
+                importance=importance,
+            )
+            is_new = node.created_at == node.updated_at
+            action = "created" if is_new else "updated"
+            logger.bind(action_log=True).info(
+                "librarian_tool_call",
+                tool="create_or_update_node",
+                node_name=name,
+                action=action,
+                agent_id=ctx.deps.agent_id,
+            )
+            return {
+                "node_id": node.id,
+                "name": node.name,
+                "type_name": type_name,
+                "is_new": is_new,
+                "action": action,
+            }
+
+        @agent.tool
+        async def create_or_update_edge(
+            ctx: RunContext[LibrarianAgentDeps],
+            source_name: str,
+            target_name: str,
+            edge_type: str,
+            weight: float = 1.0,
+            properties: dict | None = None,
+        ) -> dict:
+            """Create a new edge or update an existing one between two nodes.
+            Both nodes must already exist (create them first with create_or_update_node).
+
+            Before calling this, use get_edges_between to check for existing relationships.
+            If an edge already exists with a suitable type, prefer updating it over creating
+            a new one with a different type.
+
+            Args:
+                source_name: Name of the source node (must exist)
+                target_name: Name of the target node (must exist)
+                edge_type: Relationship type (e.g., MEMBER_OF, WORKS_ON)
+                weight: Edge weight 0.0-1.0 (default 1.0)
+                properties: Optional properties (evidence text, etc.)
+
+            Returns:
+                Dict with edge_id, source, target, type, action
+            """
+            src_nodes = await ctx.deps.repo.find_nodes_by_name(
+                ctx.deps.agent_id,
+                source_name,
+                target_schema=ctx.deps.target_schema,
+            )
+            tgt_nodes = await ctx.deps.repo.find_nodes_by_name(
+                ctx.deps.agent_id,
+                target_name,
+                target_schema=ctx.deps.target_schema,
+            )
+            if not src_nodes:
+                return {"error": f"Source node '{source_name}' not found. Create it first."}
+            if not tgt_nodes:
+                return {"error": f"Target node '{target_name}' not found. Create it first."}
+
+            et = await ctx.deps.repo.get_or_create_edge_type(
+                ctx.deps.agent_id,
+                edge_type,
+                target_schema=ctx.deps.target_schema,
+            )
+
+            episode_id = ctx.deps.episode_id
+            props = {**(properties or {})}
+            if episode_id:
+                props["_source_episode"] = episode_id
+
+            edge = await ctx.deps.repo.upsert_edge(
+                agent_id=ctx.deps.agent_id,
+                source_id=src_nodes[0].id,
+                target_id=tgt_nodes[0].id,
+                type_id=et.id,
+                weight=weight,
+                properties=props,
+                target_schema=ctx.deps.target_schema,
+            )
+            logger.bind(action_log=True).info(
+                "librarian_tool_call",
+                tool="create_or_update_edge",
+                source=source_name,
+                target=target_name,
+                edge_type=edge_type,
+                agent_id=ctx.deps.agent_id,
+            )
+            return {
+                "edge_id": edge.id,
+                "source": source_name,
+                "target": target_name,
+                "type": edge_type,
+                "action": "upserted",
+            }
+
+        @agent.tool
+        async def archive_node(
+            ctx: RunContext[LibrarianAgentDeps],
+            node_id: int,
+            reason: str,
+        ) -> dict:
+            """Soft-delete a node that is no longer current.
+            Use this when new information supersedes or contradicts an existing node.
+            The node is not hard-deleted — it's marked as forgotten and excluded from future recall.
+
+            Args:
+                node_id: ID of the node to archive (from find_node_by_name results)
+                reason: Why this node is being archived
+
+            Returns:
+                Dict confirming the archival
+            """
+            count = await ctx.deps.repo.mark_forgotten(
+                ctx.deps.agent_id,
+                [node_id],
+            )
+            logger.bind(action_log=True).info(
+                "librarian_tool_call",
+                tool="archive_node",
+                node_id=node_id,
+                reason=reason,
+                agent_id=ctx.deps.agent_id,
+            )
+            return {
+                "archived": count > 0,
+                "node_id": node_id,
+                "reason": reason,
+            }
+
+        @agent.tool
+        async def remove_edge(
+            ctx: RunContext[LibrarianAgentDeps],
+            edge_id: int,
+            reason: str,
+        ) -> dict:
+            """Remove a stale or incorrect edge from the graph.
+            Use this when a relationship is no longer valid (e.g., Alice is no longer
+            on the billing team, so the MEMBER_OF→Billing edge should be removed).
+
+            Args:
+                edge_id: ID of the edge to remove (from get_edges_between or inspect results)
+                reason: Why this edge is being removed
+
+            Returns:
+                Dict confirming the removal
+            """
+            deleted = await ctx.deps.repo.delete_edge(
+                ctx.deps.agent_id,
+                edge_id,
+            )
+            logger.bind(action_log=True).info(
+                "librarian_tool_call",
+                tool="remove_edge",
+                edge_id=edge_id,
+                reason=reason,
+                agent_id=ctx.deps.agent_id,
+            )
+            return {
+                "removed": deleted,
+                "edge_id": edge_id,
+                "reason": reason,
+            }
+
     # ── Context injection ──
 
     @agent.instructions
@@ -455,30 +712,52 @@ def build_librarian_agent(
             )
             or "- none"
         )
-        return "\n".join(
-            [
-                "Source text:",
-                ctx.deps.episode_text,
-                "",
-                "Available node types:",
-                "\n".join(f"- {n}" for n in ctx.deps.node_types) or "- none",
-                "",
-                "Available edge types:",
-                "\n".join(f"- {n}" for n in ctx.deps.edge_types) or "- none",
-                "",
-                "Extracted entities (from extractor — your job is to curate these):",
-                entities_str,
-                "",
-                "Extracted relations:",
-                relations_str,
-                "",
-                "IMPORTANT: Use your tools to check the existing graph before making decisions.",
-                "Do NOT assume entities are new — always verify with find_node_by_name first.",
-                "- ALWAYS provide a description for every entity, even if is_new=False.",
-                "- For existing entities, write an UPDATED description that "
-                "incorporates new information from the text.",
-                "- The description becomes the entity's canonical summary — make it comprehensive and current.",
-            ]
-        )
+        parts = [
+            "Source text:",
+            ctx.deps.episode_text,
+            "",
+            "Available node types:",
+            "\n".join(f"- {n}" for n in ctx.deps.node_types) or "- none",
+            "",
+            "Available edge types:",
+            "\n".join(f"- {n}" for n in ctx.deps.edge_types) or "- none",
+            "",
+            "Extracted entities (from extractor — your job is to curate these):",
+            entities_str,
+            "",
+            "Extracted relations:",
+            relations_str,
+        ]
+        if use_tools:
+            parts.extend(
+                [
+                    "",
+                    "IMPORTANT: Use your tools to check the existing graph before making decisions.",
+                    "Do NOT assume entities are new — always verify with find_node_by_name first.",
+                    "- ALWAYS provide a description for every entity when using create_or_update_node.",
+                    "- For existing entities, write an UPDATED description that "
+                    "incorporates new information from the text.",
+                    "- The description becomes the entity's canonical summary — make it comprehensive and current.",
+                ]
+            )
+        else:
+            # Fallback: inject known names for dedup context
+            if ctx.deps.known_node_names:
+                parts.extend(
+                    [
+                        "",
+                        "Known entities in the graph (check for duplicates):",
+                        "\n".join(f"- {n}" for n in ctx.deps.known_node_names[:500]),
+                    ]
+                )
+            parts.extend(
+                [
+                    "",
+                    "- ALWAYS provide a description for every entity, even if is_new=False.",
+                    "- For existing entities, write an UPDATED description that "
+                    "incorporates new information from the text.",
+                ]
+            )
+        return "\n".join(parts)
 
     return agent  # ty: ignore[invalid-return-type]
