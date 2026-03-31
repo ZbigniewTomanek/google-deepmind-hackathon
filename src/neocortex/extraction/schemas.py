@@ -6,7 +6,7 @@ persisted to the knowledge graph.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ── LLM Output Schemas (what agents produce) ──
 
@@ -17,12 +17,32 @@ class ProposedNodeType(BaseModel):
     name: str = Field(description="PascalCase type name, e.g. 'Neurotransmitter'")
     description: str = ""
 
+    @field_validator("name")
+    @classmethod
+    def validate_type_name(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) > 60:
+            raise ValueError(f"Type name too long ({len(v)} chars)")
+        if v and not v[0].isupper():
+            raise ValueError(f"Type name must start with uppercase: '{v}'")
+        return v
+
 
 class ProposedEdgeType(BaseModel):
     """Ontology agent proposes new edge types."""
 
     name: str = Field(description="SCREAMING_SNAKE relationship name, e.g. 'INHIBITS'")
     description: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def validate_type_name(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) > 60:
+            raise ValueError(f"Type name too long ({len(v)} chars)")
+        if v and not v[0].isupper():
+            raise ValueError(f"Type name must start with uppercase: '{v}'")
+        return v
 
 
 class OntologyProposal(BaseModel):
@@ -37,6 +57,16 @@ class ExtractedEntity(BaseModel):
     description: str | None = None
     properties: dict = Field(default_factory=dict, description="Scalar facts as key-value pairs")
     importance: float = Field(default=0.5, ge=0.0, le=1.0, description="How critical is this entity to the domain")
+
+    @field_validator("type_name")
+    @classmethod
+    def validate_type_name(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) > 60:
+            raise ValueError(f"Type name too long ({len(v)} chars)")
+        if v and not v[0].isupper():
+            raise ValueError(f"Type name must start with uppercase: '{v}'")
+        return v
 
 
 class ExtractedRelation(BaseModel):

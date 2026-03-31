@@ -85,7 +85,7 @@ def test_normalize_edge_type(input_type: str, expected: str) -> None:
         ("SOFTWARE_TOOL", "SoftwareTool"),  # ALL_CAPS with separator → PascalCase
         ("SOFTWARETOOL", "SOFTWARETOOL"),  # ALL_CAPS no separator → preserve
         ("Person", "Person"),  # idempotent
-        ("gRPC", "gRPC"),  # mixed case → preserve
+        ("gRPC", "GRPC"),  # mixed case → uppercase start enforced
         ("software tool", "SoftwareTool"),  # space-separated → PascalCase
     ],
 )

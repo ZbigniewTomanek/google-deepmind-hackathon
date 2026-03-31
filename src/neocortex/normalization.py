@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import re
 
-_VALID_NODE_TYPE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]*$")
+_VALID_NODE_TYPE = re.compile(r"^[A-Z][a-zA-Z0-9]*$")
 _VALID_EDGE_TYPE = re.compile(r"^[A-Z]([A-Z0-9_]*[A-Z0-9])?$")
 _INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_\- ]")
+_MAX_TYPE_NAME_LENGTH = 60
+_MAX_TYPE_WORD_COUNT = 5
+_PASCAL_WORD_BOUNDARY = re.compile(r"[A-Z][a-z]+|[A-Z]+(?=[A-Z]|$)|[0-9]+")
 
 _KNOWN_ACRONYMS: list[str] = [
     "API",
@@ -67,6 +70,19 @@ def normalize_edge_type(name: str) -> str:
     if not name:
         raise ValueError("Edge type name is empty after stripping invalid characters")
 
+    # Reject excessive length (LLM reasoning leaks)
+    if len(name) > _MAX_TYPE_NAME_LENGTH:
+        raise ValueError(
+            f"Edge type name too long ({len(name)} chars, max {_MAX_TYPE_NAME_LENGTH}): " f"'{name[:50]}...'"
+        )
+
+    # Reject names with too many PascalCase segments (reasoning contamination)
+    word_count = len(_PASCAL_WORD_BOUNDARY.findall(name))
+    if word_count > _MAX_TYPE_WORD_COUNT:
+        raise ValueError(
+            f"Edge type name has too many segments ({word_count}, max {_MAX_TYPE_WORD_COUNT}): " f"'{name[:50]}...'"
+        )
+
     # Replace hyphens with underscores
     name = name.replace("-", "_")
     # Insert underscore before uppercase letters preceded by lowercase or digit (PascalCase split)
@@ -93,6 +109,19 @@ def normalize_node_type(name: str) -> str:
     if not name:
         raise ValueError("Node type name is empty after stripping invalid characters")
 
+    # Reject excessive length (LLM reasoning leaks)
+    if len(name) > _MAX_TYPE_NAME_LENGTH:
+        raise ValueError(
+            f"Node type name too long ({len(name)} chars, max {_MAX_TYPE_NAME_LENGTH}): " f"'{name[:50]}...'"
+        )
+
+    # Reject names with too many PascalCase segments (reasoning contamination)
+    word_count = len(_PASCAL_WORD_BOUNDARY.findall(name))
+    if word_count > _MAX_TYPE_WORD_COUNT:
+        raise ValueError(
+            f"Node type name has too many segments ({word_count}, max {_MAX_TYPE_WORD_COUNT}): " f"'{name[:50]}...'"
+        )
+
     # Check if it has separators (underscores, spaces, or hyphens)
     has_separators = "_" in name or " " in name or "-" in name
 
@@ -109,6 +138,10 @@ def normalize_node_type(name: str) -> str:
     else:
         # Already PascalCase or mixed case → keep as-is
         result = name
+
+    # Ensure first character is uppercase
+    if result and result[0].islower():
+        result = result[0].upper() + result[1:]
 
     # Final validation
     if not _VALID_NODE_TYPE.match(result):
