@@ -241,8 +241,88 @@ do_stop() {
 }
 
 do_snapshot() {
-    log "snapshot: not yet implemented (Stages 3-5)"
-    exit 1
+    local subcmd="${1:-help}"
+    shift || true
+    case "$subcmd" in
+        save)   snapshot_save "$@" ;;
+        list)   snapshot_list "$@" ;;
+        load)   snapshot_load "$@" ;;
+        delete) snapshot_delete "$@" ;;
+        *)      fail "Unknown snapshot command: $subcmd" ;;
+    esac
+}
+
+snapshot_save() {
+    # Validate: exactly one arg matching [a-zA-Z0-9_-]+
+    if [[ $# -ne 1 ]]; then
+        fail "Usage: $0 snapshot save <name>"
+    fi
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        fail "Snapshot name must match [a-zA-Z0-9_-]+ (got: $name)"
+    fi
+
+    require_pg_running
+
+    local filename="${name}-$(date +%Y%m%d-%H%M%S)"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    # pg_dump
+    log "Dumping database..."
+    docker compose -f "$COMPOSE_FILE" exec -T \
+        -e PGPASSWORD=neocortex postgres \
+        pg_dump -U neocortex -d neocortex --clean --if-exists \
+        | gzip > "$tmpdir/db.sql.gz"
+
+    # Copy media_store if non-empty
+    local has_media=false
+    if [[ -d "$MEDIA_STORE" ]] && [[ -n "$(ls -A "$MEDIA_STORE" 2>/dev/null)" ]]; then
+        log "Bundling media_store..."
+        cp -r "$MEDIA_STORE" "$tmpdir/media_store"
+        has_media=true
+    fi
+
+    # Capture PG version
+    local pg_ver
+    pg_ver=$(docker compose -f "$COMPOSE_FILE" exec -T postgres \
+        pg_dump --version | head -1 | tr -d '\r')
+
+    # Write metadata
+    local created_at
+    created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    cat > "$tmpdir/snapshot.json" <<METAEOF
+{
+  "name": "$name",
+  "created_at": "$created_at",
+  "pg_version": "$pg_ver",
+  "has_media": $has_media,
+  "original_host": "$(hostname)"
+}
+METAEOF
+
+    # Create archive
+    mkdir -p "$BACKUPDIR"
+    tar -czf "$BACKUPDIR/${filename}.tar.gz" -C "$tmpdir" .
+
+    # Cleanup temp dir
+    rm -rf "$tmpdir"
+
+    local size
+    size=$(ls -lh "$BACKUPDIR/${filename}.tar.gz" | awk '{print $5}')
+    ok "Snapshot saved: $BACKUPDIR/${filename}.tar.gz ($size)"
+}
+
+snapshot_list() {
+    fail "Not implemented yet"
+}
+
+snapshot_load() {
+    fail "Not implemented yet"
+}
+
+snapshot_delete() {
+    fail "Not implemented yet"
 }
 
 do_status() {
