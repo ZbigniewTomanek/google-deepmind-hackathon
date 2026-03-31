@@ -89,8 +89,11 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 ## Files That May Be Changed
 
 ### Domain Routing (Bug 1: M5)
-- `src/neocortex/domains/router.py` -- `_ensure_schema()` permission grant for existing schemas
-- `src/neocortex/services.py` -- (optional) bootstrap permissions for seed domains
+- `src/neocortex/domains/router.py` -- `_ensure_schema()` permission grant + `__personal__` sentinel
+- `src/neocortex/jobs/tasks.py` -- `__personal__` sentinel handling for source_schema
+- `src/neocortex/schema_manager.py` -- `node_alias` added to shared schema GRANT
+- `src/neocortex/db/roles.py` -- `ensure_pg_role()` accepts Pool|Connection to prevent deadlock
+- `src/neocortex/db/scoped.py` -- passes connection (not pool) to `ensure_pg_role`
 
 ### Type Validation (Bug 3: M6)
 - `src/neocortex/normalization.py` -- Regex fix, max length, uppercase start
@@ -117,7 +120,7 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 | 3 | [Temporal Schema Extension](stages/03-temporal-schema.md) | DONE | `supersedes` + `temporal_signal` on ExtractedEntity, temporal desc on ExtractedRelation | `feat(extraction): add temporal signal fields` |
 | 4 | [Temporal Prompt Strengthening](stages/04-temporal-prompts.md) | DONE | Extractor: temporal detection section with CORRECTS/SUPERSEDES signals + versioned naming. Librarian: MANDATORY temporal workflow replacing passive guidance; context injection surfaces supersedes fields. | `feat(extraction): enforce temporal correction detection` |
 | 5 | [Unit Tests](stages/05-unit-tests.md) | DONE | 67 new/modified tests: normalization length/segment rejection, Pydantic validators, domain routing permission grants, temporal fields | `test(plan-19): add unit tests` |
-| 6 | [Integration Smoke Test](stages/06-smoke-test.md) | PENDING | | |
+| 6 | [Integration Smoke Test](stages/06-smoke-test.md) | IN_PROGRESS | 3 blocking bugs found & fixed (see stage file); smoke test needs re-run on fresh DB | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
@@ -153,7 +156,39 @@ revise affected stages, and get user confirmation before continuing.
 
 ## Issues
 
-[Document any problems discovered during execution]
+### Issue 1: `source_schema` sentinel mismatch (found 2026-03-31)
+
+Domain router passes `source_schema=None` to the extract_episode task to mean
+"read episodes from personal graph". But the task code can't distinguish `None`
+(personal graph) from not-provided (default to target_schema) because
+procrastinate serializes both as `null`. Shared-graph extraction read from the
+empty shared schema and found no episodes.
+
+**Fix**: String sentinel `"__personal__"` at the router→task boundary.
+**Files**: `src/neocortex/domains/router.py`, `src/neocortex/jobs/tasks.py`
+
+### Issue 2: Connection pool deadlock under concurrent tool calls (found 2026-03-31)
+
+`graph_scoped_connection()` acquires a PG connection, then calls
+`ensure_pg_role(pool, ...)` which acquires **another** from the same pool.
+The librarian agent runs tool calls concurrently (pydantic_ai). With pool
+max=10, 10 concurrent tool calls each holding 1 connection and needing 1
+more → deadlock.
+
+**Fix**: `ensure_pg_role()` now accepts Pool|Connection; `graph_scoped_connection`
+passes the already-held connection.
+**Files**: `src/neocortex/db/roles.py`, `src/neocortex/db/scoped.py`
+
+### Issue 3: Missing `node_alias` GRANT in shared schema RLS block (found 2026-03-31)
+
+`_build_rls_block()` grants DML permissions on `node`, `edge`, `episode` but
+omits `node_alias` (added in migration 009). Agent roles get
+`InsufficientPrivilegeError` when the librarian tries to resolve aliases
+during shared-graph extraction.
+
+**Fix**: Added `node_alias` to the GRANT statement.
+**File**: `src/neocortex/schema_manager.py`
+**Note**: Existing shared schemas need manual GRANT or DB reset.
 
 ---
 

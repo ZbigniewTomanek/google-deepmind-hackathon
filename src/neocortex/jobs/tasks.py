@@ -52,13 +52,14 @@ async def extract_episode(
     services = get_services()
     settings = services["settings"]
 
-    # Only pass source_schema when explicitly provided.  The pipeline uses a
-    # sentinel (_UNSET) to distinguish "not provided → read from target_schema"
-    # from "None → read from personal graph".  Passing None unconditionally
-    # would always read from the personal graph even when episodes live in
-    # the target shared schema.
+    # The pipeline uses a sentinel (_UNSET) to distinguish "not provided →
+    # read from target_schema" from "None → read from personal graph".
+    # Since procrastinate serialises args as JSON, we use "__personal__" as a
+    # string sentinel for "read from agent's personal graph" (i.e. None).
     extra: dict = {}
-    if source_schema is not None:
+    if source_schema == "__personal__":
+        extra["source_schema"] = None  # personal graph
+    elif source_schema is not None:
         extra["source_schema"] = source_schema
 
     await run_extraction(

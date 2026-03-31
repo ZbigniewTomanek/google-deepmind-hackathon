@@ -242,7 +242,7 @@ class DomainRouter:
             agent_id=agent_id,
             episode_ids=[episode_id],
             target_schema=target_schema,
-            source_schema=None,  # read from personal graph
+            source_schema="__personal__",  # sentinel: read from agent's personal graph
             domain_hint=domain_hint,
         )
         logger.debug(

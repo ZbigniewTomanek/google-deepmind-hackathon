@@ -2,6 +2,7 @@
 
 **Goal**: Verify all 3 fixes work end-to-end by storing targeted episodes via MCP tools and checking graph state.
 **Dependencies**: Stages 1-5 must be DONE. MCP server must be running with real DB.
+**Status**: IN_PROGRESS -- blocked by 3 additional bugs found during smoke test (all fixed, needs re-run)
 
 ---
 
@@ -11,6 +12,70 @@ This stage is executed by Claude with MCP access, similar to Plan 18.5. It store
 1. Domain routing populates shared graphs (M5 fix)
 2. Correction episodes create SUPERSEDES/CORRECTS edges (M4 fix)
 3. No corrupted type names appear (M6 fix)
+
+---
+
+## Bugs Found During Smoke Test (2026-03-31)
+
+Three additional bugs were discovered and fixed during this stage before the
+smoke test episodes could complete successfully:
+
+### Bug A: `source_schema` sentinel mismatch (domain routing)
+
+**Symptom**: Shared-graph extraction jobs logged `episode_not_found` despite
+the episode existing in the personal graph.
+
+**Root cause**: `DomainRouter._enqueue_extraction()` passes `source_schema=None`
+meaning "read from personal graph". But `extract_episode` task code
+(`tasks.py:61`) skips passing `source_schema` when it's `None` (can't
+distinguish from "not provided"). The pipeline then defaults to reading from
+`target_schema` (the shared schema), which has no episodes.
+
+**Fix**: Use string sentinel `"__personal__"` in the router → task boundary.
+- `router.py:245`: `source_schema="__personal__"` instead of `None`
+- `tasks.py:61-65`: convert `"__personal__"` back to `None` before calling pipeline
+
+**Files changed**: `src/neocortex/domains/router.py`, `src/neocortex/jobs/tasks.py`
+
+### Bug B: Connection pool deadlock (shared-graph extraction)
+
+**Symptom**: After fixing Bug A, shared-graph extraction started but hung
+indefinitely. All 10 PG connections stuck in `idle in transaction` on
+`SELECT is_shared FROM graph_registry`.
+
+**Root cause**: `graph_scoped_connection()` acquires a connection, then calls
+`ensure_pg_role(pool, ...)` which acquires **another** connection from the same
+pool. The librarian agent runs tool calls concurrently (pydantic_ai). With 10
+concurrent tool calls each holding a connection + needing another for
+`ensure_pg_role`, the pool (max=10) deadlocks.
+
+**Fix**: Changed `ensure_pg_role()` to accept either a Pool or Connection.
+`graph_scoped_connection` now passes the already-acquired connection instead
+of the pool, eliminating nested pool acquisition.
+
+**Files changed**: `src/neocortex/db/roles.py`, `src/neocortex/db/scoped.py`
+
+### Bug C: Missing `node_alias` table permissions (shared schemas)
+
+**Symptom**: After fixing Bugs A+B, shared-graph extraction failed with
+`InsufficientPrivilegeError: permission denied for table node_alias`.
+
+**Root cause**: `SchemaManager._build_rls_block()` grants
+SELECT/INSERT/UPDATE/DELETE on `node`, `edge`, `episode` but omits
+`node_alias` (added in migration 009). The `neocortex_agent` role can't
+read/write aliases in shared schemas.
+
+**Fix**: Added `{schema_name}.node_alias` to the GRANT statement in
+`_build_rls_block()`.
+
+**Files changed**: `src/neocortex/schema_manager.py`
+
+**Manual DB fix**: For already-provisioned shared schemas, run:
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ncx_shared__technical_knowledge.node_alias TO neocortex_agent;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ncx_shared__domain_knowledge.node_alias TO neocortex_agent;
+-- Repeat for any other shared schemas (ncx_shared__user_profile, ncx_shared__work_context)
+```
 
 ---
 
@@ -93,14 +158,37 @@ This stage is executed by Claude with MCP access, similar to Plan 18.5. It store
 
 ---
 
+## Re-run Instructions (for next agent)
+
+All 3 bugs (A, B, C) are fixed in the source code. To re-run the smoke test:
+
+1. **Reset DB** (recommended): `docker compose down -v && docker compose up -d postgres`
+   then `./scripts/launch.sh`. This ensures clean shared schemas with correct grants.
+   Alternatively, apply the manual GRANT statements above to all 4 shared schemas.
+
+2. **Reconnect MCP**: `/mcp` to reconnect to the restarted server.
+
+3. **Run Episodes 1-3** as described above. Each episode's extraction takes
+   ~60-90 seconds (personal graph) + ~60-120 seconds (shared graph via domain routing).
+   The shared graph extraction involves 3 LLM calls (ontology/extractor/librarian)
+   per routed domain, so allow up to 3 minutes per episode.
+
+4. **Key things to watch**:
+   - `tail -f log/mcp.log` for `curation_complete` and `extract_episode_completed`
+   - No `episode_not_found` warnings (Bug A fixed)
+   - No `idle in transaction` connection pileup (Bug B fixed)
+   - No `InsufficientPrivilegeError` (Bug C fixed)
+
+---
+
 ## Verification
 
-| Check | Pass Criteria |
-|-------|--------------|
-| Domain routing | >= 1 shared graph has nodes after Episode 1 |
-| Temporal edges | >= 1 SUPERSEDES or CORRECTS edge after Episode 3 (correction) |
-| Type names | 0 corrupted types across all extractions |
-| Server stability | No crashes, no unhandled exceptions in logs |
+| Check | Pass Criteria | Status |
+|-------|--------------|--------|
+| Domain routing | >= 1 shared graph has nodes after Episode 1 | PENDING |
+| Temporal edges | >= 1 SUPERSEDES or CORRECTS edge after Episode 2 (correction) | PENDING |
+| Type names | 0 corrupted types across all extractions | PENDING |
+| Server stability | No crashes, no unhandled exceptions in logs | PENDING |
 
 ---
 

@@ -201,7 +201,7 @@ class SchemaManager:
             f"GRANT USAGE ON SCHEMA {schema_name} TO neocortex_agent;",
             (
                 f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {schema_name}.node, "
-                f"{schema_name}.edge, {schema_name}.episode TO neocortex_agent;"
+                f"{schema_name}.edge, {schema_name}.episode, {schema_name}.node_alias TO neocortex_agent;"
             ),
             f"GRANT SELECT, INSERT ON TABLE {schema_name}.node_type, {schema_name}.edge_type TO neocortex_agent;",
             f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {schema_name} TO neocortex_agent;",
