@@ -121,6 +121,7 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 | 4 | [Temporal Prompt Strengthening](stages/04-temporal-prompts.md) | DONE | Extractor: temporal detection section with CORRECTS/SUPERSEDES signals + versioned naming. Librarian: MANDATORY temporal workflow replacing passive guidance; context injection surfaces supersedes fields. | `feat(extraction): enforce temporal correction detection` |
 | 5 | [Unit Tests](stages/05-unit-tests.md) | DONE | 67 new/modified tests: normalization length/segment rejection, Pydantic validators, domain routing permission grants, temporal fields | `test(plan-19): add unit tests` |
 | 6 | [Integration Smoke Test](stages/06-smoke-test.md) | DONE | 3/4 checks pass: domain routing PASS (3 shared graphs populated), type names PASS (0 corrupted), stability PASS. Temporal edges PARTIAL (versioned names created, edges not). | `docs(plan-19): record integration smoke test results` |
+| 7 | [Temporal Edge Reinforcement](stages/07-temporal-edge-reinforcement.md) | PENDING | Few-shot examples in librarian prompt, fix contradictory rules, imperative context injection, post-curation fallback | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
