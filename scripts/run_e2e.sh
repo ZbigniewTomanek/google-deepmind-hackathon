@@ -115,6 +115,8 @@ if [[ "$MODE" == "docker" ]]; then
     wait_for_healthy "$INGESTION_BASE_URL/health" "$MAX_WAIT"
 else
     # ---------- Local mode: delegate to manage.sh ---------------------------
+    # Use test tokens (alice/bob/eve personas) for e2e isolation tests
+    export NEOCORTEX_DEV_TOKENS_FILE="${NEOCORTEX_DEV_TOKENS_FILE:-dev_tokens_test.json}"
     "$SCRIPT_DIR/manage.sh" start --fresh
 fi
 

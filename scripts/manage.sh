@@ -183,9 +183,10 @@ do_start() {
     fi
 
     # --- MCP server ---
-    log "Starting MCP server (port $MCP_PORT)..."
+    local tokens_file="${NEOCORTEX_DEV_TOKENS_FILE:-dev_tokens.json}"
+    log "Starting MCP server (port $MCP_PORT, tokens: $tokens_file)..."
     NEOCORTEX_AUTH_MODE=dev_token \
-    NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+    NEOCORTEX_DEV_TOKENS_FILE="$tokens_file" \
     NEOCORTEX_MOCK_DB=false \
     uv run python -m neocortex \
         >"$LOGDIR/mcp_stdout.log" 2>&1 &
@@ -195,7 +196,7 @@ do_start() {
     # --- Ingestion server ---
     log "Starting ingestion server (port $INGESTION_PORT)..."
     NEOCORTEX_AUTH_MODE=dev_token \
-    NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+    NEOCORTEX_DEV_TOKENS_FILE="$tokens_file" \
     NEOCORTEX_MOCK_DB=false \
     uv run python -m neocortex.ingestion \
         >"$LOGDIR/ingestion_stdout.log" 2>&1 &
@@ -210,8 +211,8 @@ do_start() {
     echo ""
     echo "  MCP server:       http://127.0.0.1:${MCP_PORT}"
     echo "  Ingestion API:    http://127.0.0.1:${INGESTION_PORT}"
-    echo "  Admin token:      admin-token-neocortex"
-    echo "  Dev token:        dev-token-neocortex"
+    echo "  Admin token:      admin-token"
+    echo "  Dev token:        claude-code-work"
     echo ""
     echo "  Stop with:        ./scripts/manage.sh stop"
     echo "  Logs:             tail -f $LOGDIR/mcp_stdout.log $LOGDIR/ingestion_stdout.log"

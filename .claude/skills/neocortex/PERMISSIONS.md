@@ -56,9 +56,9 @@ Verify `dev_tokens.json` has entries for all agents:
 
 ```json
 {
-  "admin-token-neocortex": "admin",
-  "alice-token": "alice",
-  "bob-token": "bob"
+  "admin-token": "admin",
+  "claude-code-work": "cc-work",
+  "claude-code-private": "cc-private"
 }
 ```
 
@@ -66,7 +66,7 @@ Verify `dev_tokens.json` has entries for all agents:
 
 ```bash
 curl -X POST localhost:8001/admin/graphs \
-  -H "Authorization: Bearer admin-token-neocortex" \
+  -H "Authorization: Bearer admin-token" \
   -H "Content-Type: application/json" \
   -d '{"purpose": "team_knowledge"}'
 # Creates: ncx_shared__team_knowledge
@@ -75,33 +75,33 @@ curl -X POST localhost:8001/admin/graphs \
 ### Step 3: Grant permissions to agents
 
 ```bash
-# Grant alice read + write
+# Grant cc-work read + write
 curl -X POST localhost:8001/admin/permissions \
-  -H "Authorization: Bearer admin-token-neocortex" \
+  -H "Authorization: Bearer admin-token" \
   -H "Content-Type: application/json" \
-  -d '{"agent_id": "alice", "schema_name": "ncx_shared__team_knowledge", "can_read": true, "can_write": true}'
+  -d '{"agent_id": "cc-work", "schema_name": "ncx_shared__team_knowledge", "can_read": true, "can_write": true}'
 
-# Grant bob read-only
+# Grant cc-private read-only
 curl -X POST localhost:8001/admin/permissions \
-  -H "Authorization: Bearer admin-token-neocortex" \
+  -H "Authorization: Bearer admin-token" \
   -H "Content-Type: application/json" \
-  -d '{"agent_id": "bob", "schema_name": "ncx_shared__team_knowledge", "can_read": true, "can_write": false}'
+  -d '{"agent_id": "cc-private", "schema_name": "ncx_shared__team_knowledge", "can_read": true, "can_write": false}'
 ```
 
 ### Step 4: Ingest to shared graph
 
 ```bash
-# Alice can write:
+# cc-work can write:
 curl -X POST localhost:8001/ingest/text \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer alice-token" \
+  -H "Authorization: Bearer claude-code-work" \
   -d '{"text": "Team standup notes", "target_graph": "ncx_shared__team_knowledge"}'
 # 200 OK
 
-# Bob cannot write:
+# cc-private cannot write:
 curl -X POST localhost:8001/ingest/text \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer bob-token" \
+  -H "Authorization: Bearer claude-code-private" \
   -d '{"text": "Attempt to write", "target_graph": "ncx_shared__team_knowledge"}'
 # 403 Forbidden
 ```
@@ -111,11 +111,11 @@ curl -X POST localhost:8001/ingest/text \
 ```bash
 # List permissions
 curl -s localhost:8001/admin/permissions?schema_name=ncx_shared__team_knowledge \
-  -H "Authorization: Bearer admin-token-neocortex" | python3 -m json.tool
+  -H "Authorization: Bearer admin-token" | python3 -m json.tool
 
 # List all graphs
 curl -s localhost:8001/admin/graphs \
-  -H "Authorization: Bearer admin-token-neocortex" | python3 -m json.tool
+  -H "Authorization: Bearer admin-token" | python3 -m json.tool
 ```
 
 ---
@@ -152,9 +152,9 @@ NEOCORTEX_DOMAIN_CLASSIFICATION_THRESHOLD=0.3  # Min confidence (0.0-1.0)
 |----------|---------|---------|
 | `NEOCORTEX_AUTH_MODE` | `"none"` | `"none"`, `"dev_token"`, `"google_oauth"` |
 | `NEOCORTEX_DEV_TOKENS_FILE` | `""` | Path to token-to-agent JSON mapping |
-| `NEOCORTEX_DEV_TOKEN` | `"dev-token-neocortex"` | Single dev token (fallback) |
+| `NEOCORTEX_DEV_TOKEN` | `"dev-token-neocortex"` | Single dev token (deprecated fallback) |
 | `NEOCORTEX_DEV_USER_ID` | `"dev-user"` | Agent ID for single dev token |
-| `NEOCORTEX_ADMIN_TOKEN` | `"admin-token-neocortex"` | Bootstrap admin bearer token |
+| `NEOCORTEX_ADMIN_TOKEN` | `"admin-token"` | Bootstrap admin bearer token |
 | `NEOCORTEX_BOOTSTRAP_ADMIN_ID` | `"admin"` | Agent ID seeded as admin on startup |
 | `NEOCORTEX_DOMAIN_ROUTING_ENABLED` | `true` | Auto-route to domain graphs |
 | `NEOCORTEX_DOMAIN_CLASSIFICATION_THRESHOLD` | `0.3` | Min classification confidence |

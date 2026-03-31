@@ -3,7 +3,7 @@
 # Run after NeoCortex services are up.
 set -euo pipefail
 
-ADMIN_TOKEN="${NEOCORTEX_ADMIN_TOKEN:-admin-token-neocortex}"
+ADMIN_TOKEN="${NEOCORTEX_ADMIN_TOKEN:-admin-token}"
 BASE_URL="${NEOCORTEX_INGESTION_URL:-http://localhost:8001}"
 
 echo "=== Creating shared research graph ==="

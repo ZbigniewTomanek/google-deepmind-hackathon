@@ -20,8 +20,8 @@
 # Options:
 #   --host <host>      API host (default: localhost)
 #   --port <port>      API port (default: 8001)
-#   --token <token>    Bearer token (default: dev-token-neocortex)
-#   --admin-token <t>  Admin token (default: admin-token-neocortex)
+#   --token <token>    Bearer token (default: claude-code-work)
+#   --admin-token <t>  Admin token (default: admin-token)
 #   --target <schema>  Target shared graph for ingestion
 #   --metadata <json>  Metadata JSON string (default: {})
 #   --dry-run          Print curl command without executing
@@ -32,8 +32,8 @@ set -euo pipefail
 # Defaults
 HOST="localhost"
 PORT="8001"
-TOKEN="dev-token-neocortex"
-ADMIN_TOKEN="admin-token-neocortex"
+TOKEN="claude-code-work"
+ADMIN_TOKEN="admin-token"
 TARGET=""
 METADATA="{}"
 DRY_RUN=false
@@ -60,8 +60,8 @@ Commands:
 Options:
   --host <host>      API host (default: localhost)
   --port <port>      API port (default: 8001)
-  --token <token>    Bearer token (default: dev-token-neocortex)
-  --admin-token <t>  Admin token (default: admin-token-neocortex)
+  --token <token>    Bearer token (default: claude-code-work)
+  --admin-token <t>  Admin token (default: admin-token)
   --target <schema>  Target shared graph for ingestion
   --metadata <json>  Metadata JSON string (default: {})
   --dry-run          Print curl command without executing

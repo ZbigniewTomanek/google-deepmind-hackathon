@@ -124,7 +124,7 @@ class MCPSettings(BaseSettings):
 
     # Admin
     bootstrap_admin_id: str = "admin"  # Seeded into agent_registry as admin on startup
-    admin_token: str = "admin-token-neocortex"  # Bootstrap admin dev token
+    admin_token: str = "admin-token"  # Bootstrap admin dev token
 
     # Media ingestion
     media_store_path: str = "./media_store"  # Root dir for compressed media files
