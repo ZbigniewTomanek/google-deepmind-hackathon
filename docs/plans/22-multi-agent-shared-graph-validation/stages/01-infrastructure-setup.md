@@ -77,14 +77,20 @@ Record this value as `BASELINE_JOB_ID`.
 
 ## Verification
 
-- [ ] MCP server healthy on :8000
-- [ ] Ingestion API healthy on :8001
-- [ ] `ncx_shared__project_titan` appears in `list-graphs` output with `is_shared=true`
-- [ ] Alice has read+write on `ncx_shared__project_titan`
-- [ ] Bob has read+write on `ncx_shared__project_titan`
-- [ ] `BASELINE_JOB_ID` recorded
+- [x] MCP server healthy on :8000
+- [x] Ingestion API healthy on :8001
+- [x] `ncx_shared__project_titan` appears in `list-graphs` output with `is_shared=true`
+- [x] Alice has read+write on `ncx_shared__project_titan`
+- [x] Bob has read+write on `ncx_shared__project_titan`
+- [x] `BASELINE_JOB_ID` recorded → **0**
 
 ---
+
+## Results
+
+All checks passed. Services started fresh with `dev_tokens_test.json` (required manual
+restart to bypass `.env` override of `NEOCORTEX_DEV_TOKENS_FILE`). Shared graph
+`ncx_shared__project_titan` created, alice and bob both have rw access.
 
 ## Commit
 

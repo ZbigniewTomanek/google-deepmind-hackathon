@@ -91,13 +91,13 @@ Compile all metrics, compare to targets, produce verdict.
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Infrastructure Setup](stages/01-infrastructure-setup.md) | PENDING | | |
-| 2 | [Alice Knowledge Ingestion](stages/02-alice-ingestion.md) | PENDING | | |
-| 3 | [Bob Knowledge Ingestion](stages/03-bob-ingestion.md) | PENDING | | |
-| 4 | [Shared Graph Consolidation Check](stages/04-consolidation-check.md) | PENDING | | |
-| 5 | [Cross-Agent Recall Validation](stages/05-cross-agent-recall.md) | PENDING | | |
-| 6 | [Advanced Scenarios](stages/06-advanced-scenarios.md) | PENDING | | |
-| 7 | [Report & Verdict](stages/07-report.md) | PENDING | | |
+| 1 | [Infrastructure Setup](stages/01-infrastructure-setup.md) | DONE | Fresh DB, shared graph + perms created, BASELINE_JOB_ID=0 | |
+| 2 | [Alice Knowledge Ingestion](stages/02-alice-ingestion.md) | DONE | 41 nodes, 18 edges, 5 eps. 1 failed extraction (EP-A4 tool limit). POST_ALICE_JOB_ID=5 | |
+| 3 | [Bob Knowledge Ingestion](stages/03-bob-ingestion.md) | DONE | 51 nodes, 18 edges, 10 eps. 3 failed extractions. 0 duplicates. | |
+| 4 | [Shared Graph Consolidation Check](stages/04-consolidation-check.md) | DONE | M1=80% PASS, M3=0/5 FAIL (no content merge), M6=0 PASS | |
+| 5 | [Cross-Agent Recall Validation](stages/05-cross-agent-recall.md) | DONE | M2=8/10 PASS, M7=0.789 PASS, identical results for both agents | |
+| 6 | [Advanced Scenarios](stages/06-advanced-scenarios.md) | DONE | M4=0/3 FAIL (RLS blocks cross-agent updates), M5=0 unauth PASS | |
+| 7 | [Report & Verdict](stages/07-report.md) | DONE | 4/7 metrics PASS → OVERALL FAIL. Dedup+recall+perms work, merging+conflicts don't | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
@@ -137,7 +137,11 @@ revise affected stages, and get user confirmation before continuing.
 
 ## Issues
 
-[Document any problems discovered during execution]
+1. **RLS blocks cross-agent node updates (PRIMARY ROOT CAUSE)** — Shared graph RLS policies (`schema_manager.py:233`) enforce `owner_role = current_user` on UPDATE. When Bob's extraction tries to update Alice's nodes (to merge content or apply corrections), the UPDATE silently matches 0 rows, causing `RuntimeError("Failed to update node")` at `adapter.py:729`. This crashes the entire librarian agent run, killing all corrections and content merges. The extraction prompts correctly instruct the LLM to create versioned nodes for corrections, but the crash happens before that logic executes.
+2. **Extraction tool call limit too low** — `tool_calls_limit=50` (`pipeline.py:182`) is insufficient for complex or correction episodes. Correction episodes require find + inspect + create + edge operations that easily exceed 50 calls. Even non-correction episodes with many entities (observability stack) exceed the limit. 4/14 (29%) extraction jobs failed. **Recommendation: raise to 100+.**
+3. **cleanup_partial_curation guarantees failure on retries** — Before each retry (`pipeline.py:154`), partial progress (new nodes Bob created before the crash) is deleted. Since the RLS crash is systemic, every retry fails identically with zero progress preserved.
+4. **Recall score exceeds target** — Milestone-type nodes can score >0.80 on specific queries (0.816 observed).
+5. **Recall type resolution bug** — `item_type` shows "Unknown" instead of resolved type names.
 
 ---
 

@@ -64,9 +64,9 @@ docker exec neocortex-postgres psql -U neocortex -d neocortex -c \
 ```
 
 Record as **POST_BOB** state:
-- `POST_BOB_NODES`: ___
-- `POST_BOB_EDGES`: ___
-- `POST_BOB_EPISODES`: ___
+- `POST_BOB_NODES`: **51** (was 41 after Alice → 10 new from Bob)
+- `POST_BOB_EDGES`: **18** (unchanged — Bob's successful extractions added nodes but no new edges)
+- `POST_BOB_EPISODES`: **10** (5 alice + 5 bob)
 
 ### 3.4 Identify Shared Entities
 
@@ -95,12 +95,19 @@ docker exec neocortex-postgres psql -U neocortex -d neocortex -c \
 
 ## Verification
 
-- [ ] All 5 Bob episodes ingested (5 episode_ids returned)
-- [ ] Extraction completed (0 pending, 0 running)
-- [ ] POST_BOB_EPISODES = POST_ALICE_EPISODES + 5 (10 total)
-- [ ] POST_BOB_NODES ≤ 2 × POST_ALICE_NODES (dedup should prevent linear growth)
-- [ ] No failed extraction jobs
-- [ ] Shared entities identified for Stage 4 analysis
+- [x] All 5 Bob episodes ingested (5 episode_ids returned)
+- [x] Extraction completed (0 pending, 0 running)
+- [x] POST_BOB_EPISODES = 10 (5 alice + 5 bob)
+- [x] POST_BOB_NODES = 51 ≤ 82 (2 × 41) — dedup working
+- [ ] ~~No failed extraction jobs~~ — **3 failed** (EP-B1 job 6, EP-B3 job 8, EP-B5 job 10: all UsageLimitExceeded)
+- [x] Shared entities identified: Project Titan, Sarah Chen, Marcus Rivera, PostgreSQL all appear as single nodes (0 duplicates)
+
+### Note on Extraction Failures
+
+3 of Bob's 5 episodes failed extraction (same UsageLimitExceeded error as Alice's
+EP-A4). Despite this, 2 episodes extracted successfully adding 10 new nodes.
+Key observation: **0 duplicate nodes** — the extraction pipeline correctly deduped
+shared entities (Project Titan, Sarah Chen, Marcus Rivera, PostgreSQL) into existing nodes.
 
 ---
 

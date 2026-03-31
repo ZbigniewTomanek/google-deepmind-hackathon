@@ -171,12 +171,35 @@ Expected: Recall succeeds, write returns 403.
 
 ## Verification
 
-- [ ] Scenario A: Correction (Aug 1) ranks above original (Jul 15) in recall
-- [ ] Scenario B: High-importance Pulsar ranks above low-importance Kafka
-- [ ] Scenario C: Eve gets 0 recall results and 403 on write
-- [ ] Scenario D: Read-only Bob can recall but gets 403 on write
-- [ ] M4 computed: ___/3 conflict queries resolved correctly (target ≥ 2/3)
-- [ ] M5 computed: 0 unauthorized accesses (target = 0)
+- [ ] ~~Scenario A: Correction (Aug 1) ranks above original (Jul 15)~~ **FAIL**
+  - August 1 correction was NOT extracted — node does not exist in graph
+  - July 15 (Alice's original) is the only deployment date in the graph (score 0.736)
+  - Extraction pipeline did not create contradiction/correction nodes from Bob's episode
+- [ ] ~~Scenario B: High-importance Pulsar ranks above low-importance Kafka~~ **FAIL**
+  - Apache Pulsar was NOT extracted — node does not exist in graph
+  - Apache Kafka is the only streaming platform in the graph (score 0.632)
+  - The `metadata.importance` field on ingestion did not affect extraction output
+- [x] Scenario C: Eve gets 0 recall results and 403 on write **PASS**
+  - Eve recall: 0 results
+  - Eve write: `"Agent 'eve' does not have write access to 'ncx_shared__project_titan'"`
+- [x] Scenario D: Read-only Bob can recall (3 results) but gets 403 on write **PASS**
+  - Bob recall: 3 results with scores (0.748, 0.748, ...)
+  - Bob write: `"Agent 'bob' does not have write access to 'ncx_shared__project_titan'"`
+  - Bob's rw access restored after test
+- [x] M4 computed: **0/3** conflict queries resolved correctly (target ≥ 2/3) **FAIL**
+  - Root cause: extraction pipeline does not extract contradictory/correction facts
+    as separate nodes or update existing nodes. The CORRECTION and IMPORTANT signals
+    in natural language text are not recognized by the extraction pipeline.
+- [x] M5 computed: **0 unauthorized accesses** (target = 0) **PASS**
+  - Eve recall: 0 results
+  - Eve write: denied
+  - Read-only Bob write: denied
+
+### Note: M7 Update
+
+The Backend Feature-Complete Deadline node scored **0.816** in conflict recall query,
+exceeding the M7 target of ≤ 0.80. This was not part of the original 10 queries but
+shows that newly extracted milestone-type nodes can exceed the target threshold.
 
 ---
 

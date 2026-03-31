@@ -95,12 +95,40 @@ Record as a comparison table.
 
 ## Verification
 
-- [ ] All 10 queries executed as alice (results recorded)
-- [ ] All 10 queries executed as bob (results recorded)
-- [ ] M2 computed: ___/10 cross-agent recall passes (target ≥ 8)
-- [ ] M7 computed: max activation = ___ (target ≤ 0.80)
-- [ ] No systematic bias in overlapping queries
-- [ ] All queries returned at least 1 result (no empty recalls)
+- [x] All 10 queries executed as alice (results recorded)
+- [x] All 10 queries executed as bob (results recorded)
+- [x] M2 computed: **8/10** cross-agent recall passes (target ≥ 8) **PASS**
+  - Q3 FAIL: Sarah Chen not in top 3 (recall ranked organization/process entities higher)
+  - Q6 FAIL: No deadline/MVP results returned (recall returned metrics instead)
+- [x] M7 computed: max activation = **0.789** (target ≤ 0.80) **PASS**
+  - CockroachDB scored highest (0.789) in Q1 — interesting that a rejected technology scores highest
+- [x] No systematic bias: Alice and Bob get identical results for all 10 queries
+  - Both have equal rw access to same shared graph → identical rankings
+- [x] All queries returned at least 1 result (no empty recalls)
+
+### Score Distribution
+
+| Query | Top Score | Top Result |
+|-------|-----------|------------|
+| Q1 | 0.789 | CockroachDB |
+| Q2 | 0.584 | Seldon Core |
+| Q3 | 0.705 | Meridian Labs |
+| Q4 | 0.639 | 99.9% Uptime SLO |
+| Q5 | 0.587 | 50,000 Predictions Per Day |
+| Q6 | 0.567 | Weekly Data Health Review |
+| Q7 | 0.648 | Istio |
+| Q8 | 0.660 | On-Call Rotation |
+| Q9 | 0.606 | Core Data Processing Engine |
+| Q10 | 0.728 | Observability Stack |
+
+### Notable Observations
+
+1. **Item types show as "Unknown"** for many nodes — this appears to be a recall
+   response formatting issue (type_id not resolved to type name in recall output)
+2. **Cross-agent knowledge accessible** — both agents can query all 51 nodes in
+   the shared graph regardless of who ingested them
+3. **No content merge visible in recall** — results reflect individual node content,
+   not merged perspectives from both agents
 
 ---
 
