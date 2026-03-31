@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.settings import ModelSettings, ThinkingLevel
 
@@ -53,8 +52,8 @@ def _build_model(config: AgentInferenceConfig):
     if config.use_test_model:
         logger.debug("Using TestModel for extraction agents")
         return TestModel()
-    logger.debug("Using GoogleModel model_name={}", config.model_name)
-    return GoogleModel(config.model_name)
+    logger.debug("Using model={}", config.model_name)
+    return config.model_name
 
 
 # ── Ontology Agent ──

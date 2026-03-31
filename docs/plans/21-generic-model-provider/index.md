@@ -76,7 +76,7 @@ and it just works.
 |---|-------|--------|-------|--------|
 | 1 | [Dependencies](stages/01-dependencies.md) | DONE | Added openai+anthropic extras to pydantic-ai-slim | `build(deps): add openai and anthropic extras to pydantic-ai-slim` |
 | 2 | [Settings](stages/02-settings.md) | DONE | Updated all Pydantic AI model defaults to `google-gla:` prefix; fixed tests | `refactor(config): use provider-prefixed model strings in settings defaults` |
-| 3 | [Agent code](stages/03-agent-code.md) | PENDING | | |
+| 3 | [Agent code](stages/03-agent-code.md) | DONE | Removed GoogleModel imports from all 3 files; return model string directly; fixed playground test | `refactor(agents): remove GoogleModel imports, use string-based model routing` |
 | 4 | [Verification](stages/04-verification.md) | PENDING | | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`

@@ -4,7 +4,6 @@ from typing import Any, cast
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
 from pydantic_agents_playground.schemas import (
@@ -30,7 +29,7 @@ def build_model(use_test_model: bool):
         logger.info("Using TestModel for agent execution")
         return TestModel()
     logger.info("Using model={}", MODEL_NAME)
-    return GoogleModel(MODEL_NAME)
+    return MODEL_NAME
 
 
 def build_ontology_agent(use_test_model: bool = False) -> Agent[OntologyAgentDeps, OntologyProposal]:

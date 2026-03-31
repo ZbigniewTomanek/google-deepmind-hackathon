@@ -10,7 +10,6 @@ from typing import Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic_ai import Agent
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.settings import ModelSettings, ThinkingLevel
 
 from neocortex.domains.models import (
@@ -26,14 +25,14 @@ class DomainClassifier(Protocol):
 
 
 class AgentDomainClassifier:
-    """PydanticAI-based domain classifier using a Gemini model."""
+    """PydanticAI-based domain classifier."""
 
     def __init__(
         self,
         model_name: str = "google-gla:gemini-3-flash-preview",
         thinking_effort: ThinkingLevel = "low",
     ) -> None:
-        self._model = GoogleModel(model_name)
+        self._model = model_name
         self._model_settings = ModelSettings(thinking=thinking_effort)
 
     async def classify(self, text: str, domains: list[SemanticDomain]) -> ClassificationResult:
