@@ -28,7 +28,7 @@ from neocortex.extraction.schemas import (
     OntologyProposal,
 )
 
-DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
+DEFAULT_MODEL_NAME = "google-gla:gemini-3-flash-preview"
 DEFAULT_THINKING_EFFORT = "low"
 
 

@@ -108,17 +108,17 @@ class MCPSettings(BaseSettings):
     librarian_use_tools: bool = True  # False falls back to _persist_payload
     # Per-agent inference config (env: NEOCORTEX_<AGENT>_MODEL / _THINKING_EFFORT)
     # Thinking effort: minimal|low|medium|high|xhigh (maps to token budgets)
-    ontology_model: str = "gemini-3-flash-preview"
+    ontology_model: str = "google-gla:gemini-3-flash-preview"
     ontology_thinking_effort: ThinkingLevel = "low"
-    extractor_model: str = "gemini-3-flash-preview"
+    extractor_model: str = "google-gla:gemini-3-flash-preview"
     extractor_thinking_effort: ThinkingLevel = "low"
-    librarian_model: str = "gemini-3-flash-preview"
+    librarian_model: str = "google-gla:gemini-3-flash-preview"
     librarian_thinking_effort: ThinkingLevel = "low"
 
     # Domain routing (upper ontology — automatic knowledge routing to shared graphs)
     # Note: requires extraction_enabled=True (domain routing uses the job queue)
     domain_routing_enabled: bool = True
-    domain_classifier_model: str = "gemini-3-flash-preview"
+    domain_classifier_model: str = "google-gla:gemini-3-flash-preview"
     domain_classifier_thinking_effort: ThinkingLevel = "low"
     domain_classification_threshold: float = 0.3
 

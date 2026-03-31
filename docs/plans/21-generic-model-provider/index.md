@@ -75,7 +75,7 @@ and it just works.
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | [Dependencies](stages/01-dependencies.md) | DONE | Added openai+anthropic extras to pydantic-ai-slim | `build(deps): add openai and anthropic extras to pydantic-ai-slim` |
-| 2 | [Settings](stages/02-settings.md) | PENDING | | |
+| 2 | [Settings](stages/02-settings.md) | DONE | Updated all Pydantic AI model defaults to `google-gla:` prefix; fixed tests | `refactor(config): use provider-prefixed model strings in settings defaults` |
 | 3 | [Agent code](stages/03-agent-code.md) | PENDING | | |
 | 4 | [Verification](stages/04-verification.md) | PENDING | | |
 

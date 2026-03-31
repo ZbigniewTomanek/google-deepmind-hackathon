@@ -230,7 +230,7 @@ def test_extraction_settings_defaults():
     s = MCPSettings()
     assert s.extraction_enabled is True
     for prefix in ("ontology", "extractor", "librarian"):
-        assert getattr(s, f"{prefix}_model") == "gemini-3-flash-preview"
+        assert getattr(s, f"{prefix}_model") == "google-gla:gemini-3-flash-preview"
         assert getattr(s, f"{prefix}_thinking_effort") == "low"
 
 

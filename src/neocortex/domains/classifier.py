@@ -30,7 +30,7 @@ class AgentDomainClassifier:
 
     def __init__(
         self,
-        model_name: str = "gemini-3-flash-preview",
+        model_name: str = "google-gla:gemini-3-flash-preview",
         thinking_effort: ThinkingLevel = "low",
     ) -> None:
         self._model = GoogleModel(model_name)
