@@ -84,7 +84,7 @@ wait_for_healthy "http://127.0.0.1:8001/health" 30
 
 # 4. Ingest seed corpus
 log "Ingesting medical seed corpus..."
-uv run python -m neocortex.extraction.cli --ingest-corpus --token alice-token
+uv run python -m neocortex.extraction.cli --ingest-corpus --token claude-code-work
 
 # 5. Wait for extraction jobs to complete
 log "Waiting for extraction jobs..."
@@ -98,4 +98,4 @@ echo "  Recall: 'serotonin mood regulation'"
 echo "  Recall: 'SSRI side effects'"
 echo "  Discover: fetch ontology to see extracted types"
 echo ""
-NEOCORTEX_AUTH_MODE=dev_token uv run python -m neocortex.tui --token alice-token
+NEOCORTEX_AUTH_MODE=dev_token uv run python -m neocortex.tui --token tui-dev

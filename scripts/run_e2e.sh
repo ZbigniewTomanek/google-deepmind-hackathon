@@ -109,6 +109,8 @@ log "Mode: $MODE | Test: $TEST_SCRIPT"
 
 if [[ "$MODE" == "docker" ]]; then
     # ---------- Docker mode: everything via docker compose ------------------
+    # Use test tokens (alice/bob/eve personas) for e2e isolation tests
+    export DEV_TOKENS_FILE="${DEV_TOKENS_FILE:-dev_tokens_test.json}"
     log "Starting all services via docker compose..."
     docker compose up -d --build 2>&1 || true
     wait_for_healthy "$MCP_BASE_URL/health" "$MAX_WAIT"
