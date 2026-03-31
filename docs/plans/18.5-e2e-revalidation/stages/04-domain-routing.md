@@ -8,7 +8,8 @@
 ## Steps
 
 1. **Discover available domains**
-   - Call `discover_domains` (if available) or `discover_graphs` to list all graphs
+   - Call `discover_domains` to list all semantic domains and their schema names
+   - If domain routing is not enabled, the tool returns an empty list with a message -- in that case fall back to `discover_graphs` to check for shared graphs manually
    - Look for shared domain graphs with names like:
      - `ncx_shared__technical_knowledge`
      - `ncx_shared__work_context`
@@ -31,11 +32,9 @@
    - Most of our 28 episodes contain technical + work keywords, so routing should be high
 
 4. **Measure M5**
-   - **Ideal measurement**: Count episodes that were classified to >= 1 domain
-   - **Practical measurement**: If per-episode routing data isn't directly visible via MCP tools, infer from:
-     - Presence of shared domain graphs (did any get created?)
-     - Node/edge counts in shared graphs (were episodes extracted into them?)
-     - Compare to personal graph: if shared graphs have content = routing worked
+   - Call `discover_domains` to get the list of domains with their `schema_name` values
+   - For each domain schema that exists, call `discover_ontology(graph_name=<schema_name>)` to count episodes and nodes
+   - Sum unique episodes across all shared domain graphs (episodes may be routed to multiple domains -- count each episode once)
    - Record the measurement:
      ```
      M5: Domain routing success rate

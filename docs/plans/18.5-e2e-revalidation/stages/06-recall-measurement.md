@@ -16,7 +16,7 @@
 
 2. **Run Q1: Blocking concept**
    - `recall(query="What is blocking in entity resolution and how does the system implement it?", limit=10)`
-   - Record for each result: rank, name, score, activation_score, source_kind, item_type
+   - Record for each result: position (1=highest score), name, score, activation_score, source_kind, item_type
    - Note whether blocking-related content appears in top 3
    - Record the #1 result name/id
 
@@ -137,8 +137,9 @@
 - The order matters for M1/M2 -- gravity well effect compounds over sequential queries
 - Record **ALL** numeric values, not just pass/fail -- we need the raw data for the final report
 - If a query returns zero results, record it as a separate finding (indicates embedding or indexing issue)
-- The `activation_score` field may not be directly in the recall result -- look at the score breakdown if available
-- For M4 temporal tests: "ranks above" means the newer item appears at a lower rank number (1 = highest) than the older item
+- **`activation_score` availability**: Phase 1 recall results (from `repo.recall()`) populate `activation_score`. Phase 2 search results (from `repo.search_nodes()`) may return `activation_score: null`. For M1, compute from results where `activation_score` is not null. If the most frequently returned node has null `activation_score`, use `inspect_node` on it to read `access_count` directly and compute activation manually via `sqrt(access_count)` as an approximation.
+- Results have no `rank` field -- infer rank from position in the returned list (1 = highest score)
+- For M4 temporal tests: "ranks above" means the newer item appears at a lower position number (1 = highest) than the older item
 
 ---
 

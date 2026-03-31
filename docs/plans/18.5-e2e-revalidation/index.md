@@ -70,7 +70,7 @@ All stages are strictly sequential.
 
 | # | Metric | Baseline (Original E2E) | Target | How Measured |
 |---|--------|------------------------|--------|-------------|
-| M1 | Max activation after 9 queries | 0.91 | <= 0.70 | Highest `activation_score` across all recall results over 9 queries |
+| M1 | Max activation after 9 queries | 0.91 | <= 0.70 | Highest `activation_score` from recall results where the field is populated (Phase 1 results). If needed, use `inspect_node` to read `access_count` for nodes with null `activation_score`. |
 | M2 | Single-episode dominance | 8/9 (89%) | <= 3/9 (33%) | Count queries where the same item holds the #1 rank position |
 | M3 | Specific event recall rate | 0% (0/3) | >= 66% (2/3) | 3 queries targeting specific bugs; pass = target episode in top 5 results |
 | M4 | Temporal evolution recall rate | 33% (1/3) | >= 66% (2/3) | 3 queries about evolving decisions; pass = latest correction ranks above older version |

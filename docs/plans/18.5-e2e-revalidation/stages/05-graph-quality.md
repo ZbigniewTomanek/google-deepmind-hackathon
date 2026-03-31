@@ -41,7 +41,8 @@
 ### Part B: Cross-Extraction Type Consistency (M7)
 
 5. **Browse nodes to find potential duplicates**
-   - Call `browse_nodes(graph_name=<personal_graph>)` to see all node instances
+   - First call `discover_ontology(graph_name=<personal_graph>)` to list all populated node types
+   - Then for each populated type, call `browse_nodes(graph_name=<personal_graph>, type_name=<type>, limit=50)` to get node instances (default limit is only 20 -- use 50 per type to ensure full coverage)
    - Look for the same real-world entity appearing with different types:
      - "Metaphone3" -- should consistently be Tool (not also Methodology)
      - "Blocking" -- should consistently be one type (not both Methodology AND ProcessStage)
