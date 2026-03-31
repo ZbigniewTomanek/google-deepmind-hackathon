@@ -111,7 +111,7 @@ Stages within each phase are sequential. Phases A, B, and C are independent of e
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Activation Dampening](stages/01-activation-dampening.md) | PENDING | | |
+| 1 | [Activation Dampening](stages/01-activation-dampening.md) | DONE | Sublinear dampening (α=0.5), access increment cap (3), 6 new tests, updated 1 existing test | `fix(scoring): add sublinear activation dampening` |
 | 2 | [MMR Diversity Reranking](stages/02-mmr-diversity-reranking.md) | PENDING | | |
 | 3 | [Temporal Recency Bias](stages/03-temporal-recency-bias.md) | PENDING | | |
 | 4 | [Domain Classifier Fix](stages/04-domain-classifier-fix.md) | PENDING | | |

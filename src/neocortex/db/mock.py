@@ -824,19 +824,21 @@ class InMemoryRepository:
 
     # ── Access Tracking ──
 
-    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+    async def record_node_access(self, agent_id: str, node_ids: list[int], limit: int | None = None) -> None:
         now = datetime.now(UTC)
-        for nid in node_ids:
+        ids_to_update = node_ids[:limit] if limit is not None else node_ids
+        for nid in ids_to_update:
             node = self._nodes.get(nid)
             if node is not None:
                 self._nodes[nid] = node.model_copy(
                     update={"access_count": node.access_count + 1, "last_accessed_at": now}
                 )
 
-    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int], limit: int | None = None) -> None:
         now = datetime.now(UTC)
+        ids_to_update = set(episode_ids[:limit] if limit is not None else episode_ids)
         for ep in self._episodes:
-            if ep["id"] in episode_ids:
+            if ep["id"] in ids_to_update:
                 ep["access_count"] = ep.get("access_count", 0) + 1
                 ep["last_accessed_at"] = now
 

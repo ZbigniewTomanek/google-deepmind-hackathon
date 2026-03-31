@@ -197,10 +197,11 @@ class TestStage2BaseActivation:
         assert activation == pytest.approx(0.5, abs=0.01)
 
     def test_base_activation_high_frequency_recent(self):
-        """Node with access_count=100, last_accessed=now returns activation close to 1.0."""
+        """Node with access_count=100, last_accessed=now returns high activation (dampened)."""
         now = datetime.now(UTC)
         activation = compute_base_activation(access_count=100, last_accessed_at=now)
-        assert activation > 0.95
+        # With default dampening (exponent=0.5): ln(√100+1) = ln(11) ≈ 2.4, sigmoid ≈ 0.92
+        assert activation > 0.85
 
     def test_base_activation_low_frequency_stale(self):
         """Node with access_count=1, last_accessed=30d ago returns activation < 0.3."""

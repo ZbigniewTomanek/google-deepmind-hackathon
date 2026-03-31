@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from neocortex.scoring import HybridWeights, compute_hybrid_score, compute_recency_score
+from neocortex.scoring import (
+    HybridWeights,
+    compute_base_activation,
+    compute_hybrid_score,
+    compute_recency_score,
+)
 
 WEIGHTS = HybridWeights(vector=0.4, text=0.35, recency=0.25, activation=0.0, importance=0.0)
 
@@ -85,3 +90,56 @@ class TestHybridScore:
             vector_sim=1.0, text_rank=1.0, recency=1.0, activation=None, importance=None, weights=WEIGHTS
         )
         assert score == pytest.approx(1.0, abs=1e-9)
+
+
+class TestBaseActivation:
+    """Tests for ACT-R base-level activation with sublinear dampening."""
+
+    def test_activation_dampening_reduces_high_access(self):
+        """access_count=50 with dampening should score lower than without."""
+        now = datetime.now(UTC)
+        undampened = compute_base_activation(50, now, decay_rate=0.5, access_exponent=1.0)
+        dampened = compute_base_activation(50, now, decay_rate=0.5, access_exponent=0.5)
+        assert dampened < undampened
+        # Undampened is ~0.98; dampened is ~0.89 — significant reduction
+        assert dampened < 0.90
+
+    def test_activation_dampening_preserves_low_access(self):
+        """access_count=1 should score similarly with and without dampening."""
+        now = datetime.now(UTC)
+        undampened = compute_base_activation(1, now, decay_rate=0.5, access_exponent=1.0)
+        dampened = compute_base_activation(1, now, decay_rate=0.5, access_exponent=0.5)
+        assert abs(undampened - dampened) < 0.05  # Minimal difference at low counts
+
+    def test_activation_gravity_well_prevention(self):
+        """After 20 accesses, dampened activation should be significantly below undampened."""
+        now = datetime.now(UTC)
+        dampened = compute_base_activation(20, now, decay_rate=0.5, access_exponent=0.5)
+        undampened = compute_base_activation(20, now, decay_rate=0.5, access_exponent=1.0)
+        # Dampened ~0.85 vs undampened ~0.95 — prevents gravity well
+        assert dampened < 0.86
+        assert undampened - dampened > 0.09
+
+    def test_activation_zero_access(self):
+        """Zero access count should produce a baseline activation around 0.5."""
+        now = datetime.now(UTC)
+        score = compute_base_activation(0, now, decay_rate=0.5, access_exponent=0.5)
+        # ln(0^0.5 + 1) = ln(1) = 0, penalty ~0 for recent → sigmoid(0) = 0.5
+        assert score == pytest.approx(0.5, abs=0.05)
+
+    def test_activation_decays_with_time(self):
+        """Older items should have lower activation than recent ones."""
+        now = datetime.now(UTC)
+        recent = compute_base_activation(5, now, decay_rate=0.5, access_exponent=0.5)
+        old = compute_base_activation(5, now - timedelta(hours=168), decay_rate=0.5, access_exponent=0.5)
+        assert old < recent
+
+    def test_activation_exponent_one_matches_original(self):
+        """With exponent=1.0, formula should match the original unbounded behavior."""
+        now = datetime.now(UTC)
+        score = compute_base_activation(10, now, decay_rate=0.5, access_exponent=1.0)
+        # Original: sigmoid(ln(11) - 0.5*ln(1)) = sigmoid(ln(11)) = sigmoid(2.397)
+        import math
+
+        expected = 1.0 / (1.0 + math.exp(-math.log(11)))
+        assert score == pytest.approx(expected, abs=0.01)

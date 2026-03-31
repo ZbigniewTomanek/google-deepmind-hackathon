@@ -63,6 +63,13 @@ class MCPSettings(BaseSettings):
 
     # ACT-R activation parameters
     activation_decay_rate: float = 0.5
+    # Sublinear dampening exponent for access_count in ACT-R formula.
+    # 1.0 = original (unbounded log growth), 0.5 = square-root dampening.
+    activation_access_exponent: float = 0.5
+
+    # Max nodes/episodes whose access_count is incremented per recall query.
+    # Prevents broad queries from boosting many items simultaneously.
+    recall_access_increment_limit: int = 3
 
     # Spreading activation
     spreading_activation_decay: float = 0.6

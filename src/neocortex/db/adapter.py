@@ -1247,32 +1247,40 @@ class GraphServiceAdapter:
 
     # ── Access Tracking ──
 
-    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+    async def record_node_access(self, agent_id: str, node_ids: list[int], limit: int | None = None) -> None:
         if not node_ids:
             return
         if self._pool is None or self._router is None:
             return
+
+        if limit is None:
+            limit = self._settings.recall_access_increment_limit
+        ids_to_update = node_ids[:limit]
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             await conn.execute(
                 "UPDATE node SET access_count = access_count + 1, last_accessed_at = now() "
                 "WHERE id = ANY($1::int[])",
-                node_ids,
+                ids_to_update,
             )
 
-    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int], limit: int | None = None) -> None:
         if not episode_ids:
             return
         if self._pool is None or self._router is None:
             return
+
+        if limit is None:
+            limit = self._settings.recall_access_increment_limit
+        ids_to_update = episode_ids[:limit]
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             await conn.execute(
                 "UPDATE episode SET access_count = access_count + 1, last_accessed_at = now() "
                 "WHERE id = ANY($1::int[])",
-                episode_ids,
+                ids_to_update,
             )
 
     # ── Soft-Forget ──
@@ -1516,7 +1524,12 @@ class GraphServiceAdapter:
             access_count = int(hit.get("access_count") or 0)
             last_accessed = hit.get("last_accessed_at") or created_at
             activation = (
-                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    access_count,
+                    last_accessed,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if last_accessed
                 else None
             )
@@ -1580,7 +1593,12 @@ class GraphServiceAdapter:
                 ep.last_accessed_at if hasattr(ep, "last_accessed_at") else ep.get("last_accessed_at")
             ) or created_at
             activation = (
-                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    ep_access,
+                    ep_last_acc,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if ep_last_acc
                 else None
             )
@@ -1723,7 +1741,12 @@ class GraphServiceAdapter:
             access_count = int(row["access_count"] or 0)
             last_accessed = row["last_accessed_at"] or created_at
             activation = (
-                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    access_count,
+                    last_accessed,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if last_accessed
                 else None
             )
@@ -1760,7 +1783,12 @@ class GraphServiceAdapter:
             ep_access = int(row["access_count"] or 0)
             ep_last_acc = row["last_accessed_at"] or created_at
             activation = (
-                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    ep_access,
+                    ep_last_acc,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if ep_last_acc
                 else None
             )

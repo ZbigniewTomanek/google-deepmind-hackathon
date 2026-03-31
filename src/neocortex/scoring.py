@@ -28,22 +28,28 @@ def compute_base_activation(
     access_count: int,
     last_accessed_at: datetime,
     decay_rate: float = 0.5,
+    access_exponent: float = 0.5,
 ) -> float:
-    """ACT-R simplified base-level activation.
+    """ACT-R simplified base-level activation with sublinear dampening.
 
-    B_i = ln(n + 1) - d * ln(T + 1)
+    B_i = ln(n^a + 1) - d * ln(T + 1)  where a = access_exponent
     Normalized to [0, 1] via sigmoid.
 
     Args:
         access_count: Number of times the item has been recalled.
         last_accessed_at: When the item was last accessed.
         decay_rate: ACT-R ``d`` parameter (default 0.5).
+        access_exponent: Sublinear dampening exponent (default 0.5 = sqrt).
+            1.0 gives original unbounded growth; lower values compress high counts.
     """
     now = datetime.now(UTC)
     if last_accessed_at.tzinfo is None:
         last_accessed_at = last_accessed_at.replace(tzinfo=UTC)
     hours_since = max((now - last_accessed_at).total_seconds() / 3600.0, 0.0)
-    b_i = math.log(access_count + 1) - decay_rate * math.log(hours_since + 1)
+    dampened_count = math.pow(max(access_count, 0), access_exponent)
+    frequency = math.log(dampened_count + 1)
+    recency_penalty = decay_rate * math.log(hours_since + 1)
+    b_i = frequency - recency_penalty
     return 1.0 / (1.0 + math.exp(-b_i))
 
 
