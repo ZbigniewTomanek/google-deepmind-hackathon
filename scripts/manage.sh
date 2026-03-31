@@ -351,12 +351,131 @@ snapshot_list() {
     done
 }
 
+resolve_snapshot() {
+    # Resolve a snapshot name/filename to a .tar.gz path in $BACKUPDIR.
+    # Sets RESOLVED_SNAPSHOT to the path, or fails with an error.
+    local name="$1"
+
+    if [[ ! -d "$BACKUPDIR" ]]; then
+        fail "Snapshot not found: $name (no backups directory). Run '$0 snapshot list'."
+    fi
+
+    # Exact match
+    if [[ -f "$BACKUPDIR/${name}.tar.gz" ]]; then
+        RESOLVED_SNAPSHOT="$BACKUPDIR/${name}.tar.gz"
+        return 0
+    fi
+
+    # Prefix match — pick most recent (ls -t sorts by mtime)
+    local matches
+    matches=$(ls -t "$BACKUPDIR"/${name}*.tar.gz 2>/dev/null || true)
+    if [[ -n "$matches" ]]; then
+        RESOLVED_SNAPSHOT=$(echo "$matches" | head -1)
+        return 0
+    fi
+
+    fail "Snapshot not found: $name. Run '$0 snapshot list' to see available snapshots."
+}
+
 snapshot_load() {
-    fail "Not implemented yet"
+    local force=false
+    local name=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f) force=true; shift ;;
+            -*) fail "Unknown option for snapshot load: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    fail "Usage: $0 snapshot load <name> [--force]"
+                fi
+                ;;
+        esac
+    done
+    if [[ -z "$name" ]]; then
+        fail "Usage: $0 snapshot load <name> [--force]"
+    fi
+
+    resolve_snapshot "$name"
+    local snapshot_file="$RESOLVED_SNAPSHOT"
+    log "Loading snapshot: $(basename "$snapshot_file")"
+
+    # Pre-flight: PG must be running
+    require_pg_running
+
+    # Stop app services for clean restore
+    log "Stopping app services for clean restore..."
+    kill_pidfile "$PIDFILE_MCP"
+    kill_pidfile "$PIDFILE_INGESTION"
+    kill_port "$MCP_PORT"
+    kill_port "$INGESTION_PORT"
+
+    # Extract archive to temp dir
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    tar -xzf "$snapshot_file" -C "$tmpdir"
+
+    # Restore DB
+    log "Restoring database..."
+    gunzip -c "$tmpdir/db.sql.gz" | \
+        docker compose -f "$COMPOSE_FILE" exec -T \
+            -e PGPASSWORD=neocortex postgres \
+            psql -U neocortex -d neocortex >/dev/null 2>&1
+
+    # Restore media (if present in snapshot)
+    if [[ -d "$tmpdir/media_store" ]]; then
+        log "Restoring media store..."
+        rm -rf "$MEDIA_STORE"
+        cp -r "$tmpdir/media_store" "$MEDIA_STORE"
+        ok "Media store restored"
+    fi
+
+    # Cleanup
+    rm -rf "$tmpdir"
+
+    ok "Snapshot loaded: $(basename "$snapshot_file")"
+    echo "  Run '$0 start' to bring services back up."
 }
 
 snapshot_delete() {
-    fail "Not implemented yet"
+    local yes=false
+    local name=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y) yes=true; shift ;;
+            -*) fail "Unknown option for snapshot delete: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    fail "Usage: $0 snapshot delete <name> [--yes]"
+                fi
+                ;;
+        esac
+    done
+    if [[ -z "$name" ]]; then
+        fail "Usage: $0 snapshot delete <name> [--yes]"
+    fi
+
+    resolve_snapshot "$name"
+    local snapshot_file="$RESOLVED_SNAPSHOT"
+    local size
+    size=$(ls -lh "$snapshot_file" | awk '{print $5}')
+
+    if ! $yes; then
+        printf 'Delete snapshot "%s" (%s)? [y/N] ' "$(basename "$snapshot_file" .tar.gz)" "$size"
+        local reply
+        read -r reply
+        case "$reply" in
+            [yY]|[yY][eE][sS]) ;;
+            *) log "Cancelled."; return 0 ;;
+        esac
+    fi
+
+    rm -f "$snapshot_file"
+    ok "Deleted: $(basename "$snapshot_file")"
 }
 
 do_status() {
