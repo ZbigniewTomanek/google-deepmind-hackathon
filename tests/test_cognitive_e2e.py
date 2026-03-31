@@ -58,11 +58,17 @@ async def populate_small_graph(repo: InMemoryRepository) -> dict:
 
     # Edges (6 total)
     e1 = await repo.upsert_edge(AGENT_ID, n1.id, n2.id, relates.id, weight=1.0)
+    assert e1 is not None
     e2 = await repo.upsert_edge(AGENT_ID, n1.id, n3.id, relates.id, weight=0.8)
+    assert e2 is not None
     e3 = await repo.upsert_edge(AGENT_ID, n2.id, n3.id, relates.id, weight=0.6)
+    assert e3 is not None
     e4 = await repo.upsert_edge(AGENT_ID, n4.id, n5.id, relates.id, weight=1.0)
+    assert e4 is not None
     e5 = await repo.upsert_edge(AGENT_ID, n3.id, n4.id, relates.id, weight=0.4)
+    assert e5 is not None
     e6 = await repo.upsert_edge(AGENT_ID, n5.id, n1.id, relates.id, weight=0.3)
+    assert e6 is not None
 
     # Episodes
     ep1_id = await repo.store_episode(AGENT_ID, "Discussed serotonin pathways with Dr. Smith")
@@ -662,6 +668,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
         b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        assert edge is not None
 
         await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1, ceiling=2.0)
         updated = repo._edges[edge.id]
@@ -676,6 +683,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
         b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.4)
+        assert edge is not None
 
         for _ in range(50):
             await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1, ceiling=1.5)
@@ -692,8 +700,11 @@ class TestStage5EdgeReinforcement:
         c = await repo.upsert_node(AGENT_ID, "C", concept.id)
         d = await repo.upsert_node(AGENT_ID, "D", concept.id)
         e1 = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        assert e1 is not None
         e2 = await repo.upsert_edge(AGENT_ID, b.id, c.id, relates.id, weight=1.0)
+        assert e2 is not None
         e3 = await repo.upsert_edge(AGENT_ID, c.id, d.id, relates.id, weight=1.0)
+        assert e3 is not None
 
         await repo.reinforce_edges(AGENT_ID, [e1.id, e2.id], delta=0.1, ceiling=2.0)
         assert repo._edges[e1.id].weight == pytest.approx(1.1)
@@ -708,6 +719,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "A", concept.id)
         b = await repo.upsert_node(AGENT_ID, "B", concept.id)
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.5)
+        assert edge is not None
 
         # Make the edge stale by setting last_reinforced_at to 2 weeks ago
         old_time = datetime.now(UTC) - timedelta(days=14)
@@ -725,6 +737,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "A", concept.id)
         b = await repo.upsert_node(AGENT_ID, "B", concept.id)
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=0.12)
+        assert edge is not None
 
         old_time = datetime.now(UTC) - timedelta(days=14)
         repo._edges[edge.id] = edge.model_copy(update={"last_reinforced_at": old_time})
@@ -740,6 +753,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "A", concept.id)
         b = await repo.upsert_node(AGENT_ID, "B", concept.id)
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.5)
+        assert edge is not None
 
         # Reinforce it (sets last_reinforced_at to now)
         await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1)
@@ -758,6 +772,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "A", concept.id)
         b = await repo.upsert_node(AGENT_ID, "B", concept.id)
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.5)
+        assert edge is not None
 
         # Make created_at old but last_reinforced_at recent
         old_time = datetime.now(UTC) - timedelta(days=30)
@@ -776,6 +791,7 @@ class TestStage5EdgeReinforcement:
         a = await repo.upsert_node(AGENT_ID, "Serotonin", concept.id, content="A neurotransmitter serotonin")
         b = await repo.upsert_node(AGENT_ID, "Dopamine", concept.id, content="A neurotransmitter dopamine")
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        assert edge is not None
 
         weights = [repo._edges[edge.id].weight]
         for _ in range(5):
@@ -1121,6 +1137,7 @@ class TestStage7FullComposition:
         a = await repo.upsert_node(AGENT_ID, "Serotonin Hub", concept.id, content="Main serotonin hub")
         b = await repo.upsert_node(AGENT_ID, "Dopamine Hub", concept.id, content="Main dopamine hub")
         edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.0)
+        assert edge is not None
 
         weights = [repo._edges[edge.id].weight]
         for _ in range(10):

@@ -148,6 +148,7 @@ async def test_delete_edge_removes_edge(repo: InMemoryRepository) -> None:
     alice = await repo.upsert_node(AGENT, "Alice", nt.id)
     bob = await repo.upsert_node(AGENT, "Bob", nt.id)
     edge = await repo.upsert_edge(AGENT, alice.id, bob.id, et.id)
+    assert edge is not None
 
     result = await repo.delete_edge(AGENT, edge.id)
     assert result is True

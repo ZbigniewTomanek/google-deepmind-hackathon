@@ -727,60 +727,70 @@ class GraphServiceAdapter:
                     importance,
                 )
                 if updated_row is None:
-                    raise RuntimeError("Failed to update node")
-                d = dict(updated_row)
-                if isinstance(d.get("properties"), str):
-                    d["properties"] = json.loads(d["properties"])
-                return Node(**d)
-            else:
-                if target_schema is not None:
-                    new_row = await conn.fetchrow(
-                        """INSERT INTO node
-                           (type_id, name, content, properties, embedding, source, importance, owner_role)
-                           VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7, $8)
-                           RETURNING id, type_id, name, content, properties, source, importance,
-                                     access_count, last_accessed_at, forgotten, forgotten_at,
-                                     created_at, updated_at""",
-                        type_id,
-                        name,
-                        content,
-                        props_json,
-                        emb_str,
-                        source,
-                        importance,
-                        agent_id,
+                    logger.bind(action_log=True).warning(
+                        "upsert_node_update_missed",
+                        node_id=row["id"],
+                        name=name,
+                        agent_id=agent_id,
+                        target_schema=target_schema,
+                        msg="UPDATE matched 0 rows (concurrent delete?), falling back to INSERT",
                     )
+                    # Fall through to INSERT below
                 else:
-                    new_row = await conn.fetchrow(
-                        """INSERT INTO node (type_id, name, content, properties, embedding, source, importance)
-                           VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7)
-                           RETURNING id, type_id, name, content, properties, source, importance,
-                                     access_count, last_accessed_at, forgotten, forgotten_at,
-                                     created_at, updated_at""",
-                        type_id,
-                        name,
-                        content,
-                        props_json,
-                        emb_str,
-                        source,
-                        importance,
-                    )
-                if new_row is None:
-                    raise RuntimeError("Failed to create node")
-                d = dict(new_row)
-                if isinstance(d.get("properties"), str):
-                    d["properties"] = json.loads(d["properties"])
-                new_node = Node(**d)
-                # Auto-register canonicalization aliases for the new node
-                for alias in canon_aliases:
-                    await conn.execute(
-                        "INSERT INTO node_alias (node_id, alias, source) "
-                        "VALUES ($1, $2, 'canonicalization') "
-                        "ON CONFLICT (alias, node_id) DO NOTHING",
-                        new_node.id,
-                        alias,
-                    )
-                return new_node
+                    d = dict(updated_row)
+                    if isinstance(d.get("properties"), str):
+                        d["properties"] = json.loads(d["properties"])
+                    return Node(**d)
+
+            # INSERT path: reached when no existing node found OR update missed
+            if target_schema is not None:
+                new_row = await conn.fetchrow(
+                    """INSERT INTO node
+                       (type_id, name, content, properties, embedding, source, importance, owner_role)
+                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7, $8)
+                       RETURNING id, type_id, name, content, properties, source, importance,
+                                 access_count, last_accessed_at, forgotten, forgotten_at,
+                                 created_at, updated_at""",
+                    type_id,
+                    name,
+                    content,
+                    props_json,
+                    emb_str,
+                    source,
+                    importance,
+                    agent_id,
+                )
+            else:
+                new_row = await conn.fetchrow(
+                    """INSERT INTO node (type_id, name, content, properties, embedding, source, importance)
+                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7)
+                       RETURNING id, type_id, name, content, properties, source, importance,
+                                 access_count, last_accessed_at, forgotten, forgotten_at,
+                                 created_at, updated_at""",
+                    type_id,
+                    name,
+                    content,
+                    props_json,
+                    emb_str,
+                    source,
+                    importance,
+                )
+            if new_row is None:
+                raise RuntimeError("Failed to create node")
+            d = dict(new_row)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            new_node = Node(**d)
+            # Auto-register canonicalization aliases for the new node
+            for alias in canon_aliases:
+                await conn.execute(
+                    "INSERT INTO node_alias (node_id, alias, source) "
+                    "VALUES ($1, $2, 'canonicalization') "
+                    "ON CONFLICT (alias, node_id) DO NOTHING",
+                    new_node.id,
+                    alias,
+                )
+            return new_node
 
     async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         if target_schema is None and (self._pool is None or self._router is None):
@@ -894,7 +904,7 @@ class GraphServiceAdapter:
         weight: float = 1.0,
         properties: dict | None = None,
         target_schema: str | None = None,
-    ) -> Edge:
+    ) -> Edge | None:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
             # Source-target primary edge dedup via GraphService
@@ -1009,7 +1019,15 @@ class GraphServiceAdapter:
                         props_json,
                     )
             if row is None:
-                raise RuntimeError("Failed to upsert edge")
+                logger.bind(action_log=True).warning(
+                    "upsert_edge_failed",
+                    source_id=source_id,
+                    target_id=target_id,
+                    type_id=type_id,
+                    agent_id=agent_id,
+                    msg="INSERT ON CONFLICT returned no row — unexpected DB error",
+                )
+                return None
             d = dict(row)
             if isinstance(d.get("properties"), str):
                 d["properties"] = json.loads(d["properties"])

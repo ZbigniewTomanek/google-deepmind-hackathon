@@ -111,7 +111,7 @@ class MemoryRepository(Protocol):
         weight: float = 1.0,
         properties: dict | None = None,
         target_schema: str | None = None,
-    ) -> Edge:
+    ) -> Edge | None:
         """Upsert by (source_id, target_id, type_id) within the agent's schema.
 
         If an edge with the same triple exists, merge properties and update weight.

@@ -820,6 +820,8 @@ def build_librarian_agent(
                 properties=props,
                 target_schema=ctx.deps.target_schema,
             )
+            if edge is None:
+                return {"error": f"Failed to upsert edge '{source_name}' -> '{target_name}' ({edge_type})"}
             logger.bind(action_log=True).info(
                 "librarian_tool_call",
                 tool="create_or_update_edge",

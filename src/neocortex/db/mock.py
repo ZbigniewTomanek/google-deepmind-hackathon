@@ -591,7 +591,7 @@ class InMemoryRepository:
         weight: float = 1.0,
         properties: dict | None = None,
         target_schema: str | None = None,
-    ) -> Edge:
+    ) -> Edge | None:
         del target_schema
         props = properties or {}
 

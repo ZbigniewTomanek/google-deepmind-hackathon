@@ -117,7 +117,7 @@ Unit tests for all changes. Document how to re-run Plan 22 for E2E validation.
 | 1 | [Remove RLS from Shared Graphs](stages/01-remove-shared-rls.md) | DONE | Removed RLS policies from shared schema provisioning, simplified graph_scoped_connection (no SET LOCAL ROLE), set owner_role explicitly in INSERT statements for provenance, updated tests | `refactor(shared-graphs): remove RLS from shared schemas, retain owner_role for provenance` |
 | 2 | [Content-Merging Upsert](stages/02-content-merging-upsert.md) | DONE | Added "Shared Graph Context" section to librarian prompt for cross-agent content merging awareness; SQL and find_similar_nodes already correct | `feat(extraction): add cross-agent content merging awareness to librarian prompt` |
 | 3 | [Extraction Pipeline Hardening](stages/03-extraction-pipeline-hardening.md) | DONE | Added extraction_tool_calls_limit setting (default 150), removed eager cleanup_partial_curation from tool-driven path, updated tests | `fix(extraction): make tool_calls_limit configurable (default 150), remove eager cleanup` |
-| 4 | [Graceful Update Failure Handling](stages/04-graceful-update-failure.md) | PENDING | | |
+| 4 | [Graceful Update Failure Handling](stages/04-graceful-update-failure.md) | DONE | upsert_node falls through to INSERT on UPDATE 0 rows, upsert_edge returns None instead of crashing, callers handle None gracefully | `fix(adapter): handle UPDATE 0 rows gracefully in upsert_node instead of crashing` |
 | 5 | [Fix Recall Type Resolution](stages/05-fix-recall-type-resolution.md) | PENDING | | |
 | 6 | [Tests & Validation](stages/06-tests-and-validation.md) | PENDING | | |
 
