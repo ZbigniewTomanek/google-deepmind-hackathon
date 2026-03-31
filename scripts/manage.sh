@@ -139,17 +139,105 @@ require_pg_running() {
 }
 
 # ---------------------------------------------------------------------------
-# Subcommands (stubs — implemented in later stages)
+# Subcommands
 # ---------------------------------------------------------------------------
 
 do_start() {
-    log "start: not yet implemented (Stage 2)"
-    exit 1
+    local fresh=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fresh) fresh=true; shift ;;
+            *) fail "Unknown option for start: $1" ;;
+        esac
+    done
+
+    cd "$PROJECT_DIR"
+    mkdir -p "$LOGDIR"
+
+    # --- Clean up old instances ---
+    log "Clearing old instances..."
+    kill_pidfile "$PIDFILE_MCP"
+    kill_pidfile "$PIDFILE_INGESTION"
+    kill_port "$MCP_PORT"
+    kill_port "$INGESTION_PORT"
+
+    # --- PostgreSQL ---
+    if $fresh; then
+        log "Starting with fresh volume..."
+        docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
+    else
+        log "Starting with existing data..."
+    fi
+
+    docker compose -f "$COMPOSE_FILE" up -d postgres 2>&1 || {
+        log "Container conflict — removing stale container and retrying..."
+        docker rm -f neocortex-postgres 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" up -d postgres 2>&1
+    }
+    wait_for_postgres
+    apply_migrations
+
+    # --- Source .env ---
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+        set -a; source "$PROJECT_DIR/.env"; set +a
+    fi
+
+    # --- MCP server ---
+    log "Starting MCP server (port $MCP_PORT)..."
+    NEOCORTEX_AUTH_MODE=dev_token \
+    NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+    NEOCORTEX_MOCK_DB=false \
+    uv run python -m neocortex \
+        >"$LOGDIR/mcp_stdout.log" 2>&1 &
+    echo $! > "$PIDFILE_MCP"
+    log "  PID $(cat "$PIDFILE_MCP") → log: $LOGDIR/mcp_stdout.log"
+
+    # --- Ingestion server ---
+    log "Starting ingestion server (port $INGESTION_PORT)..."
+    NEOCORTEX_AUTH_MODE=dev_token \
+    NEOCORTEX_DEV_TOKENS_FILE=dev_tokens.json \
+    NEOCORTEX_MOCK_DB=false \
+    uv run python -m neocortex.ingestion \
+        >"$LOGDIR/ingestion_stdout.log" 2>&1 &
+    echo $! > "$PIDFILE_INGESTION"
+    log "  PID $(cat "$PIDFILE_INGESTION") → log: $LOGDIR/ingestion_stdout.log"
+
+    # --- Health checks ---
+    wait_for_healthy "http://127.0.0.1:${MCP_PORT}/health" "$MAX_WAIT"
+    wait_for_healthy "http://127.0.0.1:${INGESTION_PORT}/health" "$MAX_WAIT"
+
+    ok "All services running. Ready for testing."
+    echo ""
+    echo "  MCP server:       http://127.0.0.1:${MCP_PORT}"
+    echo "  Ingestion API:    http://127.0.0.1:${INGESTION_PORT}"
+    echo "  Admin token:      admin-token-neocortex"
+    echo "  Dev token:        dev-token-neocortex"
+    echo ""
+    echo "  Stop with:        ./scripts/manage.sh stop"
+    echo "  Logs:             tail -f $LOGDIR/mcp_stdout.log $LOGDIR/ingestion_stdout.log"
 }
 
 do_stop() {
-    log "stop: not yet implemented (Stage 2)"
-    exit 1
+    local stop_all=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all) stop_all=true; shift ;;
+            *) fail "Unknown option for stop: $1" ;;
+        esac
+    done
+
+    log "Stopping NeoCortex services..."
+    kill_pidfile "$PIDFILE_MCP"
+    kill_pidfile "$PIDFILE_INGESTION"
+    kill_port "$MCP_PORT"
+    kill_port "$INGESTION_PORT"
+
+    if $stop_all; then
+        docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+        ok "All services stopped (data preserved)."
+    else
+        ok "App services stopped. PostgreSQL still running."
+    fi
 }
 
 do_snapshot() {
