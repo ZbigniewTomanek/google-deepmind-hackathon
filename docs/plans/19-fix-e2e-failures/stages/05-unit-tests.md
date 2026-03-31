@@ -38,10 +38,18 @@ Add test cases for the 4 corrupted types:
 @pytest.mark.parametrize("bad_name", [
     "DatasetNoteTheSearchResultsShowed" + "x" * 400,  # 440+ chars
     "OperationbrCreateOrUpdate" + "x" * 300,            # 300+ chars
-    "a" * 61,                                            # Just over limit
+    "A" * 61,                                            # Just over limit
 ])
 def test_normalize_node_type_rejects_too_long(bad_name):
     with pytest.raises(ValueError, match="too long"):
+        normalize_node_type(bad_name)
+
+@pytest.mark.parametrize("bad_name", [
+    "FeatureMergesWithEntityObjectId167",  # 7 PascalCase segments
+    "ThisIsAVeryLongCompoundTypeName",      # 6 segments
+])
+def test_normalize_node_type_rejects_too_many_segments(bad_name):
+    with pytest.raises(ValueError, match="too many segments"):
         normalize_node_type(bad_name)
 
 def test_normalize_node_type_enforces_uppercase_start():
@@ -88,7 +96,21 @@ def test_extracted_entity_temporal_fields_default_none():
     assert e.temporal_signal is None
 ```
 
-### 4. Verify all existing tests still pass
+### 4. Add edge type length and word-count rejection tests
+
+**File**: `tests/unit/test_normalization.py` (add to existing)
+
+```python
+@pytest.mark.parametrize("bad_name", [
+    "A" * 61,
+    "RELATES_TO_" + "X" * 50,
+])
+def test_normalize_edge_type_rejects_too_long(bad_name):
+    with pytest.raises(ValueError, match="too long"):
+        normalize_edge_type(bad_name)
+```
+
+### 5. Verify all existing tests still pass
 
 ```bash
 uv run pytest tests/ -v

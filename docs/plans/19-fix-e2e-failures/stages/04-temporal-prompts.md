@@ -76,18 +76,15 @@ Replace the current "## Temporal Relationships" section with a mandatory workflo
 "    'no longer', 'changed to', 'replaced by', 'switched from'",
 ```
 
-### 3. Pass temporal metadata to librarian deps
+### 3. Verify temporal metadata flows to librarian deps
 
-**File**: `src/neocortex/extraction/pipeline.py:166-182`
+**File**: `src/neocortex/extraction/pipeline.py:240-253` (LibrarianAgentDeps class)
 
-The `LibrarianAgentDeps` receives `extracted_entities` from the extractor. The `supersedes` and `temporal_signal` fields are already part of `ExtractedEntity` (from Stage 3), so they flow through automatically. No pipeline change needed.
+The `LibrarianAgentDeps` (line 240) receives `extracted_entities` from the extractor.
+The `supersedes` and `temporal_signal` fields are already part of `ExtractedEntity`
+(from Stage 3), so they flow through automatically via the `extracted_entities: list[ExtractedEntity]` field at line 245. No pipeline change needed.
 
-However, verify that the librarian's user message includes the extracted entities with their temporal fields. Currently (line 167):
-```python
-"Integrate the extracted entities and relations into the knowledge graph."
-```
-
-This is fine -- the entities are in `LibrarianAgentDeps.extracted_entities`, which the librarian accesses via `ctx.deps`.
+The tool-mode librarian call site is at lines 166-182, where `extracted_entities=extraction_result.output.entities` passes the entities with their temporal fields intact. The librarian accesses them via `ctx.deps`.
 
 ### 4. Verify temporal edge types exist in the system
 
@@ -105,25 +102,13 @@ From Plan 18.5 results: 1 SUPERSEDES edge was created, so the type exists. CORRE
 # All tests pass
 uv run pytest tests/ -v -x
 
-# Check the extractor prompt includes temporal section
-python3 -c "
-from neocortex.extraction.agents import build_extractor_agent
-agent = build_extractor_agent()
-prompt = ' '.join(agent._system_prompts)
-assert 'supersedes' in prompt.lower(), 'Missing supersedes in extractor prompt'
-assert 'temporal_signal' in prompt.lower(), 'Missing temporal_signal in extractor prompt'
-print('OK: Extractor prompt includes temporal detection instructions')
-"
+# Verify extractor prompt includes temporal detection keywords
+grep -q 'supersedes' src/neocortex/extraction/agents.py && echo "OK: extractor has supersedes" || echo "FAIL: missing supersedes"
+grep -q 'temporal_signal' src/neocortex/extraction/agents.py && echo "OK: extractor has temporal_signal" || echo "FAIL: missing temporal_signal"
 
-# Check the librarian prompt includes mandatory workflow
-python3 -c "
-from neocortex.extraction.agents import build_librarian_agent
-agent = build_librarian_agent()
-prompt = ' '.join(agent._system_prompts)
-assert 'non-negotiable' in prompt.lower() or 'mandatory' in prompt.lower(), 'Missing enforcement language'
-assert 'DO NOT merge' in prompt or 'do not merge' in prompt.lower(), 'Missing merge prevention'
-print('OK: Librarian prompt includes mandatory temporal workflow')
-"
+# Verify librarian prompt includes mandatory temporal workflow
+grep -qi 'mandatory\|non-negotiable' src/neocortex/extraction/agents.py && echo "OK: librarian has enforcement language" || echo "FAIL: missing enforcement"
+grep -q 'DO NOT merge\|do not merge' src/neocortex/extraction/agents.py && echo "OK: librarian has merge prevention" || echo "FAIL: missing merge prevention"
 ```
 
 ---

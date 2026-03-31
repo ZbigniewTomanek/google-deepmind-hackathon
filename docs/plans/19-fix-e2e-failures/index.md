@@ -64,7 +64,7 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 
 **Phase A -- Permission Fix (Stage 1)**: Fix `_ensure_schema()` to always grant permissions, add INFO-level logging for grant actions.
 
-**Phase B -- Type Hardening (Stage 2)**: Add max-length, uppercase-start regex, and Pydantic validators to catch LLM reasoning leaks before they reach the database.
+**Phase B -- Type Hardening (Stage 2)**: Add max-length, PascalCase word-count limit, uppercase-start regex, and Pydantic validators to catch LLM reasoning leaks before they reach the database.
 
 **Phase C -- Temporal Extraction (Stages 3-4)**: Add temporal signal fields to the extraction schema, strengthen extractor and librarian prompts to detect and act on correction markers.
 
@@ -79,8 +79,8 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 | # | Metric | Baseline (Plan 18.5) | Target | How Measured |
 |---|--------|---------------------|--------|--------------|
 | S1 | Domain routing permission grant | 0/28 | 28/28 | `domain_routing_completed` logs show `domain_count > 0` |
-| S2 | Corrupted type names | 4 | 0 | `normalize_node_type()` rejects all 4 corrupted inputs |
-| S3 | Type name max length | No limit | 60 chars | New unit test + normalization code |
+| S2 | Corrupted type names (syntactic) | 4 | ≤ 1 | `normalize_node_type()` rejects 3/4 corrupted inputs (length + word-count); 1 semantic issue addressed by prompt engineering |
+| S3 | Type name max length + word count | No limit | 60 chars / 5 segments | New unit test + normalization code |
 | S4 | Temporal correction edge creation | 0 CORRECTS, 1 SUPERSEDES | >= 1 CORRECTS per correction episode | Librarian creates edges when CORRECTION marker present |
 | S5 | All existing tests pass | 45+ | 45+ | `uv run pytest tests/ -v` |
 
@@ -161,6 +161,6 @@ revise affected stages, and get user confirmation before continuing.
 
 1. **Permission fix approach**: Grant permissions in `_ensure_schema()` on the existing-schema path rather than in services.py startup. Reason: services.py doesn't know which agents will use the system; the router knows the requesting agent.
 
-2. **Type length limit = 60 chars**: The longest legitimate PascalCase type name in the current graph is ~30 chars. 60 provides headroom while rejecting 300-440 char LLM leaks.
+2. **Type length limit = 60 chars, word limit = 5 segments**: The longest legitimate PascalCase type name in the current graph is ~30 chars / 3-4 segments. 60 chars / 5 segments provides headroom while rejecting 300-440 char LLM leaks and multi-word reasoning contamination (e.g., `FeatureMergesWithEntityObjectId167` = 7 segments). One corrupted type (`EvidencedocumentOceanography`, 29 chars, 2 segments) is a semantic issue not catchable by syntactic rules — addressed by prompt engineering.
 
 3. **Temporal signals via extraction metadata**: Rather than trying to detect corrections post-hoc in the librarian, we add `supersedes` and `temporal_signal` fields to `ExtractedEntity` so the extractor can mark them at extraction time. The librarian then has structured data to act on, not just prompt guidance.

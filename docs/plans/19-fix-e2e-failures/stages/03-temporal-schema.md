@@ -42,11 +42,11 @@ class ExtractedEntity(BaseModel):
     )
 ```
 
-### 2. Add temporal fields to `ExtractedRelation`
+### 2. Update `ExtractedRelation` description to reference temporal types
 
 **File**: `src/neocortex/extraction/schemas.py:42-47`
 
-The relation schema already has `relation_type`, but we should ensure the extractor can explicitly emit CORRECTS/SUPERSEDES relations. No schema change needed here -- the extractor can already set `relation_type="SUPERSEDES"`. But add a note in the field description:
+The relation schema already has `relation_type`, and the extractor can already set `relation_type="SUPERSEDES"`. Update the `relation_type` field description to explicitly reference temporal types:
 
 ```python
 class ExtractedRelation(BaseModel):

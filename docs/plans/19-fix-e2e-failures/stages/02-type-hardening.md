@@ -22,7 +22,7 @@ Current regex `^[a-zA-Z][a-zA-Z0-9]*$` (normalization.py:11) has no length limit
 
 ## Steps
 
-### 1. Fix node type regex and add length limit
+### 1. Fix node type regex, add length limit, and add word-count heuristic
 
 **File**: `src/neocortex/normalization.py:11`
 
@@ -35,24 +35,40 @@ To:
 ```python
 _VALID_NODE_TYPE = re.compile(r"^[A-Z][a-zA-Z0-9]*$")
 _MAX_TYPE_NAME_LENGTH = 60
+_MAX_TYPE_WORD_COUNT = 5
+_PASCAL_WORD_BOUNDARY = re.compile(r"[A-Z][a-z]+|[A-Z]+(?=[A-Z]|$)|[0-9]+")
 ```
 
-### 2. Add length check in `normalize_node_type()`
+The `_PASCAL_WORD_BOUNDARY` regex splits PascalCase names into words
+(e.g., `FeatureMergesWithEntityObjectId167` → 7 segments). Types with more than
+5 PascalCase segments are almost certainly LLM reasoning leaks or tool-call
+contamination, not legitimate ontology types. The longest legitimate types in
+the current graph have 3-4 segments (e.g., `ParseHumanNameUDX`).
+
+### 2. Add length and word-count checks in `normalize_node_type()`
 
 **File**: `src/neocortex/normalization.py:89-116`
 
-After the `_INVALID_CHARS.sub()` strip (line 92) and before the final validation (line 114), add:
+After the `_INVALID_CHARS.sub()` strip (line 92) and before the PascalCase normalization logic (line 97), add both checks:
 
 ```python
-# Truncate excessive length (LLM reasoning leaks)
+# Reject excessive length (LLM reasoning leaks)
 if len(name) > _MAX_TYPE_NAME_LENGTH:
     raise ValueError(
         f"Node type name too long ({len(name)} chars, max {_MAX_TYPE_NAME_LENGTH}): "
         f"'{name[:50]}...'"
     )
+
+# Reject names with too many PascalCase segments (reasoning contamination)
+word_count = len(_PASCAL_WORD_BOUNDARY.findall(name))
+if word_count > _MAX_TYPE_WORD_COUNT:
+    raise ValueError(
+        f"Node type name has too many segments ({word_count}, max {_MAX_TYPE_WORD_COUNT}): "
+        f"'{name[:50]}...'"
+    )
 ```
 
-Place this BEFORE the PascalCase normalization logic so the error message shows the raw input.
+Place both BEFORE the PascalCase normalization logic so error messages show the raw input.
 
 ### 3. Ensure uppercase start after normalization
 
@@ -64,16 +80,23 @@ if result and result[0].islower():
     result = result[0].upper() + result[1:]
 ```
 
-### 4. Add length check in `normalize_edge_type()`
+### 4. Add length and word-count checks in `normalize_edge_type()`
 
 **File**: `src/neocortex/normalization.py:63-86`
 
-Add the same length check after the strip:
+Add the same length and word-count checks after the strip:
 
 ```python
 if len(name) > _MAX_TYPE_NAME_LENGTH:
     raise ValueError(
         f"Edge type name too long ({len(name)} chars, max {_MAX_TYPE_NAME_LENGTH}): "
+        f"'{name[:50]}...'"
+    )
+
+word_count = len(_PASCAL_WORD_BOUNDARY.findall(name))
+if word_count > _MAX_TYPE_WORD_COUNT:
+    raise ValueError(
+        f"Edge type name has too many segments ({word_count}, max {_MAX_TYPE_WORD_COUNT}): "
         f"'{name[:50]}...'"
     )
 ```
@@ -82,13 +105,17 @@ if len(name) > _MAX_TYPE_NAME_LENGTH:
 
 **File**: `src/neocortex/extraction/schemas.py`
 
-Add field validators to `ProposedNodeType`, `ProposedEdgeType`, and `ExtractedEntity`:
+First, update the pydantic import at line 9 to include `field_validator`:
+```python
+from pydantic import BaseModel, Field, field_validator, model_validator
+```
+
+Then add field validators to `ProposedNodeType`, `ProposedEdgeType`, and `ExtractedEntity`.
+Use `field_validator` (not `max_length` in Field) to keep validation logic in one place:
 
 ```python
-from pydantic import field_validator
-
 class ProposedNodeType(BaseModel):
-    name: str = Field(description="PascalCase type name, e.g. 'Neurotransmitter'", max_length=60)
+    name: str = Field(description="PascalCase type name, e.g. 'Neurotransmitter'")
     description: str = ""
 
     @field_validator("name")
@@ -97,12 +124,12 @@ class ProposedNodeType(BaseModel):
         v = v.strip()
         if len(v) > 60:
             raise ValueError(f"Type name too long ({len(v)} chars)")
-        if not v[0].isupper():
+        if v and not v[0].isupper():
             raise ValueError(f"Type name must start with uppercase: '{v}'")
         return v
 ```
 
-Apply analogous validators to `ProposedEdgeType.name` and `ExtractedEntity.type_name`.
+Apply the same `validate_type_name` validator to `ProposedEdgeType.name` and `ExtractedEntity.type_name`.
 
 ### 6. Update existing tests for the stricter regex
 
@@ -121,14 +148,13 @@ uv run pytest tests/unit/test_normalization.py -v
 # Run all tests to check for regressions
 uv run pytest tests/ -v -x
 
-# Manual check: verify the 4 corrupted types would be rejected
+# Manual check: verify corrupted types are rejected
 python3 -c "
 from neocortex.normalization import normalize_node_type
 for name in [
-    'DatasetNoteTheSearchResultsShowedThatThe' + 'x' * 400,
-    'EvidencedocumentOceanography',
-    'FeatureMergesWithEntityObjectId167',
-    'OperationbrCreateOrUpdate' + 'x' * 300,
+    'DatasetNoteTheSearchResultsShowedThatThe' + 'x' * 400,  # length
+    'FeatureMergesWithEntityObjectId167',                      # word count (7 segments)
+    'OperationbrCreateOrUpdate' + 'x' * 300,                  # length
 ]:
     try:
         normalize_node_type(name)
@@ -138,19 +164,27 @@ for name in [
 "
 ```
 
-Expected: All 4 corrupted type names are rejected (ValueError raised).
+Expected: All 3 corrupted type names above are rejected (ValueError raised).
+
+**Note on `EvidencedocumentOceanography`**: This 29-char type starts with uppercase,
+has only 2 PascalCase segments, and passes all syntactic checks. It is a *semantic*
+quality issue (wrong domain concatenation) that cannot be reliably caught by regex or
+length heuristics without false positives on legitimate types. This is addressed by
+prompt engineering in the extraction pipeline (Stage 4 strengthens type quality guidance).
+The word-count heuristic catches the more egregious multi-word reasoning leaks.
 
 ---
 
 ## Commit
 
 ```
-fix(normalization): add max length and uppercase-start enforcement to type names
+fix(normalization): add length, word-count, and uppercase-start enforcement to type names
 
-Rejects LLM reasoning leaks (440+ char strings) and malformed types.
-Node types: ^[A-Z][a-zA-Z0-9]*$ with 60 char max.
-Pydantic validators on ProposedNodeType and ExtractedEntity catch
-corruption before it reaches the database.
+Rejects LLM reasoning leaks via three checks: 60 char max, 5 PascalCase
+segment max, and ^[A-Z] start requirement. Pydantic validators on
+ProposedNodeType and ExtractedEntity catch corruption before it reaches
+the database. Catches 3/4 corrupted types from Plan 18.5; the 4th
+(EvidencedocumentOceanography) is a semantic issue addressed by prompts.
 
-Fixes M6 (4 corrupted types) from Plan 18.5 E2E revalidation.
+Fixes M6 from Plan 18.5 E2E revalidation.
 ```

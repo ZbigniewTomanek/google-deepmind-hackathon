@@ -38,7 +38,8 @@ This stage is executed by Claude with MCP access, similar to Plan 18.5. It store
    importance: 0.7
    ```
 
-4. Wait for extraction (2-3 minutes), then verify:
+4. Wait for extraction to complete. Poll by calling `discover_ontology` on the target
+   graph every 30 seconds until new node types appear (or 5 minutes elapse). Then verify:
    - `discover_graphs` -- shared graphs should have non-zero node counts
    - Check `ncx_shared__technical_knowledge` specifically via `discover_ontology`
    - **Pass criteria**: At least 1 shared graph has nodes from this episode
@@ -53,7 +54,7 @@ This stage is executed by Claude with MCP access, similar to Plan 18.5. It store
    importance: 0.6
    ```
 
-6. Wait for extraction (2-3 minutes).
+6. Wait for extraction to complete (poll `discover_ontology` for new types, up to 5 min).
 
 7. Store a correction via `remember`:
    ```
@@ -64,7 +65,7 @@ This stage is executed by Claude with MCP access, similar to Plan 18.5. It store
    importance: 0.8
    ```
 
-8. Wait for extraction (2-3 minutes), then verify:
+8. Wait for extraction to complete (poll `discover_ontology` for new edge instances, up to 5 min). Then verify:
    - `discover_ontology` -- check for SUPERSEDES or CORRECTS edge types with instances
    - `inspect_node` on "Metaphone3" or similar -- check for temporal edges in neighborhood
    - **Pass criteria**: At least 1 SUPERSEDES or CORRECTS edge exists connecting the correction to the original
@@ -80,7 +81,7 @@ This stage is executed by Claude with MCP access, similar to Plan 18.5. It store
    importance: 0.5
    ```
 
-10. Wait for extraction (2-3 minutes), then verify:
+10. Wait for extraction to complete (poll `discover_ontology` for new types, up to 5 min). Then verify:
     - `discover_ontology` -- scan ALL node type names
     - Check every type against: starts with uppercase, <= 60 chars, no embedded IDs
     - **Pass criteria**: Zero corrupted type names
