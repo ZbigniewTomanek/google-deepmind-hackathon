@@ -900,6 +900,47 @@ class InMemoryRepository:
                 count += 1
         return count
 
+    # ── Type Introspection ──
+
+    async def get_type_examples(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        limit_per_type: int = 5,
+        max_types: int = 20,
+    ) -> dict[str, list[str]]:
+        del agent_id, target_schema
+        result: dict[str, list[str]] = {}
+        for nt in sorted(self._node_types.values(), key=lambda t: t.name):
+            nodes = sorted(
+                (n for n in self._nodes.values() if n.type_id == nt.id and not n.forgotten),
+                key=lambda n: n.importance,
+                reverse=True,
+            )
+            if nodes:
+                result[nt.name] = [n.name for n in nodes[:limit_per_type]]
+            if len(result) >= max_types:
+                break
+        return result
+
+    async def cleanup_empty_types(
+        self,
+        agent_id: str,
+        max_age_minutes: int = 5,
+        target_schema: str | None = None,
+    ) -> None:
+        del agent_id, target_schema
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(minutes=max_age_minutes)
+        to_delete = []
+        for name, nt in self._node_types.items():
+            has_nodes = any(n.type_id == nt.id for n in self._nodes.values())
+            if not has_nodes and nt.created_at > cutoff:
+                to_delete.append(name)
+        for name in to_delete:
+            del self._node_types[name]
+            logger.info("cleaned_empty_types", count=1, names=[name])
+
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         sigs = []
         for edge in self._edges.values():

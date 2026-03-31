@@ -293,3 +293,29 @@ class MemoryRepository(Protocol):
         been traversed recently. The force parameter bypasses probabilistic
         gating for deterministic testing.
         """
+
+    # ── Type Introspection ──
+
+    async def get_type_examples(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        limit_per_type: int = 5,
+        max_types: int = 20,
+    ) -> dict[str, list[str]]:
+        """Fetch sample node names grouped by type for context injection.
+
+        Returns {type_name: [node_name, ...]} for types that have active nodes.
+        """
+
+    async def cleanup_empty_types(
+        self,
+        agent_id: str,
+        max_age_minutes: int = 5,
+        target_schema: str | None = None,
+    ) -> None:
+        """Delete node types with zero nodes that were created recently.
+
+        Only deletes types created within ``max_age_minutes`` to avoid
+        removing types created by concurrent extractions.
+        """

@@ -48,15 +48,17 @@ _MERGE_SAFE_TYPE_GROUPS: list[frozenset[str]] = [
     # Software entities — LLM often oscillates between these
     # NOTE: Service, Application, Platform excluded — they are semantically
     # distinct enough that same-name entities may legitimately differ.
-    frozenset({"Tool", "Project", "Software", "SoftwareTool", "Framework", "Library"}),
+    frozenset({"Tool", "Project", "Software", "SoftwareTool", "Framework", "Library", "Technology"}),
     # People — role vs person type drift
-    frozenset({"Person", "PersonRole", "TeamMember", "Employee", "Researcher", "Engineer", "Scientist"}),
+    frozenset({"Person", "PersonRole", "TeamMember", "Employee", "Researcher", "Engineer", "Scientist", "Developer"}),
     # Organizations
     frozenset({"Organization", "Company", "Team", "Group", "Department"}),
     # Concepts / Topics
-    frozenset({"Concept", "Topic", "Subject", "Theme", "Idea"}),
-    # Technologies (specific)
-    frozenset({"Technology", "Protocol", "Standard", "Specification"}),
+    frozenset({"Concept", "Topic", "Subject", "Theme", "Idea", "Theory", "Principle"}),
+    # Methodologies / Approaches — LLM commonly confuses these
+    frozenset({"Methodology", "Method", "Approach", "Strategy", "Technique", "ProcessStage"}),
+    # Protocols / Standards (specific, not general technology)
+    frozenset({"Protocol", "Standard", "Specification"}),
     # Documents / Resources
     frozenset({"Document", "Resource", "Article", "Paper", "Report"}),
     # Events / Milestones
@@ -64,7 +66,9 @@ _MERGE_SAFE_TYPE_GROUPS: list[frozenset[str]] = [
     # is not the sprint. These have specific semantics worth preserving.
     frozenset({"Event", "Milestone"}),
     # Metrics / Measurements
-    frozenset({"Metric", "Measurement", "Score", "KPI", "Statistic"}),
+    frozenset({"Metric", "Measurement", "Score", "KPI", "Statistic", "Indicator"}),
+    # Data entities — LLM oscillates between Dataset/DataStore/DataSource
+    frozenset({"Dataset", "Data", "DataSource", "DataStore"}),
 ]
 
 # Pre-compute a lookup: type_name_lower -> group_index for O(1) group check
@@ -1346,6 +1350,56 @@ class GraphServiceAdapter:
                 importance_floor,
             )
         return [int(row["id"]) for row in rows]
+
+    # ── Type Introspection ──
+
+    async def get_type_examples(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        limit_per_type: int = 5,
+        max_types: int = 20,
+    ) -> dict[str, list[str]]:
+        """Fetch sample node names grouped by type for context injection."""
+        if self._pool is None or self._router is None:
+            return {}
+        schema = target_schema or await self._resolve_schema(agent_id, None)
+        async with schema_scoped_connection(self._pool, schema) as conn:
+            rows = await conn.fetch(
+                "SELECT nt.name as type_name, "
+                "  (SELECT array_agg(sub.name ORDER BY sub.importance DESC) "
+                "   FROM (SELECT name, importance FROM node WHERE type_id = nt.id AND NOT forgotten LIMIT $1) sub"
+                "  ) as examples "
+                "FROM node_type nt "
+                "WHERE EXISTS (SELECT 1 FROM node WHERE type_id = nt.id AND NOT forgotten) "
+                "LIMIT $2",
+                limit_per_type,
+                max_types,
+            )
+            return {r["type_name"]: r["examples"] for r in rows if r["examples"]}
+
+    async def cleanup_empty_types(
+        self,
+        agent_id: str,
+        max_age_minutes: int = 5,
+        target_schema: str | None = None,
+    ) -> None:
+        """Delete node types with zero nodes that were created recently."""
+        if self._pool is None or self._router is None:
+            return
+        schema = target_schema or await self._resolve_schema(agent_id, None)
+        async with schema_scoped_connection(self._pool, schema) as conn:
+            deleted = await conn.fetch(
+                "DELETE FROM node_type WHERE id NOT IN (SELECT DISTINCT type_id FROM node) "
+                "AND created_at > now() - make_interval(mins => $1) RETURNING name",
+                max_age_minutes,
+            )
+            if deleted:
+                logger.info(
+                    "cleaned_empty_types",
+                    count=len(deleted),
+                    names=[r["name"] for r in deleted],
+                )
 
     # ── Partial Curation Cleanup ──
 

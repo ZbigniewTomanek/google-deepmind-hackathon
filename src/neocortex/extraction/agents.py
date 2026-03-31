@@ -68,6 +68,7 @@ class OntologyAgentDeps:
     node_type_descriptions: dict[str, str] | None = None  # {type_name: description}
     edge_type_descriptions: dict[str, str] | None = None
     domain_hint: str | None = None  # e.g. "Technical Knowledge: Programming languages, ..."
+    type_examples: dict[str, list[str]] | None = None  # {type_name: [entity_names]}
 
 
 def build_ontology_agent(
@@ -83,7 +84,9 @@ def build_ontology_agent(
             "You are an ontology engineer. Given a text passage, propose new node types "
             "and edge types that would be needed to represent the knowledge in the text.",
             "Propose only reusable, general concepts — not instance-level names.",
-            "Extend conservatively: prefer existing types when possible.",
+            "REUSE existing types aggressively. Only propose a new type if NO existing type "
+            "covers the concept. When in doubt, reuse the closest existing type rather than "
+            "creating a new one. Proposing unnecessary new types fragments the graph.",
             "Node type names: PascalCase (e.g. Drug, Neurotransmitter, Disease).",
             "Edge type names: SCREAMING_SNAKE (e.g. TREATS, INHIBITS, CAUSES).",
         ),
@@ -121,6 +124,15 @@ def build_ontology_agent(
                 "",
                 "Existing edge types:",
                 existing_et,
+            ]
+        )
+        if ctx.deps.type_examples:
+            parts.extend(["", "Existing types with example entities:"])
+            for type_name, examples in ctx.deps.type_examples.items():
+                parts.append(f"- {type_name}: {', '.join(examples)}")
+            parts.append("If the text mentions any of these entities, reuse their existing type.")
+        parts.extend(
+            [
                 "",
                 "Rules:",
                 "- Propose additions only — do not remove existing types.",
@@ -144,6 +156,7 @@ class ExtractorAgentDeps:
     node_type_descriptions: dict[str, str] | None = None
     edge_type_descriptions: dict[str, str] | None = None
     domain_hint: str | None = None
+    type_examples: dict[str, list[str]] | None = None  # {type_name: [entity_names]}
 
 
 def build_extractor_agent(
@@ -199,6 +212,16 @@ def build_extractor_agent(
                 "",
                 "Available edge types:",
                 et_list,
+            ]
+        )
+        if ctx.deps.type_examples:
+            parts.extend(["", "Known entities and their assigned types:"])
+            for type_name, examples in ctx.deps.type_examples.items():
+                for entity_name in examples[:3]:
+                    parts.append(f'- "{entity_name}" \u2192 {type_name}')
+            parts.append("When extracting these entities, use their assigned types.")
+        parts.extend(
+            [
                 "",
                 "Rules:",
                 "- Extract only ontology-aligned entities and relations.",

@@ -117,7 +117,7 @@ Stages within each phase are sequential. Phases A, B, and C are independent of e
 | 4 | [Domain Classifier Fix](stages/04-domain-classifier-fix.md) | DONE | Empty-domains guard in router + classifier, keyword fallback in AgentDomainClassifier, seed_defaults in route_episode task, classification logging, 4 new tests | `fix(domains): fix empty domain list bug, add keyword fallback` |
 | 5 | [Type Name Validation](stages/05-type-name-validation.md) | DONE | Invalid char stripping + regex validation in normalize_node_type/normalize_edge_type, None returns handled in adapter/pipeline/agents, 10 new tests | `fix(normalization): reject malformed type names` |
 | 6 | [Fact Supersession](stages/06-fact-supersession.md) | DONE | Migration 010, SUPERSEDES/CORRECTS edge types seeded, librarian temporal guidance, supersession scoring adjustment in adapter, 6 new tests | `feat(temporal): add fact supersession edges and scoring adjustments` |
-| 7 | [Type Consistency](stages/07-type-consistency.md) | PENDING | | |
+| 7 | [Type Consistency](stages/07-type-consistency.md) | DONE | Ontology prompt strengthened for reuse, type_examples context injection for ontology+extractor, expanded merge-safe groups (Methodology, Data, Technology moved), get_type_examples+cleanup_empty_types in protocol/adapter/mock, 11 new tests | `feat(extraction): improve cross-extraction type consistency and expand merge-safe groups` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

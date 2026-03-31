@@ -94,6 +94,9 @@ async def run_extraction(
         node_type_descs = {t.name: (t.description or "") for t in node_types}
         edge_type_descs = {t.name: (t.description or "") for t in edge_types}
 
+        # Fetch entity→type examples for context injection
+        type_examples = await repo.get_type_examples(agent_id, target_schema=target_schema)
+
         # 2. Ontology stage
         ontology_result = await ontology_agent.run(
             f"Analyze this text and propose ontology extensions:\n\n{text}",
@@ -104,6 +107,7 @@ async def run_extraction(
                 node_type_descriptions=node_type_descs,
                 edge_type_descriptions=edge_type_descs,
                 domain_hint=domain_hint,
+                type_examples=type_examples,
             ),
             model_settings=ont_cfg.model_settings,
         )
@@ -138,6 +142,7 @@ async def run_extraction(
                 node_type_descriptions=node_type_descs,
                 edge_type_descriptions=edge_type_descs,
                 domain_hint=domain_hint,
+                type_examples=type_examples,
             ),
             model_settings=ext_cfg.model_settings,
         )
@@ -193,6 +198,9 @@ async def run_extraction(
                 edges_removed=summary.edges_removed,
                 summary=summary.summary,
             )
+
+            # Clean up empty types created during this extraction
+            await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
         else:
             # Fallback: non-tool librarian → _persist_payload
             # Inject bounded name list for dedup context
@@ -246,6 +254,9 @@ async def run_extraction(
                 entities=len(payload.entities),
                 relations=len(payload.relations),
             )
+
+            # Clean up empty types created during this extraction
+            await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
 
 
 async def _persist_payload(

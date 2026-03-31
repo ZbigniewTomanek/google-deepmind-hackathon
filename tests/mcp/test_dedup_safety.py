@@ -111,9 +111,13 @@ class TestMergeSafeTypeGroups:
     def test_concept_topic_merged(self):
         assert _types_are_merge_safe("Concept", "Topic") is True
 
-    # Technology group
-    def test_technology_protocol_merged(self):
-        assert _types_are_merge_safe("Technology", "Protocol") is True
+    # Technology moved to software group — Tool/Technology are commonly confused by LLMs
+    def test_technology_tool_merged(self):
+        assert _types_are_merge_safe("Technology", "Tool") is True
+
+    # Protocol group (separate from Technology now)
+    def test_protocol_standard_merged(self):
+        assert _types_are_merge_safe("Protocol", "Standard") is True
 
     # Document group
     def test_document_article_merged(self):
@@ -452,6 +456,50 @@ async def test_edge_type_drift_emits_log(mock_repo):
 
 
 # ── Prefix heuristic tests (no arbitrary substring false positives) ──
+
+
+class TestTypesAreMergeSafeNewGroups:
+    """Tests for new merge-safe groups added in Plan 18, Stage 7."""
+
+    def test_merge_safe_tool_technology(self):
+        """Tool and Technology should be merge-safe (same software group)."""
+        assert _types_are_merge_safe("Tool", "Technology") is True
+
+    def test_merge_safe_methodology_technique(self):
+        """Methodology and Technique should be merge-safe."""
+        assert _types_are_merge_safe("Methodology", "Technique") is True
+
+    def test_merge_safe_methodology_processstage(self):
+        """Methodology and ProcessStage should be merge-safe."""
+        assert _types_are_merge_safe("Methodology", "ProcessStage") is True
+
+    def test_merge_safe_dataset_datastore(self):
+        """Dataset and DataStore should be merge-safe."""
+        assert _types_are_merge_safe("Dataset", "DataStore") is True
+
+    def test_merge_safe_dataset_datasource(self):
+        """Dataset and DataSource should be merge-safe."""
+        assert _types_are_merge_safe("Dataset", "DataSource") is True
+
+    def test_not_merge_safe_tool_methodology(self):
+        """Tool and Methodology should NOT be merge-safe (different groups)."""
+        assert _types_are_merge_safe("Tool", "Methodology") is False
+
+    def test_not_merge_safe_tool_person(self):
+        """Tool and Person should NOT be merge-safe."""
+        assert _types_are_merge_safe("Tool", "Person") is False
+
+    def test_merge_safe_person_developer(self):
+        """Person and Developer should be merge-safe."""
+        assert _types_are_merge_safe("Person", "Developer") is True
+
+    def test_merge_safe_concept_theory(self):
+        """Concept and Theory should be merge-safe."""
+        assert _types_are_merge_safe("Concept", "Theory") is True
+
+    def test_merge_safe_metric_indicator(self):
+        """Metric and Indicator should be merge-safe."""
+        assert _types_are_merge_safe("Metric", "Indicator") is True
 
 
 class TestTypesAreMergeSafePrefixOnly:
