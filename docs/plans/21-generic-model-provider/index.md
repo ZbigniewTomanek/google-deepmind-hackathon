@@ -47,7 +47,7 @@ and it just works.
 |--------|----------|--------|-----------|
 | GoogleModel imports in agent code | 3 files | 0 files | No provider-specific imports |
 | Provider extras in pyproject.toml | google only | google + openai + anthropic | Multi-provider support |
-| Model string format in settings | bare name | `provider:model` | Self-describing, provider-agnostic |
+| Model string format in Pydantic AI settings | bare name | `provider:model` | Self-describing, provider-agnostic |
 | Existing tests | pass | pass | No regressions |
 
 ---
@@ -66,7 +66,7 @@ and it just works.
 - `src/pydantic_agents_playground/agents.py` -- remove GoogleModel import, pass string directly
 
 ### Services
-- `src/neocortex/services.py` -- pass model string (not just name) to classifier
+- ~~`src/neocortex/services.py`~~ -- no change needed; already passes `settings.domain_classifier_model` string through to `AgentDomainClassifier`
 
 ---
 
