@@ -111,6 +111,10 @@ async def route_episode(
         logger.debug("route_episode_skipped_no_router")
         return
 
+    # Ensure seed domains are available in the job worker context.
+    # seed_defaults() is idempotent (ON CONFLICT DO NOTHING).
+    await domain_router.ensure_domains_seeded()
+
     results = await domain_router.route_and_extract(
         agent_id=agent_id,
         episode_id=episode_id,

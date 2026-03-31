@@ -49,6 +49,10 @@ class DomainRouter:
     async def list_domains(self) -> list[SemanticDomain]:
         return await self._domain_service.list_domains()
 
+    async def ensure_domains_seeded(self) -> None:
+        """Ensure seed domains are available. Idempotent."""
+        await self._domain_service.seed_defaults()
+
     async def route_and_extract(
         self,
         agent_id: str,
@@ -57,6 +61,15 @@ class DomainRouter:
     ) -> list[RoutingResult]:
         """Classify episode text and route to matching shared domain schemas."""
         domains = await self._domain_service.list_domains()
+
+        if not domains:
+            logger.warning(
+                "domain_routing_skipped",
+                reason="no_domains_available",
+                agent_id=agent_id,
+                episode_id=episode_id,
+            )
+            return []
 
         try:
             classification = await self._classifier.classify(episode_text, domains)
@@ -67,6 +80,19 @@ class DomainRouter:
                 episode_id=episode_id,
             )
             return []
+
+        logger.bind(action_log=True).info(
+            "domain_classification_result",
+            agent_id=agent_id,
+            episode_id=episode_id,
+            matched_count=len(classification.matched_domains),
+            matched_slugs=[m.domain_slug for m in classification.matched_domains],
+            method=(
+                "llm"
+                if classification.matched_domains and classification.matched_domains[0].reasoning != "keyword_fallback"
+                else "keyword_fallback"
+            ),
+        )
 
         # Filter matches below threshold
         matches = [m for m in classification.matched_domains if m.confidence >= self._classification_threshold]
