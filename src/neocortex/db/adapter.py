@@ -1368,7 +1368,9 @@ class GraphServiceAdapter:
             rows = await conn.fetch(
                 "SELECT nt.name as type_name, "
                 "  (SELECT array_agg(sub.name ORDER BY sub.importance DESC) "
-                "   FROM (SELECT name, importance FROM node WHERE type_id = nt.id AND NOT forgotten LIMIT $1) sub"
+                "   FROM (SELECT name, importance FROM node "
+                "         WHERE type_id = nt.id AND NOT forgotten "
+                "         ORDER BY importance DESC LIMIT $1) sub"
                 "  ) as examples "
                 "FROM node_type nt "
                 "WHERE EXISTS (SELECT 1 FROM node WHERE type_id = nt.id AND NOT forgotten) "

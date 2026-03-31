@@ -93,12 +93,12 @@ def normalize_node_type(name: str) -> str:
     if not name:
         raise ValueError("Node type name is empty after stripping invalid characters")
 
-    # Check if it has separators (underscores or spaces)
-    has_separators = "_" in name or " " in name
+    # Check if it has separators (underscores, spaces, or hyphens)
+    has_separators = "_" in name or " " in name or "-" in name
 
     if has_separators:
         # Split on separators and capitalize each part
-        parts = re.split(r"[_ ]+", name)
+        parts = re.split(r"[_ \-]+", name)
         result = "".join(part.capitalize() for part in parts if part)
     elif name == name.upper() and len(name) > 1:
         # ALL_CAPS single word with no separators → preserve as-is

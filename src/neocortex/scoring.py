@@ -193,7 +193,7 @@ def mmr_rerank(
         Reranked list in MMR order.
     """
     if len(results) <= 1 or lambda_param >= 1.0:
-        return results
+        return sorted(results, key=lambda r: r[score_key], reverse=True)
 
     # Filter to items that have embeddings (can't compute similarity without them)
     with_emb = [r for r in results if r.get(embedding_key) is not None]

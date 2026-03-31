@@ -335,7 +335,10 @@ class InMemoryRepository:
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
     ) -> NodeType:
         del target_schema
-        name = normalize_node_type(name)
+        try:
+            name = normalize_node_type(name)
+        except ValueError:
+            return None  # ty: ignore[invalid-return-type]  # protocol is NodeType | None
         if name in self._node_types:
             return self._node_types[name]
         now = datetime.now(UTC)
@@ -348,7 +351,10 @@ class InMemoryRepository:
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
     ) -> EdgeType:
         del target_schema
-        name = normalize_edge_type(name)
+        try:
+            name = normalize_edge_type(name)
+        except ValueError:
+            return None  # ty: ignore[invalid-return-type]  # protocol is EdgeType | None
         if name in self._edge_types:
             return self._edge_types[name]
         now = datetime.now(UTC)
