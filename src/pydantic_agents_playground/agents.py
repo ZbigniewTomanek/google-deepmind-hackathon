@@ -4,7 +4,6 @@ from typing import Any, cast
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
 from pydantic_agents_playground.schemas import (
@@ -22,16 +21,15 @@ from pydantic_agents_playground.schemas import (
     SeedMessage,
 )
 
-MODEL_NAME = "gemini-3-flash-preview"
-MODEL_PROVIDER = "google-gla"
+MODEL_NAME = "google-gla:gemini-3-flash-preview"
 
 
-def build_model(use_test_model: bool):
+def build_model(use_test_model: bool) -> str | TestModel:
     if use_test_model:
         logger.info("Using TestModel for agent execution")
         return TestModel()
-    logger.info("Using GoogleModel model_name={} provider={}", MODEL_NAME, MODEL_PROVIDER)
-    return GoogleModel(MODEL_NAME, provider=MODEL_PROVIDER)
+    logger.info("Using model={}", MODEL_NAME)
+    return MODEL_NAME
 
 
 def build_ontology_agent(use_test_model: bool = False) -> Agent[OntologyAgentDeps, OntologyProposal]:

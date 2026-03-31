@@ -148,6 +148,7 @@ async def test_upsert_edge_creates_new(repo: InMemoryRepository) -> None:
     n1 = await repo.upsert_node(AGENT, "Aspirin", nt.id)
     n2 = await repo.upsert_node(AGENT, "Headache", nt.id)
     edge = await repo.upsert_edge(AGENT, n1.id, n2.id, et.id, weight=0.9)
+    assert edge is not None
     assert edge.source_id == n1.id
     assert edge.target_id == n2.id
     assert edge.weight == 0.9
@@ -160,7 +161,9 @@ async def test_upsert_edge_updates_existing(repo: InMemoryRepository) -> None:
     n1 = await repo.upsert_node(AGENT, "Aspirin", nt.id)
     n2 = await repo.upsert_node(AGENT, "Headache", nt.id)
     e1 = await repo.upsert_edge(AGENT, n1.id, n2.id, et.id, weight=0.5, properties={"evidence": "study1"})
+    assert e1 is not None
     e2 = await repo.upsert_edge(AGENT, n1.id, n2.id, et.id, weight=0.9, properties={"confidence": 0.8})
+    assert e2 is not None
     assert e1.id == e2.id
     assert e2.weight == 0.9
     assert e2.properties["evidence"] == "study1"

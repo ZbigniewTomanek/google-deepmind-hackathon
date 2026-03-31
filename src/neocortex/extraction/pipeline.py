@@ -41,6 +41,7 @@ async def run_extraction(
     librarian_config: AgentInferenceConfig | None = None,
     domain_hint: str | None = None,
     librarian_use_tools: bool = True,
+    tool_calls_limit: int = 150,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -150,18 +151,8 @@ async def run_extraction(
         # 5. Librarian stage
         if librarian_use_tools:
             # Tool-driven curation: librarian persists directly via tools
-            # Clean up any partial state from a previous failed attempt
-            cleaned = await repo.cleanup_partial_curation(
-                agent_id,
-                episode_id,
-                target_schema=target_schema,
-            )
-            if cleaned > 0:
-                logger.info(
-                    "cleanup_partial_curation",
-                    episode_id=episode_id,
-                    items_deleted=cleaned,
-                )
+            # No cleanup_partial_curation needed: create_or_update_node uses upsert
+            # semantics, so re-running the librarian is naturally idempotent.
 
             librarian_result = await librarian_agent.run(
                 "Integrate the extracted entities and relations into the knowledge graph.",
@@ -178,7 +169,7 @@ async def run_extraction(
                     episode_id=episode_id,
                 ),
                 model_settings=lib_cfg.model_settings,
-                usage_limits=UsageLimits(tool_calls_limit=50),
+                usage_limits=UsageLimits(tool_calls_limit=tool_calls_limit),
             )
 
             # Mark episode as consolidated
@@ -226,7 +217,7 @@ async def run_extraction(
                     known_node_names=known_names,
                 ),
                 model_settings=lib_cfg.model_settings,
-                usage_limits=UsageLimits(tool_calls_limit=50),
+                usage_limits=UsageLimits(tool_calls_limit=tool_calls_limit),
             )
 
             # Build fallback map from extractor descriptions

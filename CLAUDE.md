@@ -65,8 +65,9 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex  # Run MCP server with mock DB
 NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion  # Run ingestion API with mock DB
 docker compose up -d postgres                      # Start PostgreSQL
 uv run python -m neocortex                         # Run MCP server with real DB
-./scripts/launch.sh                                # Start all services (PG + MCP + ingestion)
-./scripts/launch.sh --stop                         # Stop background services
+./scripts/manage.sh start                          # Start all services (PG + MCP + ingestion)
+./scripts/manage.sh stop                           # Stop app services (PG keeps running)
+./scripts/manage.sh stop --all                     # Stop everything including PostgreSQL
 ```
 
 ## Architecture Rules
@@ -126,7 +127,7 @@ Only messages with `action_log=True` appear in `agent_actions.log`. Use this for
 
 ## Scripts
 
-- `scripts/launch.sh` — One-command launcher: kills stale processes, starts PostgreSQL + MCP + ingestion in background, waits for health, prints connection info. Use `--stop` to tear down.
+- `scripts/manage.sh` — Unified service & snapshot manager: `start [--fresh]`, `stop [--all]`, `status`, `snapshot save/list/load/delete`. Persist-by-default; `--fresh` wipes and recreates.
 - `scripts/run_e2e.sh` — E2E test harness: starts services, runs a test script, tears down on exit.
 - `.claude/skills/neocortex/scripts/ingest.sh` — Curl wrapper for all ingestion and admin endpoints. Run with `--help` for usage.
 

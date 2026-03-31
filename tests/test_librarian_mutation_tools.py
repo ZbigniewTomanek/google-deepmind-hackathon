@@ -148,6 +148,7 @@ async def test_delete_edge_removes_edge(repo: InMemoryRepository) -> None:
     alice = await repo.upsert_node(AGENT, "Alice", nt.id)
     bob = await repo.upsert_node(AGENT, "Bob", nt.id)
     edge = await repo.upsert_edge(AGENT, alice.id, bob.id, et.id)
+    assert edge is not None
 
     result = await repo.delete_edge(AGENT, edge.id)
     assert result is True
@@ -309,8 +310,8 @@ async def test_pipeline_fallback_mode_calls_persist_payload(repo: InMemoryReposi
 
 
 @pytest.mark.asyncio
-async def test_pipeline_calls_cleanup_before_curation(repo: InMemoryRepository) -> None:
-    """Pipeline calls cleanup_partial_curation before starting tool-driven curation."""
+async def test_pipeline_skips_cleanup_before_curation(repo: InMemoryRepository) -> None:
+    """Pipeline does NOT call cleanup_partial_curation — upsert semantics make it unnecessary."""
     from unittest.mock import AsyncMock
 
     from neocortex.extraction.pipeline import run_extraction
@@ -331,7 +332,7 @@ async def test_pipeline_calls_cleanup_before_curation(repo: InMemoryRepository) 
         librarian_use_tools=True,
     )
 
-    cleanup_spy.assert_called_once_with(AGENT, eid, target_schema=None)
+    cleanup_spy.assert_not_called()
 
 
 @pytest.mark.asyncio

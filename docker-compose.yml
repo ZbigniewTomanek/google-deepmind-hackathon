@@ -1,7 +1,7 @@
 x-common-env: &common-env
   NEOCORTEX_MOCK_DB: "false"
   NEOCORTEX_AUTH_MODE: "dev_token"
-  NEOCORTEX_DEV_TOKENS_FILE: "/app/dev_tokens.json"
+  NEOCORTEX_DEV_TOKENS_FILE: "/app/${DEV_TOKENS_FILE:-dev_tokens.json}"
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_USER: neocortex
@@ -39,6 +39,7 @@ services:
       NEOCORTEX_SERVER_HOST: "0.0.0.0"
     volumes:
       - ./dev_tokens.json:/app/dev_tokens.json:ro
+      - ./dev_tokens_test.json:/app/dev_tokens_test.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +54,7 @@ services:
       <<: *common-env
     volumes:
       - ./dev_tokens.json:/app/dev_tokens.json:ro
+      - ./dev_tokens_test.json:/app/dev_tokens_test.json:ro
     depends_on:
       postgres:
         condition: service_healthy

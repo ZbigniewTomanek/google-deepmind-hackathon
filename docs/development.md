@@ -80,13 +80,13 @@ Example usage:
 ```bash
 # Upload audio
 curl -X POST localhost:8001/ingest/audio \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -F "file=@recording.wav;type=audio/wav" \
   -F "metadata={\"source\": \"meeting\"}"
 
 # Upload video
 curl -X POST localhost:8001/ingest/video \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -F "file=@clip.mp4;type=video/mp4" \
   -F "target_graph=ncx_shared__media"
 ```
@@ -135,7 +135,7 @@ The TUI connects to a running MCP server via streamable-HTTP transport. Start th
 
 ```bash
 # Connect to running MCP server
-uv run python -m neocortex.tui --url http://localhost:8000 --token dev-token-neocortex
+uv run python -m neocortex.tui --url http://localhost:8000 --token tui-dev
 ```
 
 Key bindings: `r` = remember, `q` = recall, `d` = discover, `Ctrl+Q` = quit.
@@ -187,7 +187,7 @@ All configuration via environment variables (Pydantic BaseSettings):
 | `NEOCORTEX_AUTH_MODE` | `none` | Auth mode: `none`, `dev_token`, `google_oauth` |
 | `NEOCORTEX_MOCK_DB` | `false` | Use in-memory mock instead of PostgreSQL |
 | `NEOCORTEX_DEV_TOKENS_FILE` | `` | Path to JSON file mapping tokens → agent IDs |
-| `NEOCORTEX_DEV_TOKEN` | `dev-token-neocortex` | Single dev token (legacy fallback) |
+| `NEOCORTEX_DEV_TOKEN` | `dev-token-neocortex` | Single dev token (deprecated fallback) |
 
 ### Embeddings & Hybrid Recall (`mcp_settings.py`)
 
@@ -227,7 +227,7 @@ All configuration via environment variables (Pydantic BaseSettings):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NEOCORTEX_BOOTSTRAP_ADMIN_ID` | `admin` | Agent ID seeded as admin on every startup |
-| `NEOCORTEX_ADMIN_TOKEN` | `admin-token-neocortex` | Bearer token for bootstrap admin (dev mode) |
+| `NEOCORTEX_ADMIN_TOKEN` | `admin-token` | Bearer token for bootstrap admin (dev mode) |
 
 ### Dev Tokens
 
@@ -235,12 +235,11 @@ All configuration via environment variables (Pydantic BaseSettings):
 
 ```json
 {
-  "admin-token-neocortex": "admin",
-  "alice-token": "alice",
-  "bob-token": "bob",
-  "eve-token": "eve",
-  "shared-token": "shared",
-  "dev-token-neocortex": "dev-user"
+  "admin-token": "admin",
+  "claude-code-work": "cc-work",
+  "claude-code-private": "cc-private",
+  "claude-code-oss": "cc-oss",
+  "tui-dev": "dev-user"
 }
 ```
 

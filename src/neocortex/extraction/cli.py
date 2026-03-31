@@ -3,7 +3,7 @@
 Usage:
     uv run python -m neocortex.extraction.cli --ingest-corpus
     uv run python -m neocortex.extraction.cli --ingest-corpus --base-url http://localhost:8001
-    uv run python -m neocortex.extraction.cli --ingest-corpus --token alice-token
+    uv run python -m neocortex.extraction.cli --ingest-corpus --token claude-code-work
 """
 
 from __future__ import annotations

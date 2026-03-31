@@ -28,6 +28,7 @@ async def _create_edge(repo: InMemoryRepository, weight: float = 1.0) -> int:
     n1 = await repo.upsert_node(AGENT, "NodeA", nt.id)
     n2 = await repo.upsert_node(AGENT, "NodeB", nt.id)
     edge = await repo.upsert_edge(AGENT, n1.id, n2.id, et.id, weight=weight)
+    assert edge is not None
     return edge.id
 
 
@@ -40,6 +41,7 @@ async def _create_multiple_edges(repo: InMemoryRepository, count: int, weight: f
         n1 = await repo.upsert_node(AGENT, f"Src{i}", nt.id)
         n2 = await repo.upsert_node(AGENT, f"Tgt{i}", nt.id)
         edge = await repo.upsert_edge(AGENT, n1.id, n2.id, et.id, weight=weight)
+        assert edge is not None
         edge_ids.append(edge.id)
     return edge_ids
 

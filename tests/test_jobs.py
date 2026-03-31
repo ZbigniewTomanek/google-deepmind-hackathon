@@ -131,6 +131,7 @@ async def test_extract_episode_calls_run_extraction():
     mock_settings.librarian_model = "test-model"
     mock_settings.librarian_thinking_effort = "low"
     mock_settings.librarian_use_tools = True
+    mock_settings.extraction_tool_calls_limit = 150
 
     fake_ctx = {
         "repo": mock_repo,
@@ -183,6 +184,7 @@ async def test_extract_episode_calls_run_extraction():
                 thinking_effort="low",
             ),
             librarian_use_tools=True,
+            tool_calls_limit=150,
             domain_hint=None,
         )
     finally:
@@ -230,8 +232,9 @@ def test_extraction_settings_defaults():
     s = MCPSettings()
     assert s.extraction_enabled is True
     for prefix in ("ontology", "extractor", "librarian"):
-        assert getattr(s, f"{prefix}_model") == "gemini-3-flash-preview"
+        assert getattr(s, f"{prefix}_model") == "google-gla:gemini-3-flash-preview"
         assert getattr(s, f"{prefix}_thinking_effort") == "low"
+    assert s.domain_classifier_model == "google-gla:gemini-3-flash-preview"
 
 
 # ── ServiceContext includes job_app ──

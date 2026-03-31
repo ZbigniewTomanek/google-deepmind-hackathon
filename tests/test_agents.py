@@ -5,7 +5,6 @@ from typing import Any, cast
 
 from pydantic_agents_playground.agents import (
     MODEL_NAME,
-    MODEL_PROVIDER,
     build_extractor_agent,
     build_librarian_agent,
     build_model,
@@ -34,12 +33,11 @@ def test_build_model_uses_test_model_when_requested() -> None:
     assert type(model).__name__ == "TestModel"
 
 
-def test_build_model_uses_gemini_model_by_default() -> None:
+def test_build_model_uses_model_string_by_default() -> None:
     model = build_model(use_test_model=False)
 
-    assert type(model).__name__ == "GoogleModel"
-    assert model.model_name == MODEL_NAME
-    assert model.system == MODEL_PROVIDER
+    assert isinstance(model, str)
+    assert model == MODEL_NAME
 
 
 def test_ontology_agent_has_expected_configuration_and_instructions() -> None:

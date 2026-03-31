@@ -2,7 +2,6 @@ from uuid import uuid4
 
 import pytest
 
-from neocortex.db.roles import oauth_sub_to_pg_role
 from neocortex.db.scoped import _validate_schema_name, graph_scoped_connection, schema_scoped_connection
 from neocortex.schema_manager import SchemaManager
 
@@ -47,7 +46,8 @@ async def test_schema_scoped_connection_uses_requested_schema(pg_service) -> Non
 
 
 @pytest.mark.asyncio
-async def test_graph_scoped_connection_in_shared_schema_sets_role(pg_service) -> None:
+async def test_graph_scoped_connection_in_shared_schema_keeps_base_role(pg_service) -> None:
+    """Shared graphs no longer use RLS, so the connection keeps the pool owner role."""
     manager = SchemaManager(pg_service)
     suffix = uuid4().hex[:8]
     schema_name = await manager.create_graph(agent_id="shared", purpose=f"knowledge_{suffix}", is_shared=True)
@@ -62,8 +62,8 @@ async def test_graph_scoped_connection_in_shared_schema_sets_role(pg_service) ->
             current_role = await conn.fetchval("SELECT current_role")
 
         assert search_path == f"{schema_name}, public"
-        assert current_role == oauth_sub_to_pg_role(agent_id)
-        assert current_role != baseline_role
+        # No SET LOCAL ROLE — shared graphs keep the pool owner role
+        assert current_role == baseline_role
     finally:
         await manager.drop_graph(schema_name)
 

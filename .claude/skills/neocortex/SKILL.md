@@ -21,7 +21,10 @@ Operational guide for working with and debugging the NeoCortex agent memory syst
 
 ```bash
 # Start everything (PG + MCP :8000 + ingestion :8001)
-./scripts/launch.sh
+./scripts/manage.sh start
+
+# Start fresh (wipe existing data)
+./scripts/manage.sh start --fresh
 
 # Mock mode (no Docker)
 NEOCORTEX_MOCK_DB=true uv run python -m neocortex
@@ -30,8 +33,11 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion
 # Run tests
 uv run pytest tests/ -v
 
-# Stop services
-./scripts/launch.sh --stop
+# Stop app services (PG keeps running)
+./scripts/manage.sh stop
+
+# Stop everything including PostgreSQL
+./scripts/manage.sh stop --all
 ```
 
 Connect to the database:
@@ -68,13 +74,13 @@ $INGEST audio ./recording.wav
 $INGEST video ./demo.mp4
 
 # Shared graph workflow
-$INGEST setup-shared team_knowledge alice
-$INGEST --token alice-token --target ncx_shared__team_knowledge text "Shared data"
+$INGEST setup-shared team_knowledge cc-work
+$INGEST --token claude-code-work --target ncx_shared__team_knowledge text "Shared data"
 
 # Admin operations
 $INGEST list-graphs
 $INGEST list-permissions
-$INGEST grant bob ncx_shared__team_knowledge r
+$INGEST grant cc-private ncx_shared__team_knowledge r
 
 # Run with --help for full options
 ```

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,7 +15,7 @@ class Settings(BaseSettings):
 
     # NeoCortex MCP server (the system under test)
     neocortex_mcp_url: str = "http://localhost:8000"
-    neocortex_auth_token: str = "dev-token-neocortex"
+    neocortex_auth_token: str = "claude-code-work"
 
     # LLM provider
     zai_api_key: str = ""

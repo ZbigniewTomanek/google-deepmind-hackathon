@@ -82,6 +82,7 @@ async def extract_episode(
             thinking_effort=settings.librarian_thinking_effort,
         ),
         librarian_use_tools=settings.librarian_use_tools,
+        tool_calls_limit=settings.extraction_tool_calls_limit,
         domain_hint=domain_hint,
     )
     logger.info(

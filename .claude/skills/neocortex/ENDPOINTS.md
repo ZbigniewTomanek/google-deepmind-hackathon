@@ -50,7 +50,7 @@ Authorization: Bearer <token>
 ```bash
 curl -X POST localhost:8001/ingest/text \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -d '{"text": "Meeting notes from March standup"}'
 ```
 
@@ -72,7 +72,7 @@ Multipart form upload. Accepted types: `text/plain`, `application/json`, `text/m
 
 ```bash
 curl -X POST localhost:8001/ingest/document \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -F "file=@notes.md;type=text/markdown" \
   -F 'metadata={"source": "weekly-notes"}'
 ```
@@ -104,7 +104,7 @@ Each event is stored as a separate episode. Supports partial failure — if some
 ```bash
 curl -X POST localhost:8001/ingest/events \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -d '{"events": [{"type": "log", "msg": "deploy succeeded"}]}'
 ```
 
@@ -123,7 +123,7 @@ Audio is compressed to 64kbps mono opus in .ogg container. A Gemini multimodal m
 
 ```bash
 curl -X POST localhost:8001/ingest/audio \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -F "file=@recording.wav;type=audio/wav" \
   -F 'metadata={"speaker": "alice", "language": "en"}'
 ```
@@ -145,7 +145,7 @@ Video is compressed to 480p, CRF 30, h264 with 64kbps mono audio in .mp4 contain
 
 ```bash
 curl -X POST localhost:8001/ingest/video \
-  -H "Authorization: Bearer dev-token-neocortex" \
+  -H "Authorization: Bearer claude-code-work" \
   -F "file=@demo.mp4;type=video/mp4"
 ```
 
@@ -161,7 +161,7 @@ All admin endpoints require an admin token.
 
 ```
 POST /admin/graphs
-Authorization: Bearer admin-token-neocortex
+Authorization: Bearer admin-token
 Content-Type: application/json
 ```
 
@@ -175,14 +175,14 @@ Creates schema `ncx_shared__team_knowledge` with shared isolation.
 
 ```
 GET /admin/graphs
-Authorization: Bearer admin-token-neocortex
+Authorization: Bearer admin-token
 ```
 
 ### Drop graph
 
 ```
 DELETE /admin/graphs/{schema_name}
-Authorization: Bearer admin-token-neocortex
+Authorization: Bearer admin-token
 ```
 
 ---
@@ -193,7 +193,7 @@ Authorization: Bearer admin-token-neocortex
 
 ```
 POST /admin/permissions
-Authorization: Bearer admin-token-neocortex
+Authorization: Bearer admin-token
 Content-Type: application/json
 ```
 
@@ -231,7 +231,7 @@ DELETE /admin/permissions/{agent_id}/{schema_name}
 
 ```
 GET /admin/agents
-Authorization: Bearer admin-token-neocortex
+Authorization: Bearer admin-token
 ```
 
 ### Promote to admin

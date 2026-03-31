@@ -1,15 +1,10 @@
 {
-  "admin-token-neocortex": "admin",
-  "alice-token": "alice",
-  "bob-token": "bob",
-  "eve-token": "eve",
-  "shared-token": "shared",
-  "dev-token-neocortex": "dev-user",
-  "chat-agent-token": "chat-agent",
-  "joke-agent-token": "joke-agent",
-  "research-orch-token": "research-orch",
-  "video-processor-token": "video-processor",
-  "audio-processor-token": "audio-processor",
-  "rss-processor-token": "rss-processor",
-  "chat-extractions-token": "chat-extractions"
+  "admin-token": "admin",
+  "claude-code-work": "cc-work",
+  "claude-code-private": "cc-private",
+  "claude-code-oss": "cc-oss",
+  "tui-dev": "dev-user",
+  "extraction-worker-token": "extraction-worker",
+  "media-processor-token": "media-processor",
+  "domain-router-token": "domain-router"
 }

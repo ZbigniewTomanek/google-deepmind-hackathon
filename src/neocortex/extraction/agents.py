@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.settings import ModelSettings, ThinkingLevel
 
@@ -28,7 +27,7 @@ from neocortex.extraction.schemas import (
     OntologyProposal,
 )
 
-DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
+DEFAULT_MODEL_NAME = "google-gla:gemini-3-flash-preview"
 DEFAULT_THINKING_EFFORT = "low"
 
 
@@ -48,13 +47,13 @@ class AgentInferenceConfig:
         return None
 
 
-def _build_model(config: AgentInferenceConfig):
+def _build_model(config: AgentInferenceConfig) -> str | TestModel:
     """Build the LLM model from inference config."""
     if config.use_test_model:
         logger.debug("Using TestModel for extraction agents")
         return TestModel()
-    logger.debug("Using GoogleModel model_name={}", config.model_name)
-    return GoogleModel(config.model_name)
+    logger.debug("Using model={}", config.model_name)
+    return config.model_name
 
 
 # ── Ontology Agent ──
@@ -351,6 +350,17 @@ def build_librarian_agent(
             "- Prefer updating existing nodes over creating duplicates.",
             "- Normalize names to canonical form (proper casing, full names).",
             "- When in doubt about type assignment, match the existing node's type.",
+            "",
+            "## Shared Graph Context",
+            "You may be curating a shared knowledge graph where multiple agents contribute.",
+            "When you find an existing node via find_similar_nodes:",
+            "- The node may have been created by a different agent.",
+            "- You MUST still merge your new knowledge into it — do NOT skip updates",
+            '  because the node "belongs" to someone else.',
+            "- When merging, produce a COMPREHENSIVE description that combines the existing",
+            "  content with the new information. Never discard existing facts.",
+            '- Include both perspectives when they differ (e.g., "Backend team reports X.',
+            '  ML team reports Y.").',
             "",
             "After all curation actions, return a CurationSummary describing what you did.",
         )
@@ -810,6 +820,8 @@ def build_librarian_agent(
                 properties=props,
                 target_schema=ctx.deps.target_schema,
             )
+            if edge is None:
+                return {"error": f"Failed to upsert edge '{source_name}' -> '{target_name}' ({edge_type})"}
             logger.bind(action_log=True).info(
                 "librarian_tool_call",
                 tool="create_or_update_edge",

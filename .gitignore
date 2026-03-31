@@ -217,6 +217,9 @@ pgdata/
 # dir to store ingested media
 media_store/
 
+# Snapshot backups
+backups/
+
 # process pids
 *.pid
 

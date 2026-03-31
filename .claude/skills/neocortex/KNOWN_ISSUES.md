@@ -37,16 +37,16 @@ Create `dev_tokens.json` with one entry per agent:
 
 ```json
 {
-  "admin-token-neocortex": "admin",
-  "alice-token": "alice",
-  "bob-token": "bob"
+  "admin-token": "admin",
+  "claude-code-work": "cc-work",
+  "claude-code-private": "cc-private"
 }
 ```
 
 Start services:
 
 ```bash
-./scripts/launch.sh
+./scripts/manage.sh start
 ```
 
 ---
@@ -116,10 +116,10 @@ $SCRIPT list-graphs
 $SCRIPT list-permissions
 
 # Test ingestion as alice
-$SCRIPT --token alice-token text "Test fact from alice"
+$SCRIPT --token claude-code-work text "Test fact from cc-work"
 
 # Test domain routing — should appear in personal + domain schemas
-$SCRIPT --token alice-token text "I prefer using Python for data science projects"
+$SCRIPT --token claude-code-work text "I prefer using Python for data science projects"
 ```
 
 SQL verification:
