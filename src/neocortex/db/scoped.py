@@ -51,7 +51,7 @@ async def graph_scoped_connection(pool: asyncpg.Pool, schema_name: str, agent_id
                 raise ValueError("agent_id is required for shared graph access")
             role_name = oauth_sub_to_pg_role(agent_id)
             _validate_role_name(role_name)
-            await ensure_pg_role(pool, role_name)
+            await ensure_pg_role(conn, role_name)
             await conn.execute(f'SET LOCAL ROLE "{role_name}"')
 
         await conn.execute(f"SET LOCAL search_path TO {schema_name}, public")

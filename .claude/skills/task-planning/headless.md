@@ -7,7 +7,7 @@ both Claude Code CLI and OpenAI Codex CLI as backends.
 
 ```bash
 ~/.claude/skills/task-planning/scripts/plan_runner.sh \
-  --plan path/to/plan.md \
+  --plan path/to/plan-dir/index.md \
   [--agent claude|codex] \
   [--model MODEL] \
   [--max-turns 200] \
@@ -17,17 +17,22 @@ both Claude Code CLI and OpenAI Codex CLI as backends.
   [--signal-file .plan_runner_done]
 ```
 
+**Note**: For directory-based plans, point `--plan` at the `index.md` file inside
+the plan directory. The agent reads the index, follows links to stage files in
+`stages/`, and references shared resources in `resources/` as needed.
+
 The script launches one agent invocation per stage. Each invocation:
-1. Reads the plan and progress tracker
+1. Reads the plan index and progress tracker
 2. Identifies the next incomplete stage
-3. Implements it, runs verification, updates the tracker, and commits
-4. Exits -- the bash loop then checks the signal file and continues
+3. Reads the linked stage file and any referenced resources
+4. Implements it, runs verification, updates the tracker, and commits
+5. Exits -- the bash loop then checks the signal file and continues
 
 ## Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--plan PATH` | (required) | Path to the plan markdown file |
+| `--plan PATH` | (required) | Path to the plan's `index.md` file |
 | `--agent AGENT` | `claude` | Agent backend: `claude` or `codex` |
 | `--model MODEL` | `opus` (claude) / `o4-mini` (codex) | Model to use |
 | `--max-turns N` | `200` | Max agentic turns per stage (claude only) |
@@ -37,6 +42,20 @@ The script launches one agent invocation per stage. Each invocation:
 | `--dry-run` | off | Print prompts without executing |
 | `--verbose` | on | Pass --verbose to claude CLI |
 
+## Scaffolding a Plan Directory
+
+Before running, create the plan structure:
+
+```bash
+~/.claude/skills/task-planning/scripts/deploy_plan.sh \
+  --name "my-plan-name" \
+  --stages 5 \
+  --dir docs/plans
+```
+
+This creates the directory with `index.md`, `stages/01-.md` through `stages/05-.md`,
+and a `resources/` directory. Fill in the templates, then execute with `plan_runner.sh`.
+
 ## Agent Backends
 
 ### Claude (default)
@@ -44,15 +63,15 @@ The script launches one agent invocation per stage. Each invocation:
 Runs via `claude -p "<prompt>"` with `--dangerously-skip-permissions`.
 
 ```bash
-plan_runner.sh --plan plan.md --agent claude --model opus
+plan_runner.sh --plan plan-dir/index.md --agent claude --model opus
 ```
 
 ### Codex
 
-Runs via `codex exec "<prompt>"` with `--dangerously-bypass-approvals-and-sandbox` (auto-approve, no sandbox — full network and disk access).
+Runs via `codex exec "<prompt>"` with `--dangerously-bypass-approvals-and-sandbox` (auto-approve, no sandbox -- full network and disk access).
 
 ```bash
-plan_runner.sh --plan plan.md --agent codex --model o4-mini
+plan_runner.sh --plan plan-dir/index.md --agent codex --model o4-mini
 ```
 
 Requires `CODEX_API_KEY` or prior `codex login`. Common Codex models: `o4-mini`, `o3`, `gpt-5.4`.
@@ -60,7 +79,7 @@ Requires `CODEX_API_KEY` or prior `codex login`. Common Codex models: `o4-mini`,
 Environment variable `AGENT` can also set the default:
 
 ```bash
-AGENT=codex plan_runner.sh --plan plan.md
+AGENT=codex plan_runner.sh --plan plan-dir/index.md
 ```
 
 ## Test Command Auto-detection

@@ -1,6 +1,6 @@
 # NeoCortex — Agent Memory System
 
-Hackathon project (Google DeepMind x AI Tinkerers, Warsaw 2026). MCP server providing structured long-term memory for AI agents via PostgreSQL knowledge graph with multi-schema isolation.
+MCP server providing structured long-term memory for AI agents via PostgreSQL knowledge graph with multi-schema isolation.
 
 ## Codebase Map
 

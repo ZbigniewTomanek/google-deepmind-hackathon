@@ -236,6 +236,26 @@ class TestDomainProvisioning:
         assert results == []
 
 
+class TestEmptyDomains:
+    @pytest.mark.asyncio
+    async def test_router_handles_empty_domains(
+        self,
+        permissions: InMemoryPermissionService,
+    ) -> None:
+        """Router should return empty list when domain service has no domains."""
+        empty_domain_service = InMemoryDomainService()
+        # Do NOT seed defaults — domains list will be empty
+
+        router = DomainRouter(
+            domain_service=empty_domain_service,
+            classifier=MockDomainClassifier(),
+            schema_mgr=None,
+            permissions=permissions,
+        )
+        results = await router.route_and_extract("agent1", 1, "some text about Python")
+        assert results == []
+
+
 class TestEnsureSchema:
     @pytest.mark.asyncio
     async def test_idempotent_for_seeded_domains(

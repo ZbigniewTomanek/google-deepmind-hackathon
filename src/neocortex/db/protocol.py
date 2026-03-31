@@ -62,13 +62,13 @@ class MemoryRepository(Protocol):
 
     async def get_or_create_node_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> NodeType:
-        """Return existing node type by name or create a new one."""
+    ) -> NodeType | None:
+        """Return existing node type by name or create a new one. Returns None if name is invalid."""
 
     async def get_or_create_edge_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> EdgeType:
-        """Return existing edge type by name or create a new one."""
+    ) -> EdgeType | None:
+        """Return existing edge type by name or create a new one. Returns None if name is invalid."""
 
     # ── Episode Read ──
 
@@ -117,6 +117,55 @@ class MemoryRepository(Protocol):
         If an edge with the same triple exists, merge properties and update weight.
         """
 
+    async def delete_edge(
+        self,
+        agent_id: str,
+        edge_id: int,
+        target_schema: str | None = None,
+    ) -> bool:
+        """Hard-delete an edge by ID. Returns True if deleted."""
+
+    # ── Fuzzy Name Matching & Aliases ──
+
+    async def find_nodes_fuzzy(
+        self,
+        agent_id: str,
+        name: str,
+        threshold: float = 0.3,
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[Node, float]]:
+        """Find nodes by trigram similarity to name.
+        Returns (node, similarity_score) pairs sorted by score descending.
+        Also checks the node_alias table for alias matches.
+        """
+        ...
+
+    async def register_alias(
+        self,
+        agent_id: str,
+        node_id: int,
+        alias: str,
+        source: str = "extraction",
+        target_schema: str | None = None,
+    ) -> None:
+        """Register an alias for an existing node.
+        Silently ignores if alias already exists for same node.
+        """
+        ...
+
+    async def resolve_alias(
+        self,
+        agent_id: str,
+        alias: str,
+        target_schema: str | None = None,
+    ) -> list[Node]:
+        """Resolve an alias to its canonical node(s).
+        Returns all nodes associated with this alias (usually 1).
+        Caller should apply type filtering if multiple matches exist.
+        """
+        ...
+
     # ── Node Search ──
 
     async def search_nodes(
@@ -153,23 +202,25 @@ class MemoryRepository(Protocol):
 
     # ── Bulk Queries (for extraction pipeline) ──
 
-    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
-        """Return all node names in the agent's graph."""
+    async def list_all_node_names(
+        self, agent_id: str, target_schema: str | None = None, limit: int | None = None
+    ) -> list[str]:
+        """Return node names in the agent's graph, optionally limited."""
 
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         """Return all edge signatures (source→type→target) in the agent's graph."""
 
     # ── Access Tracking ──
 
-    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+    async def record_node_access(self, agent_id: str, node_ids: list[int], limit: int | None = None) -> None:
         """Increment access_count and update last_accessed_at for recalled nodes."""
 
-    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int], limit: int | None = None) -> None:
         """Increment access_count and update last_accessed_at for recalled episodes."""
 
     # ── Soft-Forget ──
 
-    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int], target_schema: str | None = None) -> int:
         """Soft-delete nodes by setting forgotten=true. Returns count."""
 
     async def resurrect_node(self, agent_id: str, node_id: int) -> None:
@@ -187,6 +238,20 @@ class MemoryRepository(Protocol):
         never forgettable.
         """
 
+    # ── Partial Curation Cleanup ──
+
+    async def cleanup_partial_curation(
+        self,
+        agent_id: str,
+        episode_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        """Delete nodes and edges tagged with _source_episode = episode_id.
+
+        Called before retrying a failed curation to ensure idempotency.
+        Returns total items deleted.
+        """
+
     # ── Episodic Consolidation ──
 
     async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
@@ -195,14 +260,29 @@ class MemoryRepository(Protocol):
     # ── Edge Reinforcement ──
 
     async def reinforce_edges(
-        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 1.5
     ) -> None:
-        """Increment edge weights for traversed edges, capped at ceiling."""
+        """Increment edge weights for traversed edges using diminishing returns, capped at ceiling."""
+
+    async def micro_decay_edges(
+        self,
+        agent_id: str,
+        exclude_ids: list[int],
+        factor: float = 0.998,
+        floor: float = 0.1,
+        recently_reinforced_hours: float = 1.0,
+    ) -> int:
+        """Apply small multiplicative decay to recently-active edges (excluding given IDs).
+
+        Targets edges reinforced within ``recently_reinforced_hours`` that are NOT in
+        ``exclude_ids``. This prevents weight stagnation without touching the entire table.
+        Called probabilistically (~25% of recalls). Returns count of decayed edges.
+        """
 
     async def decay_stale_edges(
         self,
         agent_id: str,
-        older_than_hours: float = 168.0,
+        older_than_hours: float = 48.0,
         decay_factor: float = 0.95,
         floor: float = 0.1,
         force: bool = False,
@@ -212,4 +292,30 @@ class MemoryRepository(Protocol):
         Uses last_reinforced_at (not created_at) to target edges that haven't
         been traversed recently. The force parameter bypasses probabilistic
         gating for deterministic testing.
+        """
+
+    # ── Type Introspection ──
+
+    async def get_type_examples(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        limit_per_type: int = 5,
+        max_types: int = 20,
+    ) -> dict[str, list[str]]:
+        """Fetch sample node names grouped by type for context injection.
+
+        Returns {type_name: [node_name, ...]} for types that have active nodes.
+        """
+
+    async def cleanup_empty_types(
+        self,
+        agent_id: str,
+        max_age_minutes: int = 5,
+        target_schema: str | None = None,
+    ) -> None:
+        """Delete node types with zero nodes that were created recently.
+
+        Only deletes types created within ``max_age_minutes`` to avoid
+        removing types created by concurrent extractions.
         """

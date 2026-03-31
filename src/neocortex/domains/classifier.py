@@ -37,6 +37,10 @@ class AgentDomainClassifier:
         self._model_settings = ModelSettings(thinking=thinking_effort)
 
     async def classify(self, text: str, domains: list[SemanticDomain]) -> ClassificationResult:
+        if not domains:
+            logger.warning("classifier_received_empty_domains")
+            return ClassificationResult(matched_domains=[], proposed_domain=None)
+
         domain_lines = "\n".join(f"- {d.slug}: {d.name}\n  {d.description}" for d in domains)
         prompt = (
             "You are a knowledge classification agent for a memory system.\n"
@@ -64,7 +68,42 @@ class AgentDomainClassifier:
             matched_count=len(result.output.matched_domains),
             proposed=result.output.proposed_domain is not None,
         )
+
+        # Fallback: if LLM returned no matches, try keyword matching
+        if not result.output.matched_domains:
+            return self._keyword_fallback(text, domains)
+
         return result.output
+
+    def _keyword_fallback(self, text: str, domains: list[SemanticDomain]) -> ClassificationResult:
+        """Keyword-based classification fallback when LLM returns no matches."""
+        text_lower = text.lower()
+        domain_slugs = {d.slug for d in domains}
+        matches: list[DomainClassification] = []
+
+        for slug, keywords in _KEYWORD_MAP.items():
+            if slug not in domain_slugs:
+                continue
+            if any(kw in text_lower for kw in keywords):
+                matches.append(
+                    DomainClassification(
+                        domain_slug=slug,
+                        confidence=0.6,
+                        reasoning="keyword_fallback",
+                    )
+                )
+
+        # Default to domain_knowledge if nothing else matched
+        if not matches and "domain_knowledge" in domain_slugs:
+            matches.append(
+                DomainClassification(
+                    domain_slug="domain_knowledge",
+                    confidence=0.4,
+                    reasoning="default_fallback",
+                )
+            )
+
+        return ClassificationResult(matched_domains=matches, proposed_domain=None)
 
 
 # ── Keyword maps for the mock classifier ──

@@ -15,12 +15,18 @@ class HybridWeights(NamedTuple):
     importance: float
 
 
-def compute_recency_score(created_at: datetime, half_life_hours: float) -> float:
-    """Exponential decay score based on age. Returns value in [0, 1]."""
+def compute_recency_score(timestamp: datetime, half_life_hours: float) -> float:
+    """Exponential decay score based on age. Returns value in [0, 1].
+
+    Args:
+        timestamp: The relevant timestamp — use max(created_at, updated_at)
+                  for nodes, or created_at for episodes.
+        half_life_hours: Time in hours for score to decay to 0.5.
+    """
     now = datetime.now(UTC)
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
-    hours_ago = max((now - created_at).total_seconds() / 3600.0, 0.0)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    hours_ago = max((now - timestamp).total_seconds() / 3600.0, 0.0)
     return math.pow(2.0, -hours_ago / half_life_hours)
 
 
@@ -28,22 +34,28 @@ def compute_base_activation(
     access_count: int,
     last_accessed_at: datetime,
     decay_rate: float = 0.5,
+    access_exponent: float = 0.5,
 ) -> float:
-    """ACT-R simplified base-level activation.
+    """ACT-R simplified base-level activation with sublinear dampening.
 
-    B_i = ln(n + 1) - d * ln(T + 1)
+    B_i = ln(n^a + 1) - d * ln(T + 1)  where a = access_exponent
     Normalized to [0, 1] via sigmoid.
 
     Args:
         access_count: Number of times the item has been recalled.
         last_accessed_at: When the item was last accessed.
         decay_rate: ACT-R ``d`` parameter (default 0.5).
+        access_exponent: Sublinear dampening exponent (default 0.5 = sqrt).
+            1.0 gives original unbounded growth; lower values compress high counts.
     """
     now = datetime.now(UTC)
     if last_accessed_at.tzinfo is None:
         last_accessed_at = last_accessed_at.replace(tzinfo=UTC)
     hours_since = max((now - last_accessed_at).total_seconds() / 3600.0, 0.0)
-    b_i = math.log(access_count + 1) - decay_rate * math.log(hours_since + 1)
+    dampened_count = math.pow(max(access_count, 0), access_exponent)
+    frequency = math.log(dampened_count + 1)
+    recency_penalty = decay_rate * math.log(hours_since + 1)
+    b_i = frequency - recency_penalty
     return 1.0 / (1.0 + math.exp(-b_i))
 
 
@@ -119,6 +131,99 @@ def compute_spreading_activation(
             bonus = {k: v / max_val for k, v in bonus.items()}
 
     return bonus
+
+
+def compute_supersession_adjustment(
+    node_id: int,
+    supersession_edges: dict[str, dict[int, list]],
+    superseded_penalty: float = 0.5,
+    superseding_boost: float = 1.2,
+) -> float:
+    """Returns a score multiplier based on supersession edges.
+
+    Args:
+        node_id: The node to check.
+        supersession_edges: Dict with keys "superseded_by" (node_id -> edges where
+            this node is the target of SUPERSEDES/CORRECTS) and "supersedes"
+            (node_id -> edges where this node is the source).
+        superseded_penalty: Multiplier for outdated nodes.
+        superseding_boost: Multiplier for correcting nodes.
+
+    Returns:
+        superseded_penalty for superseded nodes, superseding_boost for superseding
+        nodes, 1.0 otherwise.
+    """
+    if node_id in supersession_edges.get("superseded_by", {}):
+        return superseded_penalty
+
+    if node_id in supersession_edges.get("supersedes", {}):
+        return superseding_boost
+
+    return 1.0
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two vectors. Returns value in [-1, 1]."""
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def mmr_rerank(
+    results: list[dict],
+    lambda_param: float = 0.7,
+    score_key: str = "score",
+    embedding_key: str = "embedding",
+) -> list[dict]:
+    """Maximal Marginal Relevance reranking for diversity.
+
+    Iteratively selects items that balance high relevance with
+    low similarity to already-selected items.
+
+    Args:
+        results: Scored recall results, each with a score and embedding.
+        lambda_param: Trade-off between relevance (1.0) and diversity (0.0).
+        score_key: Key for relevance score in result dicts.
+        embedding_key: Key for embedding vector in result dicts.
+
+    Returns:
+        Reranked list in MMR order.
+    """
+    if len(results) <= 1 or lambda_param >= 1.0:
+        return sorted(results, key=lambda r: r[score_key], reverse=True)
+
+    # Filter to items that have embeddings (can't compute similarity without them)
+    with_emb = [r for r in results if r.get(embedding_key) is not None]
+    without_emb = [r for r in results if r.get(embedding_key) is None]
+
+    if not with_emb:
+        return results
+
+    selected: list[dict] = []
+    candidates = list(with_emb)
+
+    # First pick: highest relevance score
+    candidates.sort(key=lambda r: r[score_key], reverse=True)
+    selected.append(candidates.pop(0))
+
+    while candidates:
+        best_mmr = -float("inf")
+        best_idx = 0
+        for i, cand in enumerate(candidates):
+            relevance = cand[score_key]
+            # Max cosine similarity to any already-selected item
+            max_sim = max(_cosine_similarity(cand[embedding_key], s[embedding_key]) for s in selected)
+            mmr_score = lambda_param * relevance - (1 - lambda_param) * max_sim
+            if mmr_score > best_mmr:
+                best_mmr = mmr_score
+                best_idx = i
+        selected.append(candidates.pop(best_idx))
+
+    # Append items without embeddings at the end (no diversity signal available)
+    return selected + without_emb
 
 
 def neighborhood_to_adjacency(

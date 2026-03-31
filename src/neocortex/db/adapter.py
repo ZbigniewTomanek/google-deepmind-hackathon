@@ -6,14 +6,23 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import asyncpg
+from loguru import logger
 
 from neocortex.db.scoped import graph_scoped_connection, schema_scoped_connection
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
+from neocortex.normalization import canonicalize_name, normalize_edge_type, normalize_node_type
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
-from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
+from neocortex.scoring import (
+    HybridWeights,
+    compute_base_activation,
+    compute_hybrid_score,
+    compute_recency_score,
+    compute_supersession_adjustment,
+    mmr_rerank,
+)
 
 if TYPE_CHECKING:
     from neocortex.graph_router import GraphRouter
@@ -22,6 +31,83 @@ if TYPE_CHECKING:
 def _escape_ilike(query: str) -> str:
     """Escape special ILIKE characters for use with ``ESCAPE '\\'``."""
     return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# Type pairs that should NOT be auto-merged (known homonym categories)
+_HOMONYM_TYPE_GROUPS: frozenset[frozenset[str]] = frozenset(
+    {
+        frozenset({"Drug", "Neurotransmitter"}),
+        frozenset({"Person", "Organization"}),
+        frozenset({"Language", "Country"}),
+        frozenset({"Metric", "MetricUnit"}),  # a metric and its unit are different (prefix guard)
+    }
+)
+
+# Types within the same group are considered merge-safe (likely type drift, not homonyms)
+_MERGE_SAFE_TYPE_GROUPS: list[frozenset[str]] = [
+    # Software entities — LLM often oscillates between these
+    # NOTE: Service, Application, Platform excluded — they are semantically
+    # distinct enough that same-name entities may legitimately differ.
+    frozenset({"Tool", "Project", "Software", "SoftwareTool", "Framework", "Library", "Technology"}),
+    # People — role vs person type drift
+    frozenset({"Person", "PersonRole", "TeamMember", "Employee", "Researcher", "Engineer", "Scientist", "Developer"}),
+    # Organizations
+    frozenset({"Organization", "Company", "Team", "Group", "Department"}),
+    # Concepts / Topics
+    frozenset({"Concept", "Topic", "Subject", "Theme", "Idea", "Theory", "Principle"}),
+    # Methodologies / Approaches — LLM commonly confuses these
+    frozenset({"Methodology", "Method", "Approach", "Strategy", "Technique", "ProcessStage"}),
+    # Protocols / Standards (specific, not general technology)
+    frozenset({"Protocol", "Standard", "Specification"}),
+    # Documents / Resources
+    frozenset({"Document", "Resource", "Article", "Paper", "Report"}),
+    # Events / Milestones
+    # NOTE: Meeting, Sprint, Deadline excluded — a meeting ABOUT a sprint
+    # is not the sprint. These have specific semantics worth preserving.
+    frozenset({"Event", "Milestone"}),
+    # Metrics / Measurements
+    frozenset({"Metric", "Measurement", "Score", "KPI", "Statistic", "Indicator"}),
+    # Data entities — LLM oscillates between Dataset/DataStore/DataSource
+    frozenset({"Dataset", "Data", "DataSource", "DataStore"}),
+]
+
+# Pre-compute a lookup: type_name_lower -> group_index for O(1) group check
+_TYPE_TO_GROUP: dict[str, int] = {}
+for _i, _group in enumerate(_MERGE_SAFE_TYPE_GROUPS):
+    for _t in _group:
+        _TYPE_TO_GROUP[_t.lower()] = _i
+
+
+def _types_are_merge_safe(existing: str | None, requested: str | None) -> bool:
+    """Return True if two type names likely refer to the same entity
+    (LLM type drift) rather than a legitimate homonym.
+
+    Uses three checks in order:
+    1. Exact match → True
+    2. Known homonym pairs → False (never merge)
+    3. Same merge-safe group → True
+    4. Prefix heuristic (backward compat) → True
+    5. Default → False (conservative)
+    """
+    if not existing or not requested:
+        return False
+    if existing == requested:
+        return True
+
+    # Known homonym pairs — never merge
+    pair = frozenset({existing, requested})
+    if pair in _HOMONYM_TYPE_GROUPS:
+        return False
+
+    # Same merge-safe group → merge
+    e_lower, r_lower = existing.lower(), requested.lower()
+    e_group = _TYPE_TO_GROUP.get(e_lower)
+    r_group = _TYPE_TO_GROUP.get(r_lower)
+    if e_group is not None and r_group is not None and e_group == r_group:
+        return True
+
+    # Backward compat: prefix heuristic for types not in any group
+    return e_lower.startswith(r_lower) or r_lower.startswith(e_lower)
 
 
 class GraphServiceAdapter:
@@ -340,7 +426,12 @@ class GraphServiceAdapter:
 
     async def get_or_create_node_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> NodeType:
+    ) -> NodeType | None:
+        try:
+            name = normalize_node_type(name)
+        except ValueError as e:
+            logger.warning("invalid_node_type_rejected", raw_name=name, error=str(e))
+            return None
         if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_node_type_by_name(name)
             if existing is not None:
@@ -366,7 +457,12 @@ class GraphServiceAdapter:
 
     async def get_or_create_edge_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> EdgeType:
+    ) -> EdgeType | None:
+        try:
+            name = normalize_edge_type(name)
+        except ValueError as e:
+            logger.warning("invalid_edge_type_rejected", raw_name=name, error=str(e))
+            return None
         if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_edge_type_by_name(name)
             if existing is not None:
@@ -386,9 +482,26 @@ class GraphServiceAdapter:
                 return EdgeType(**dict(row))
             # Concurrent insert won — fetch the existing row
             row = await conn.fetchrow("SELECT * FROM edge_type WHERE name = $1", name)
-            if row is None:
-                raise RuntimeError(f"Failed to create edge type: {name}")
-            return EdgeType(**dict(row))
+            if row is not None:
+                return EdgeType(**dict(row))
+
+            # Fallback: check for very similar existing type (e.g., after normalization
+            # both are SCREAMING_SNAKE but differ by a word like singular/plural)
+            similar = await conn.fetchrow(
+                "SELECT * FROM edge_type WHERE similarity(name, $1) >= 0.8 "
+                "ORDER BY similarity(name, $1) DESC LIMIT 1",
+                name,
+            )
+            if similar:
+                logger.bind(action_log=True).info(
+                    "edge_type_similar_reuse",
+                    requested=name,
+                    reused=similar["name"],
+                    similarity=await conn.fetchval("SELECT similarity($1, $2)", name, similar["name"]),
+                )
+                return EdgeType(**dict(similar))
+
+            raise RuntimeError(f"Failed to create edge type: {name}")
 
     # ── Episode Read ──
 
@@ -427,19 +540,58 @@ class GraphServiceAdapter:
     ) -> Node:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
-            # Fallback: use GraphService directly
-            nodes = await self._graph.list_nodes(type_id=type_id, limit=10000)
-            for node in nodes:
-                if node.name.lower() == name.lower() and node.type_id == type_id:
-                    merged_props = {**node.properties, **props}
-                    updated = await self._graph.update_node(
-                        node.id,
+            # Fallback: use GraphService directly with name-primary dedup
+            canonical, _fallback_aliases = canonicalize_name(name)
+            if canonical:
+                name = canonical
+            all_nodes = await self._graph.list_nodes(limit=10000)
+            name_matches = [n for n in all_nodes if n.name.lower() == name.lower()]
+
+            match: Node | None = None
+            # Phase 1: Prefer exact (name, type_id) match
+            for node in name_matches:
+                if node.type_id == type_id:
+                    match = node
+                    break
+            # Phase 2: Single name match with compatible type → merge
+            if match is None and len(name_matches) == 1:
+                existing_node = name_matches[0]
+                # Look up type names for merge-safety check
+                all_types = {nt.id: nt.name for nt in await self._graph.list_node_types()}
+                existing_type = all_types.get(existing_node.type_id)
+                requested_type = all_types.get(type_id)
+                if _types_are_merge_safe(existing_type, requested_type):
+                    match = existing_node
+                    logger.bind(action_log=True).info(
+                        "node_type_drift_caught",
                         name=name,
-                        content=content or node.content,
-                        properties=merged_props,
-                        embedding=embedding,
+                        existing_type=existing_type,
+                        requested_type=requested_type,
+                        action="merged",
+                        agent_id=agent_id,
                     )
-                    return updated if updated is not None else node
+                else:
+                    logger.bind(action_log=True).info(
+                        "node_homonym_detected",
+                        name=name,
+                        existing_type=existing_type,
+                        requested_type=requested_type,
+                        action="created_separate",
+                        agent_id=agent_id,
+                    )
+
+            if match is not None:
+                # Note: on merge-safe type drift, the node retains its original
+                # type_id — we don't update the type to avoid flip-flopping.
+                merged_props = {**match.properties, **props}
+                updated = await self._graph.update_node(
+                    match.id,
+                    name=name,
+                    content=content if content is not None else match.content,
+                    properties=merged_props,
+                    embedding=embedding,
+                )
+                return updated if updated is not None else match
             return await self._graph.create_node(
                 type_id=type_id,
                 name=name,
@@ -450,16 +602,102 @@ class GraphServiceAdapter:
             )
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
+        # Canonicalize the name and extract aliases for registration after insert
+        canonical, canon_aliases = canonicalize_name(name)
+        if canonical:
+            name = canonical
         props_json = json.dumps(props)
         emb_str = str(embedding) if embedding else None
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            row = await conn.fetchrow(
-                "SELECT id, type_id, name, content, properties, source, importance, created_at, updated_at "
-                "FROM node WHERE lower(name) = lower($1) AND type_id = $2",
+            # Phase 1: Look up by name only (name-primary dedup)
+            # Include forgotten nodes so resurrection-on-upsert still works
+            rows = await conn.fetch(
+                "SELECT id, type_id, name, content, properties, source, importance, "
+                "forgotten, created_at, updated_at "
+                "FROM node WHERE lower(name) = lower($1)",
                 name,
-                type_id,
             )
+
+            # Phase 1.5: If no exact match, try alias resolution then trigram.
+            # Only POPULATES `rows` — Phase 2/3 still run on whatever it finds.
+            if not rows:
+                # 1.5a: Check alias table
+                alias_rows = await conn.fetch(
+                    "SELECT n.id, n.type_id, n.name, n.content, n.properties, "
+                    "n.source, n.importance, n.forgotten, n.created_at, n.updated_at "
+                    "FROM node n "
+                    "JOIN node_alias a ON a.node_id = n.id "
+                    "WHERE lower(a.alias) = lower($1) AND n.forgotten = false",
+                    name,
+                )
+                if alias_rows:
+                    rows = list(alias_rows)
+                    logger.bind(action_log=True).info(
+                        "node_alias_resolved",
+                        alias=name,
+                        candidates=[r["name"] for r in rows],
+                        agent_id=agent_id,
+                    )
+                else:
+                    # 1.5b: Trigram similarity fallback
+                    fuzzy_rows = await conn.fetch(
+                        "SELECT id, type_id, name, content, properties, source, "
+                        "importance, forgotten, created_at, updated_at, "
+                        "similarity(name, $1) AS sim "
+                        "FROM node WHERE forgotten = false "
+                        "AND similarity(name, $1) >= $2 "
+                        "ORDER BY sim DESC LIMIT 1",
+                        name,
+                        0.3,
+                    )
+                    if fuzzy_rows:
+                        rows = [fuzzy_rows[0]]
+                        logger.bind(action_log=True).info(
+                            "node_fuzzy_matched",
+                            input=name,
+                            matched=fuzzy_rows[0]["name"],
+                            similarity=float(fuzzy_rows[0]["sim"]),
+                            agent_id=agent_id,
+                        )
+
+            row = None
+            if rows:
+                # Phase 2: Prefer exact (name, type_id) match
+                for r in rows:
+                    if r["type_id"] == type_id:
+                        row = r
+                        break
+
+                # Phase 3: If no exact match but exactly 1 node exists,
+                # check whether the types are semantically compatible before merging.
+                if row is None and len(rows) == 1:
+                    existing_type_id = rows[0]["type_id"]
+                    existing_type = await conn.fetchval("SELECT name FROM node_type WHERE id = $1", existing_type_id)
+                    requested_type = await conn.fetchval("SELECT name FROM node_type WHERE id = $1", type_id)
+                    if _types_are_merge_safe(existing_type, requested_type):
+                        row = rows[0]
+                        logger.bind(action_log=True).info(
+                            "node_type_drift_caught",
+                            name=name,
+                            existing_type=existing_type,
+                            requested_type=requested_type,
+                            action="merged",
+                            agent_id=agent_id,
+                        )
+                    else:
+                        # Legitimate homonym — create separate node, log for monitoring
+                        logger.bind(action_log=True).info(
+                            "node_homonym_detected",
+                            name=name,
+                            existing_type=existing_type,
+                            requested_type=requested_type,
+                            action="created_separate",
+                            agent_id=agent_id,
+                        )
+
             if row is not None:
+                # Note: on merge-safe type drift, the node retains its original
+                # type_id — we don't update the type to avoid flip-flopping.
                 existing_props = row["properties"]
                 if isinstance(existing_props, str):
                     existing_props = json.loads(existing_props)
@@ -467,6 +705,7 @@ class GraphServiceAdapter:
                 merged_json = json.dumps(merged)
                 updated_row = await conn.fetchrow(
                     """UPDATE node SET
+                        -- Content: prefer new value, keep old only when new is NULL
                         content = COALESCE($1, content),
                         properties = $2::jsonb,
                         embedding = COALESCE($3::vector, embedding),
@@ -512,7 +751,17 @@ class GraphServiceAdapter:
                 d = dict(new_row)
                 if isinstance(d.get("properties"), str):
                     d["properties"] = json.loads(d["properties"])
-                return Node(**d)
+                new_node = Node(**d)
+                # Auto-register canonicalization aliases for the new node
+                for alias in canon_aliases:
+                    await conn.execute(
+                        "INSERT INTO node_alias (node_id, alias, source) "
+                        "VALUES ($1, $2, 'canonicalization') "
+                        "ON CONFLICT (alias, node_id) DO NOTHING",
+                        new_node.id,
+                        alias,
+                    )
+                return new_node
 
     async def find_nodes_by_name(self, agent_id: str, name: str, target_schema: str | None = None) -> list[Node]:
         if target_schema is None and (self._pool is None or self._router is None):
@@ -534,6 +783,87 @@ class GraphServiceAdapter:
             results.append(Node(**d))
         return results
 
+    # ── Fuzzy Name Matching & Aliases ──
+
+    async def find_nodes_fuzzy(
+        self,
+        agent_id: str,
+        name: str,
+        threshold: float = 0.3,
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[Node, float]]:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            rows = await conn.fetch(
+                "SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source, "
+                "n.importance, n.created_at, n.updated_at, "
+                "CASE WHEN n.id IN (SELECT node_id FROM node_alias WHERE lower(alias) = lower($1)) "
+                "     THEN GREATEST(similarity(n.name, $1), 1.0) "
+                "     ELSE similarity(n.name, $1) END AS sim "
+                "FROM node n "
+                "WHERE n.forgotten = false "
+                "AND (similarity(n.name, $1) >= $2 "
+                "     OR n.id IN (SELECT node_id FROM node_alias WHERE lower(alias) = lower($1))) "
+                "ORDER BY sim DESC "
+                "LIMIT $3",
+                name,
+                threshold,
+                limit,
+            )
+        results: list[tuple[Node, float]] = []
+        for row in rows:
+            d = dict(row)
+            sim = d.pop("sim", 0.0)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append((Node(**d), float(sim)))
+        return results
+
+    async def register_alias(
+        self,
+        agent_id: str,
+        node_id: int,
+        alias: str,
+        source: str = "extraction",
+        target_schema: str | None = None,
+    ) -> None:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            await conn.execute(
+                "INSERT INTO node_alias (node_id, alias, source) "
+                "VALUES ($1, $2, $3) "
+                "ON CONFLICT (alias, node_id) DO NOTHING",
+                node_id,
+                alias,
+                source,
+            )
+
+    async def resolve_alias(
+        self,
+        agent_id: str,
+        alias: str,
+        target_schema: str | None = None,
+    ) -> list[Node]:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            rows = await conn.fetch(
+                "SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source, "
+                "n.importance, n.forgotten, n.created_at, n.updated_at "
+                "FROM node n "
+                "JOIN node_alias a ON a.node_id = n.id "
+                "WHERE lower(a.alias) = lower($1) "
+                "AND n.forgotten = false",
+                alias,
+            )
+        results: list[Node] = []
+        for row in rows:
+            d = dict(row)
+            if isinstance(d.get("properties"), str):
+                d["properties"] = json.loads(d["properties"])
+            results.append(Node(**d))
+        return results
+
     # ── Edge CRUD ──
 
     async def upsert_edge(
@@ -548,11 +878,33 @@ class GraphServiceAdapter:
     ) -> Edge:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
-            edges = await self._graph.get_edges_from(source_id, type_id=type_id)
-            for edge in edges:
-                if edge.target_id == target_id:
-                    # Update existing edge — no direct update method on GraphService,
-                    # so delete and recreate
+            # Source-target primary edge dedup via GraphService
+            all_edges = await self._graph.get_edges_from(source_id)
+            st_edges = [e for e in all_edges if e.target_id == target_id]
+
+            if len(st_edges) == 1 and st_edges[0].type_id != type_id:
+                # Single edge with different type → drift, update it
+                old = st_edges[0]
+                merged = {**old.properties, **props}
+                logger.bind(action_log=True).info(
+                    "edge_type_drift_caught",
+                    source_id=source_id,
+                    target_id=target_id,
+                    old_type_id=old.type_id,
+                    new_type_id=type_id,
+                )
+                await self._graph.delete_edge(old.id)
+                return await self._graph.create_edge(
+                    source_id=source_id,
+                    target_id=target_id,
+                    type_id=type_id,
+                    weight=weight,
+                    properties=merged,
+                )
+
+            # Normal path: exact type match or 0/2+ existing
+            for edge in st_edges:
+                if edge.type_id == type_id:
                     merged = {**edge.properties, **props}
                     await self._graph.delete_edge(edge.id)
                     return await self._graph.create_edge(
@@ -573,26 +925,77 @@ class GraphServiceAdapter:
         schema_name = await self._resolve_schema(agent_id, target_schema)
         props_json = json.dumps(props)
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            row = await conn.fetchrow(
-                """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
-                   VALUES ($1, $2, $3, $4, $5::jsonb)
-                   ON CONFLICT (source_id, target_id, type_id)
-                   DO UPDATE SET
-                       weight = $4,
-                       properties = edge.properties || $5::jsonb
-                   RETURNING *""",
+            # Source-target primary edge dedup: check existing edges between this pair
+            existing = await conn.fetch(
+                "SELECT id, type_id, weight, properties FROM edge " "WHERE source_id = $1 AND target_id = $2",
                 source_id,
                 target_id,
-                type_id,
-                weight,
-                props_json,
             )
+
+            if len(existing) == 1 and existing[0]["type_id"] != type_id:
+                # Single edge with different type → drift, update the existing one
+                old = existing[0]
+                old_props = old["properties"]
+                if isinstance(old_props, str):
+                    old_props = json.loads(old_props)
+                merged = {**(old_props or {}), **props}
+                merged_json = json.dumps(merged)
+                row = await conn.fetchrow(
+                    "UPDATE edge SET type_id = $1, weight = $2, "
+                    "properties = $3::jsonb, last_reinforced_at = now() "
+                    "WHERE id = $4 RETURNING *",
+                    type_id,
+                    weight,
+                    merged_json,
+                    old["id"],
+                )
+                logger.bind(action_log=True).info(
+                    "edge_type_drift_caught",
+                    source_id=source_id,
+                    target_id=target_id,
+                    old_type_id=old["type_id"],
+                    new_type_id=type_id,
+                )
+            else:
+                # Normal path: INSERT...ON CONFLICT (exact match or 0/2+ existing)
+                row = await conn.fetchrow(
+                    """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
+                       VALUES ($1, $2, $3, $4, $5::jsonb)
+                       ON CONFLICT (source_id, target_id, type_id)
+                       DO UPDATE SET
+                           weight = $4,
+                           properties = edge.properties || $5::jsonb
+                       RETURNING *""",
+                    source_id,
+                    target_id,
+                    type_id,
+                    weight,
+                    props_json,
+                )
             if row is None:
                 raise RuntimeError("Failed to upsert edge")
             d = dict(row)
             if isinstance(d.get("properties"), str):
                 d["properties"] = json.loads(d["properties"])
             return Edge(**d)
+
+    async def delete_edge(
+        self,
+        agent_id: str,
+        edge_id: int,
+        target_schema: str | None = None,
+    ) -> bool:
+        if target_schema is None and (self._pool is None or self._router is None):
+            await self._graph.delete_edge(edge_id)
+            return True
+
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            result = await conn.execute(
+                "DELETE FROM edge WHERE id = $1",
+                edge_id,
+            )
+        return result == "DELETE 1"
 
     # ── Node Search ──
 
@@ -848,56 +1251,67 @@ class GraphServiceAdapter:
 
     # ── Bulk Queries ──
 
-    async def list_all_node_names(self, agent_id: str, target_schema: str | None = None) -> list[str]:
+    async def list_all_node_names(
+        self, agent_id: str, target_schema: str | None = None, limit: int | None = None
+    ) -> list[str]:
         if target_schema is None and (self._pool is None or self._router is None):
-            nodes = await self._graph.list_nodes(limit=100000)
+            nodes = await self._graph.list_nodes(limit=limit or 100000)
             return [n.name for n in nodes]
 
         schema_name = await self._resolve_schema(agent_id, target_schema)
+        limit_clause = f" LIMIT {int(limit)}" if limit is not None else ""
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
-            rows = await conn.fetch("SELECT name FROM node WHERE forgotten = false ORDER BY name")
+            rows = await conn.fetch(f"SELECT name FROM node WHERE forgotten = false ORDER BY name{limit_clause}")
         return [str(row["name"]) for row in rows]
 
     # ── Access Tracking ──
 
-    async def record_node_access(self, agent_id: str, node_ids: list[int]) -> None:
+    async def record_node_access(self, agent_id: str, node_ids: list[int], limit: int | None = None) -> None:
         if not node_ids:
             return
         if self._pool is None or self._router is None:
             return
+
+        if limit is None:
+            limit = self._settings.recall_access_increment_limit
+        ids_to_update = node_ids[:limit]
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             await conn.execute(
                 "UPDATE node SET access_count = access_count + 1, last_accessed_at = now() "
                 "WHERE id = ANY($1::int[])",
-                node_ids,
+                ids_to_update,
             )
 
-    async def record_episode_access(self, agent_id: str, episode_ids: list[int]) -> None:
+    async def record_episode_access(self, agent_id: str, episode_ids: list[int], limit: int | None = None) -> None:
         if not episode_ids:
             return
         if self._pool is None or self._router is None:
             return
+
+        if limit is None:
+            limit = self._settings.recall_access_increment_limit
+        ids_to_update = episode_ids[:limit]
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             await conn.execute(
                 "UPDATE episode SET access_count = access_count + 1, last_accessed_at = now() "
                 "WHERE id = ANY($1::int[])",
-                episode_ids,
+                ids_to_update,
             )
 
     # ── Soft-Forget ──
 
-    async def mark_forgotten(self, agent_id: str, node_ids: list[int]) -> int:
+    async def mark_forgotten(self, agent_id: str, node_ids: list[int], target_schema: str | None = None) -> int:
         if not node_ids:
             return 0
         if self._pool is None or self._router is None:
             return 0
 
-        schema_name = await self._router.route_store(agent_id)
-        async with schema_scoped_connection(self._pool, schema_name) as conn:
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             result = await conn.execute(
                 "UPDATE node SET forgotten = true, forgotten_at = now() "
                 "WHERE id = ANY($1::int[]) AND forgotten = false",
@@ -937,6 +1351,84 @@ class GraphServiceAdapter:
             )
         return [int(row["id"]) for row in rows]
 
+    # ── Type Introspection ──
+
+    async def get_type_examples(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+        limit_per_type: int = 5,
+        max_types: int = 20,
+    ) -> dict[str, list[str]]:
+        """Fetch sample node names grouped by type for context injection."""
+        if self._pool is None or self._router is None:
+            return {}
+        schema = target_schema or await self._resolve_schema(agent_id, None)
+        async with schema_scoped_connection(self._pool, schema) as conn:
+            rows = await conn.fetch(
+                "SELECT nt.name as type_name, "
+                "  (SELECT array_agg(sub.name ORDER BY sub.importance DESC) "
+                "   FROM (SELECT name, importance FROM node "
+                "         WHERE type_id = nt.id AND NOT forgotten "
+                "         ORDER BY importance DESC LIMIT $1) sub"
+                "  ) as examples "
+                "FROM node_type nt "
+                "WHERE EXISTS (SELECT 1 FROM node WHERE type_id = nt.id AND NOT forgotten) "
+                "LIMIT $2",
+                limit_per_type,
+                max_types,
+            )
+            return {r["type_name"]: r["examples"] for r in rows if r["examples"]}
+
+    async def cleanup_empty_types(
+        self,
+        agent_id: str,
+        max_age_minutes: int = 5,
+        target_schema: str | None = None,
+    ) -> None:
+        """Delete node types with zero nodes that were created recently."""
+        if self._pool is None or self._router is None:
+            return
+        schema = target_schema or await self._resolve_schema(agent_id, None)
+        async with schema_scoped_connection(self._pool, schema) as conn:
+            deleted = await conn.fetch(
+                "DELETE FROM node_type WHERE id NOT IN (SELECT DISTINCT type_id FROM node) "
+                "AND created_at > now() - make_interval(mins => $1) RETURNING name",
+                max_age_minutes,
+            )
+            if deleted:
+                logger.info(
+                    "cleaned_empty_types",
+                    count=len(deleted),
+                    names=[r["name"] for r in deleted],
+                )
+
+    # ── Partial Curation Cleanup ──
+
+    async def cleanup_partial_curation(
+        self,
+        agent_id: str,
+        episode_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        episode_str = str(episode_id)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn, conn.transaction():
+            r1 = await conn.execute(
+                "DELETE FROM edge WHERE properties->>'_source_episode' = $1",
+                episode_str,
+            )
+            r2 = await conn.execute(
+                "DELETE FROM node WHERE properties->>'_source_episode' = $1",
+                episode_str,
+            )
+        edges_deleted = int(r1.split()[-1]) if r1 else 0
+        nodes_deleted = int(r2.split()[-1]) if r2 else 0
+        return edges_deleted + nodes_deleted
+
     # ── Episodic Consolidation ──
 
     async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
@@ -953,7 +1445,7 @@ class GraphServiceAdapter:
     # ── Edge Reinforcement ──
 
     async def reinforce_edges(
-        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 2.0
+        self, agent_id: str, edge_ids: list[int], delta: float = 0.05, ceiling: float = 1.5
     ) -> None:
         if not edge_ids:
             return
@@ -962,18 +1454,48 @@ class GraphServiceAdapter:
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
+            # Logarithmic diminishing returns: increment shrinks as weight grows
+            # At weight 1.0: +delta/1.0, at 1.2: +delta/2.0, at 1.4: +delta/3.0
             await conn.execute(
-                "UPDATE edge SET weight = LEAST(weight + $2, $3), last_reinforced_at = now() "
+                "UPDATE edge SET "
+                "weight = LEAST(weight + $2 / (1.0 + (weight - 1.0) * 5.0), $3), "
+                "last_reinforced_at = now() "
                 "WHERE id = ANY($1::int[])",
                 edge_ids,
                 delta,
                 ceiling,
             )
 
+    async def micro_decay_edges(
+        self,
+        agent_id: str,
+        exclude_ids: list[int],
+        factor: float = 0.998,
+        floor: float = 0.1,
+        recently_reinforced_hours: float = 1.0,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+
+        schema_name = await self._router.route_store(agent_id)
+        async with schema_scoped_connection(self._pool, schema_name) as conn:
+            result = await conn.execute(
+                "UPDATE edge SET weight = GREATEST(weight * $1, $2) "
+                "WHERE id != ALL($3::int[]) "
+                "AND weight > $2 "
+                "AND last_reinforced_at > now() - make_interval(hours => $4)",
+                factor,
+                floor,
+                exclude_ids or [],
+                recently_reinforced_hours,
+            )
+        count = int(result.split()[-1]) if result else 0
+        return count
+
     async def decay_stale_edges(
         self,
         agent_id: str,
-        older_than_hours: float = 168.0,
+        older_than_hours: float = 48.0,
         decay_factor: float = 0.95,
         floor: float = 0.1,
         force: bool = False,
@@ -1067,13 +1589,20 @@ class GraphServiceAdapter:
         for nid, info in merged_nodes.items():
             hit = info["hit"]
             created_at = hit.get("created_at")
-            recency = compute_recency_score(created_at, half_life) if created_at else 0.5
+            updated_at = hit.get("updated_at")
+            recency_ts = max(created_at, updated_at) if (created_at and updated_at) else created_at
+            recency = compute_recency_score(recency_ts, half_life) if recency_ts else 0.5
 
             # Compute activation from access_count and last_accessed_at if available
             access_count = int(hit.get("access_count") or 0)
             last_accessed = hit.get("last_accessed_at") or created_at
             activation = (
-                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    access_count,
+                    last_accessed,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if last_accessed
                 else None
             )
@@ -1137,7 +1666,12 @@ class GraphServiceAdapter:
                 ep.last_accessed_at if hasattr(ep, "last_accessed_at") else ep.get("last_accessed_at")
             ) or created_at
             activation = (
-                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    ep_access,
+                    ep_last_acc,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if ep_last_acc
                 else None
             )
@@ -1151,6 +1685,11 @@ class GraphServiceAdapter:
                 ep_importance,
                 weights,
             )
+            consolidated = ep.consolidated if hasattr(ep, "consolidated") else ep.get("consolidated", True)
+            if consolidated:
+                score *= 0.5
+            else:
+                score *= self._settings.recall_unconsolidated_episode_boost
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -1203,7 +1742,8 @@ class GraphServiceAdapter:
                                    ELSE NULL
                               END AS vector_sim,
                               access_count, last_accessed_at, importance,
-                              created_at
+                              created_at, updated_at,
+                              NULL::float[] AS embedding_vec
                        FROM node
                        WHERE forgotten = false
                          AND (tsv @@ plainto_tsquery('english', $1)
@@ -1224,7 +1764,8 @@ class GraphServiceAdapter:
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
-                              END AS vector_sim
+                              END AS vector_sim,
+                              NULL::float[] AS embedding_vec
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
                           OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
@@ -1242,7 +1783,7 @@ class GraphServiceAdapter:
                               ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
                               NULL::double precision AS vector_sim,
                               access_count, last_accessed_at, importance,
-                              created_at
+                              created_at, updated_at
                        FROM node
                        WHERE forgotten = false
                          AND tsv @@ plainto_tsquery('english', $1)
@@ -1268,19 +1809,54 @@ class GraphServiceAdapter:
 
             type_rows = await conn.fetch("SELECT id, name FROM node_type")
 
+            # Fetch supersession relationships for candidate nodes
+            candidate_node_ids = [int(r["id"]) for r in node_rows]
+            supersession_type_ids = await conn.fetch(
+                "SELECT id FROM edge_type WHERE name IN ('SUPERSEDES', 'CORRECTS')"
+            )
+            s_type_ids = [r["id"] for r in supersession_type_ids]
+
+            supersession_edges: dict[str, dict[int, list]] = {"superseded_by": {}, "supersedes": {}}
+
+            if s_type_ids and candidate_node_ids:
+                superseded_rows = await conn.fetch(
+                    "SELECT target_id, source_id FROM edge "
+                    "WHERE type_id = ANY($1::int[]) AND target_id = ANY($2::int[])",
+                    s_type_ids,
+                    candidate_node_ids,
+                )
+                superseding_rows = await conn.fetch(
+                    "SELECT source_id, target_id FROM edge "
+                    "WHERE type_id = ANY($1::int[]) AND source_id = ANY($2::int[])",
+                    s_type_ids,
+                    candidate_node_ids,
+                )
+                for r in superseded_rows:
+                    supersession_edges["superseded_by"].setdefault(r["target_id"], []).append(r)
+                for r in superseding_rows:
+                    supersession_edges["supersedes"].setdefault(r["source_id"], []).append(r)
+
         type_names = {int(row["id"]): str(row["name"]) for row in type_rows}
 
-        results: list[RecallItem] = []
+        # Build intermediate dicts (includes embedding for MMR, stripped before return)
+        result_dicts: list[dict] = []
         for row in node_rows:
             text_rank = float(row["text_rank"]) if row["text_rank"] is not None else None
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
-            recency = compute_recency_score(created_at, half_life) if created_at else 0.5
+            updated_at = row.get("updated_at")
+            recency_ts = max(created_at, updated_at) if updated_at else created_at
+            recency = compute_recency_score(recency_ts, half_life) if created_at else 0.5
 
             access_count = int(row["access_count"] or 0)
             last_accessed = row["last_accessed_at"] or created_at
             activation = (
-                compute_base_activation(access_count, last_accessed, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    access_count,
+                    last_accessed,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if last_accessed
                 else None
             )
@@ -1294,19 +1870,32 @@ class GraphServiceAdapter:
                 node_importance,
                 weights,
             )
-            results.append(
-                RecallItem(
-                    item_id=int(row["id"]),
-                    name=str(row["name"]),
-                    content=str(row["content"] or ""),
-                    item_type=type_names.get(int(row["type_id"]), "Unknown"),
-                    score=score,
-                    activation_score=activation,
-                    importance=node_importance,
-                    source=str(row["source"]) if row["source"] is not None else None,
-                    source_kind="node",
-                    graph_name=schema_name,
-                )
+
+            # Apply supersession adjustment (penalize outdated, boost correcting)
+            node_id = int(row["id"])
+            adjustment = compute_supersession_adjustment(
+                node_id,
+                supersession_edges,
+                superseded_penalty=self._settings.recall_superseded_penalty,
+                superseding_boost=self._settings.recall_superseding_boost,
+            )
+            score *= adjustment
+
+            embedding_vec = row.get("embedding_vec")
+            result_dicts.append(
+                {
+                    "score": score,
+                    "embedding": list(embedding_vec) if embedding_vec is not None else None,
+                    "item_id": int(row["id"]),
+                    "name": str(row["name"]),
+                    "content": str(row["content"] or ""),
+                    "item_type": type_names.get(int(row["type_id"]), "Unknown"),
+                    "activation_score": activation,
+                    "importance": node_importance,
+                    "source": str(row["source"]) if row["source"] is not None else None,
+                    "source_kind": "node",
+                    "graph_name": schema_name,
+                }
             )
 
         for row in episode_rows:
@@ -1317,7 +1906,12 @@ class GraphServiceAdapter:
             ep_access = int(row["access_count"] or 0)
             ep_last_acc = row["last_accessed_at"] or created_at
             activation = (
-                compute_base_activation(ep_access, ep_last_acc, self._settings.activation_decay_rate)
+                compute_base_activation(
+                    ep_access,
+                    ep_last_acc,
+                    decay_rate=self._settings.activation_decay_rate,
+                    access_exponent=self._settings.activation_access_exponent,
+                )
                 if ep_last_acc
                 else None
             )
@@ -1335,23 +1929,53 @@ class GraphServiceAdapter:
             # Consolidated episodes get half the score — graph nodes take priority
             if row.get("consolidated"):
                 score *= 0.5
+            else:
+                # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
+                score *= self._settings.recall_unconsolidated_episode_boost
 
-            results.append(
-                RecallItem(
-                    item_id=int(row["id"]),
-                    name=f"Episode #{int(row['id'])}",
-                    content=str(row["content"]),
-                    item_type="Episode",
-                    score=score,
-                    activation_score=activation,
-                    importance=ep_importance,
-                    source=str(row["source_type"]) if row["source_type"] is not None else None,
-                    source_kind="episode",
-                    graph_name=schema_name,
-                )
+            embedding_vec = row.get("embedding_vec")
+            result_dicts.append(
+                {
+                    "score": score,
+                    "embedding": list(embedding_vec) if embedding_vec is not None else None,
+                    "item_id": int(row["id"]),
+                    "name": f"Episode #{int(row['id'])}",
+                    "content": str(row["content"]),
+                    "item_type": "Episode",
+                    "activation_score": activation,
+                    "importance": ep_importance,
+                    "source": str(row["source_type"]) if row["source_type"] is not None else None,
+                    "source_kind": "episode",
+                    "graph_name": schema_name,
+                }
             )
 
-        results.sort(key=lambda item: item.score, reverse=True)
+        # Apply MMR diversity reranking if enabled
+        if self._settings.recall_mmr_enabled:
+            result_dicts = mmr_rerank(
+                result_dicts,
+                lambda_param=self._settings.recall_mmr_lambda,
+            )
+        else:
+            result_dicts.sort(key=lambda d: d["score"], reverse=True)
+
+        # Convert to RecallItem objects (strip embeddings)
+        results: list[RecallItem] = []
+        for d in result_dicts:
+            results.append(
+                RecallItem(
+                    item_id=d["item_id"],
+                    name=d["name"],
+                    content=d["content"],
+                    item_type=d["item_type"],
+                    score=d["score"],
+                    activation_score=d["activation_score"],
+                    importance=d["importance"],
+                    source=d["source"],
+                    source_kind=d["source_kind"],
+                    graph_name=d["graph_name"],
+                )
+            )
         return results
 
     async def _get_type_names(self, type_ids: set[int]) -> dict[int, str]:

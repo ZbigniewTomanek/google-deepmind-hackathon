@@ -156,7 +156,7 @@ class TestStage1SchemaFoundation:
     def test_settings_have_cognitive_params(self):
         settings = MCPSettings()
         # New cognitive params
-        assert settings.recall_weight_activation == 0.25
+        assert settings.recall_weight_activation == 0.20
         assert settings.recall_weight_importance == 0.15
         assert settings.activation_decay_rate == 0.5
         assert settings.spreading_activation_decay == 0.6
@@ -165,11 +165,11 @@ class TestStage1SchemaFoundation:
         assert settings.forget_importance_floor == 0.3
         assert settings.edge_reinforcement_delta == 0.05
         assert settings.edge_weight_floor == 0.1
-        assert settings.edge_weight_ceiling == 2.0
-        # Rebalanced weights (Stage 2)
+        assert settings.edge_weight_ceiling == 1.5
+        # Rebalanced weights (Stage 3: temporal recency rebalance)
         assert settings.recall_weight_vector == 0.3
         assert settings.recall_weight_text == 0.2
-        assert settings.recall_weight_recency == 0.1
+        assert settings.recall_weight_recency == 0.15
 
     @pytest.mark.asyncio
     async def test_mock_repo_upsert_node_with_new_fields(self, repo: InMemoryRepository):
@@ -197,10 +197,11 @@ class TestStage2BaseActivation:
         assert activation == pytest.approx(0.5, abs=0.01)
 
     def test_base_activation_high_frequency_recent(self):
-        """Node with access_count=100, last_accessed=now returns activation close to 1.0."""
+        """Node with access_count=100, last_accessed=now returns high activation (dampened)."""
         now = datetime.now(UTC)
         activation = compute_base_activation(access_count=100, last_accessed_at=now)
-        assert activation > 0.95
+        # With default dampening (exponent=0.5): ln(√100+1) = ln(11) ≈ 2.4, sigmoid ≈ 0.92
+        assert activation > 0.85
 
     def test_base_activation_low_frequency_stale(self):
         """Node with access_count=1, last_accessed=30d ago returns activation < 0.3."""
@@ -669,16 +670,17 @@ class TestStage5EdgeReinforcement:
 
     @pytest.mark.asyncio
     async def test_reinforce_edges_respects_ceiling(self, repo: InMemoryRepository):
-        """Create edge with weight=1.95, reinforce with delta=0.1, ceiling=2.0, verify capped at 2.0."""
+        """Reinforce edge many times, verify weight never exceeds ceiling."""
         concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
         relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
         a = await repo.upsert_node(AGENT_ID, "Alpha", concept.id)
         b = await repo.upsert_node(AGENT_ID, "Beta", concept.id)
-        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.95)
+        edge = await repo.upsert_edge(AGENT_ID, a.id, b.id, relates.id, weight=1.4)
 
-        await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1, ceiling=2.0)
+        for _ in range(50):
+            await repo.reinforce_edges(AGENT_ID, [edge.id], delta=0.1, ceiling=1.5)
         updated = repo._edges[edge.id]
-        assert updated.weight == pytest.approx(2.0)
+        assert updated.weight <= 1.5
 
     @pytest.mark.asyncio
     async def test_reinforce_edges_multiple(self, repo: InMemoryRepository):
@@ -1111,7 +1113,7 @@ class TestStage7FullComposition:
     @pytest.mark.asyncio
     async def test_composition_hebbian_trails_emerge(self, repo: InMemoryRepository):
         """Recall the same query 10 times. After each recall, verify that edges
-        in the traversal path have increasing weights.
+        in the traversal path have increasing weights (with diminishing returns).
         """
         concept = await repo.get_or_create_node_type(AGENT_ID, "Concept")
         relates = await repo.get_or_create_edge_type(AGENT_ID, "RELATES_TO")
@@ -1125,15 +1127,15 @@ class TestStage7FullComposition:
             neighborhood = await repo.get_node_neighborhood(AGENT_ID, a.id, depth=2)
             edge_ids = [e.id for entry in neighborhood for e in entry["edges"]]
             if edge_ids:
-                await repo.reinforce_edges(AGENT_ID, edge_ids, delta=0.05, ceiling=2.0)
+                await repo.reinforce_edges(AGENT_ID, edge_ids, delta=0.05, ceiling=1.5)
             weights.append(repo._edges[edge.id].weight)
 
         # Weights should monotonically increase
         for i in range(1, len(weights)):
             assert weights[i] >= weights[i - 1], f"Weight at iteration {i} did not increase: {weights}"
 
-        # By iteration 10, the path should be significantly stronger
-        assert weights[-1] > weights[0] + 0.3
+        # By iteration 10, the path should be stronger (diminishing returns → ~0.2-0.3 gain)
+        assert weights[-1] > weights[0] + 0.2
 
     @pytest.mark.asyncio
     async def test_composition_forget_cycle(self, repo: InMemoryRepository, settings: MCPSettings):

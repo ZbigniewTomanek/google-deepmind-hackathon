@@ -1,5 +1,5 @@
 def main():
-    print("Hello from google-deepmind-hackathon!")
+    print("Hello from neocortex!")
 
 
 if __name__ == "__main__":

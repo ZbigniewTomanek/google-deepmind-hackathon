@@ -1,6 +1,9 @@
 import re
 from pathlib import Path
 
+import asyncpg.exceptions
+from loguru import logger
+
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.graph import GraphInfo
 
@@ -26,31 +29,40 @@ class SchemaManager:
         schema_name = self.make_schema_name(agent_id=agent_id, purpose=purpose)
         sql = self._render_template(schema_name=schema_name, is_shared=is_shared)
 
-        async with self._pg.pool.acquire() as conn, conn.transaction():
-            duplicate = await conn.fetchrow(
-                """
-                SELECT id, agent_id, purpose, schema_name, is_shared, created_at
-                FROM graph_registry
-                WHERE agent_id = $1 AND purpose = $2
-                """,
-                agent_id,
-                purpose,
-            )
-            if duplicate is not None:
-                return str(duplicate["schema_name"])
+        try:
+            async with self._pg.pool.acquire() as conn, conn.transaction():
+                duplicate = await conn.fetchrow(
+                    """
+                    SELECT id, agent_id, purpose, schema_name, is_shared, created_at
+                    FROM graph_registry
+                    WHERE agent_id = $1 AND purpose = $2
+                    """,
+                    agent_id,
+                    purpose,
+                )
+                if duplicate is not None:
+                    return str(duplicate["schema_name"])
 
-            await conn.execute(sql)
-            row = await conn.fetchrow(
-                """
-                INSERT INTO graph_registry (agent_id, purpose, schema_name, is_shared)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, agent_id, purpose, schema_name, is_shared, created_at
-                """,
-                agent_id,
-                purpose,
-                schema_name,
-                is_shared,
-            )
+                await conn.execute(sql)
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO graph_registry (agent_id, purpose, schema_name, is_shared)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id, agent_id, purpose, schema_name, is_shared, created_at
+                    """,
+                    agent_id,
+                    purpose,
+                    schema_name,
+                    is_shared,
+                )
+        except asyncpg.exceptions.UniqueViolationError:
+            # CREATE SCHEMA IF NOT EXISTS has a race condition under concurrent
+            # transactions — the catalog check and insert aren't atomic, so a
+            # parallel process can win the race.  Re-check the registry.
+            existing = await self.get_graph(agent_id=agent_id, purpose=purpose)
+            if existing is not None:
+                return existing.schema_name
+            return schema_name
 
         if row is None:
             raise RuntimeError(f"Failed to register graph schema '{schema_name}'.")
@@ -127,6 +139,48 @@ class SchemaManager:
         if not _SCHEMA_NAME_PATTERN.fullmatch(schema_name):
             raise ValueError(f"Invalid graph schema name: {schema_name}")
 
+    async def ensure_alias_tables(self) -> int:
+        """Ensure all registered graph schemas have the node_alias table.
+
+        Uses the per-schema _migration tracking table to apply this only once.
+        Returns the number of schemas migrated.
+        """
+        graphs = await self.list_graphs()
+        migrated = 0
+        for graph in graphs:
+            schema = graph.schema_name
+            try:
+                async with self._pg.pool.acquire() as conn:
+                    already = await conn.fetchval(
+                        f"SELECT 1 FROM {schema}._migration WHERE name = $1",
+                        "009_node_alias",
+                    )
+                    if already:
+                        continue
+                    await conn.execute(f"""
+                        CREATE TABLE IF NOT EXISTS {schema}.node_alias (
+                            id          SERIAL PRIMARY KEY,
+                            node_id     INT NOT NULL REFERENCES {schema}.node(id) ON DELETE CASCADE,
+                            alias       TEXT NOT NULL,
+                            source      TEXT DEFAULT 'extraction',
+                            created_at  TIMESTAMPTZ DEFAULT now(),
+                            UNIQUE (alias, node_id)
+                        )
+                    """)
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{schema}_node_alias_lower
+                            ON {schema}.node_alias (lower(alias))
+                    """)
+                    await conn.execute(
+                        f"INSERT INTO {schema}._migration (name) VALUES ($1)",
+                        "009_node_alias",
+                    )
+                    migrated += 1
+                    logger.info("alias_table_migrated", schema=schema)
+            except Exception:
+                logger.warning("alias_table_migration_failed", schema=schema, exc_info=True)
+        return migrated
+
     def _render_template(self, schema_name: str, is_shared: bool) -> str:
         self._validate_schema_name(schema_name)
         template = self._template_path.read_text(encoding="utf-8")
@@ -147,7 +201,7 @@ class SchemaManager:
             f"GRANT USAGE ON SCHEMA {schema_name} TO neocortex_agent;",
             (
                 f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {schema_name}.node, "
-                f"{schema_name}.edge, {schema_name}.episode TO neocortex_agent;"
+                f"{schema_name}.edge, {schema_name}.episode, {schema_name}.node_alias TO neocortex_agent;"
             ),
             f"GRANT SELECT, INSERT ON TABLE {schema_name}.node_type, {schema_name}.edge_type TO neocortex_agent;",
             f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {schema_name} TO neocortex_agent;",

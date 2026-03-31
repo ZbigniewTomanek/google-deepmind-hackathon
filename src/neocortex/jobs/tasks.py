@@ -52,13 +52,14 @@ async def extract_episode(
     services = get_services()
     settings = services["settings"]
 
-    # Only pass source_schema when explicitly provided.  The pipeline uses a
-    # sentinel (_UNSET) to distinguish "not provided → read from target_schema"
-    # from "None → read from personal graph".  Passing None unconditionally
-    # would always read from the personal graph even when episodes live in
-    # the target shared schema.
+    # The pipeline uses a sentinel (_UNSET) to distinguish "not provided →
+    # read from target_schema" from "None → read from personal graph".
+    # Since procrastinate serialises args as JSON, we use "__personal__" as a
+    # string sentinel for "read from agent's personal graph" (i.e. None).
     extra: dict = {}
-    if source_schema is not None:
+    if source_schema == "__personal__":
+        extra["source_schema"] = None  # personal graph
+    elif source_schema is not None:
         extra["source_schema"] = source_schema
 
     await run_extraction(
@@ -80,6 +81,7 @@ async def extract_episode(
             model_name=settings.librarian_model,
             thinking_effort=settings.librarian_thinking_effort,
         ),
+        librarian_use_tools=settings.librarian_use_tools,
         domain_hint=domain_hint,
     )
     logger.info(
@@ -109,6 +111,10 @@ async def route_episode(
     if domain_router is None:
         logger.debug("route_episode_skipped_no_router")
         return
+
+    # Ensure seed domains are available in the job worker context.
+    # seed_defaults() is idempotent (ON CONFLICT DO NOTHING).
+    await domain_router.ensure_domains_seeded()
 
     results = await domain_router.route_and_extract(
         agent_id=agent_id,

@@ -9,12 +9,12 @@ from neocortex.scoring import compute_spreading_activation, neighborhood_to_adja
 
 
 async def _maybe_decay_edges(repo, agent_id: str, settings, *, force: bool = False) -> None:
-    """Probabilistically decay weights of stale edges (1 in 10 calls, or forced)."""
-    if not force and random.random() >= 0.1:
+    """Probabilistically decay weights of stale edges (1 in 4 calls, or forced)."""
+    if not force and random.random() >= 0.25:
         return
     await repo.decay_stale_edges(
         agent_id,
-        older_than_hours=168.0,
+        older_than_hours=48.0,
         decay_factor=0.95,
         floor=settings.edge_weight_floor,
     )
@@ -191,7 +191,17 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
             ceiling=settings.edge_weight_ceiling,
         )
 
-    # Lazy edge decay — 1 in 10 recall calls
+    # Micro-decay — probabilistic, bounded to recently-active edges only
+    if traversed_edge_ids and random.random() < 0.25:
+        await repo.micro_decay_edges(
+            agent_id,
+            exclude_ids=list(traversed_edge_ids),
+            factor=settings.edge_micro_decay_factor,
+            floor=settings.edge_weight_floor,
+            recently_reinforced_hours=1.0,
+        )
+
+    # Lazy stale-edge decay — 1 in 4 recall calls, 48h window
     await _maybe_decay_edges(repo, agent_id, settings)
 
     # Lazy forget sweep — 1 in 20 recall calls

@@ -51,18 +51,39 @@ class MCPSettings(BaseSettings):
     # Hybrid recall weights (normalized at scoring time, so any ratio works)
     recall_weight_vector: float = 0.3
     recall_weight_text: float = 0.2
-    recall_weight_recency: float = 0.1
+    recall_weight_recency: float = 0.15
     recall_recency_half_life_hours: float = 168.0  # 7 days
     # Vector distance threshold: cosine distance below this counts as a match.
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
     recall_vector_distance_threshold: float = 0.5
 
     # Cognitive heuristic weights (wired in Stage 2+)
-    recall_weight_activation: float = 0.25
+    recall_weight_activation: float = 0.20
     recall_weight_importance: float = 0.15
 
     # ACT-R activation parameters
     activation_decay_rate: float = 0.5
+    # Sublinear dampening exponent for access_count in ACT-R formula.
+    # 1.0 = original (unbounded log growth), 0.5 = square-root dampening.
+    activation_access_exponent: float = 0.5
+
+    # Max nodes/episodes whose access_count is incremented per recall query.
+    # Prevents broad queries from boosting many items simultaneously.
+    recall_access_increment_limit: int = 3
+
+    # Bonus multiplier for unconsolidated episodes (not yet extracted into graph).
+    # Compensates for lack of graph traversal bonus on fresh memories.
+    recall_unconsolidated_episode_boost: float = 1.3
+
+    # MMR diversity reranking
+    # Lambda: 1.0 = pure relevance, 0.0 = pure diversity, default 0.7
+    recall_mmr_lambda: float = 0.7
+    # Enable/disable MMR postprocessing (disable to compare A/B)
+    recall_mmr_enabled: bool = True
+
+    # Supersession scoring adjustments
+    recall_superseded_penalty: float = 0.5  # Multiplier for outdated nodes
+    recall_superseding_boost: float = 1.2  # Multiplier for correcting nodes
 
     # Spreading activation
     spreading_activation_decay: float = 0.6
@@ -76,13 +97,15 @@ class MCPSettings(BaseSettings):
     # Edge reinforcement
     edge_reinforcement_delta: float = 0.05
     edge_weight_floor: float = 0.1
-    edge_weight_ceiling: float = 2.0
+    edge_weight_ceiling: float = 1.5
+    edge_micro_decay_factor: float = 0.998
 
     # Graph traversal
     recall_traversal_depth: int = 2  # hops from matched node
 
     # Extraction pipeline
     extraction_enabled: bool = True
+    librarian_use_tools: bool = True  # False falls back to _persist_payload
     # Per-agent inference config (env: NEOCORTEX_<AGENT>_MODEL / _THINKING_EFFORT)
     # Thinking effort: minimal|low|medium|high|xhigh (maps to token budgets)
     ontology_model: str = "gemini-3-flash-preview"

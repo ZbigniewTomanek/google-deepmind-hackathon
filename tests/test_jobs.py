@@ -130,6 +130,7 @@ async def test_extract_episode_calls_run_extraction():
     mock_settings.extractor_thinking_effort = "low"
     mock_settings.librarian_model = "test-model"
     mock_settings.librarian_thinking_effort = "low"
+    mock_settings.librarian_use_tools = True
 
     fake_ctx = {
         "repo": mock_repo,
@@ -169,7 +170,6 @@ async def test_extract_episode_calls_run_extraction():
             agent_id="test-agent",
             episode_ids=[10, 20],
             target_schema=None,
-            source_schema=None,
             ontology_config=AgentInferenceConfig(
                 model_name="test-model",
                 thinking_effort="low",
@@ -182,6 +182,7 @@ async def test_extract_episode_calls_run_extraction():
                 model_name="test-model",
                 thinking_effort="low",
             ),
+            librarian_use_tools=True,
             domain_hint=None,
         )
     finally:

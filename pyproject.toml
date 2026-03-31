@@ -3,9 +3,9 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "google-deepmind-hackathon"
+name = "neocortex"
 version = "0.1.0"
-description = "Google DeepMind x AI Tinkerers Hackathon - Warsaw 2026"
+description = "MCP server providing structured long-term memory for AI agents via PostgreSQL knowledge graph"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic-ai-slim[google]>=1.72.0",

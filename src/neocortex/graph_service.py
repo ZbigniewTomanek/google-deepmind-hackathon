@@ -160,6 +160,7 @@ class GraphService:
         row = await self._pg.fetchrow(
             """UPDATE node SET
                 name = COALESCE($1, name),
+                -- Content: prefer new value, keep old only when new is NULL
                 content = COALESCE($2, content),
                 properties = COALESCE($3::jsonb, properties),
                 embedding = COALESCE($4::vector, embedding),

@@ -32,7 +32,7 @@ NeoCortex is structured as a layered system: MCP tools at the top provide a simp
      +------------------------------------------------+
 ```
 
-Both services use `create_services()` from `services.py` for initialization, sharing the same `MemoryRepository` protocol. The ingestion API uses a `StubProcessor` that stores raw episodes; a future `ExtractionPipeline` will replace it for richer processing.
+Both services use `create_services()` from `services.py` for initialization, sharing the same `MemoryRepository` protocol. The ingestion API stores raw episodes and enqueues extraction jobs for automatic knowledge graph enrichment.
 
 A **Developer TUI** (`python -m neocortex.tui`) provides an interactive terminal interface for testing. It connects to the MCP server via `fastmcp.Client` with streamable-HTTP transport and supports all three tools (remember, recall, discover).
 
@@ -149,9 +149,9 @@ Three auth modes, configurable via `NEOCORTEX_AUTH_MODE`:
 | `dev_token` | Bearer tokens mapped to agent IDs via `dev_tokens.json` |
 | `google_oauth` | Google OAuth via FastMCP OAuthProxy |
 
-## Internal Agent Pipeline (POC)
+## Extraction Pipeline
 
-The Pydantic AI playground demonstrates the fact extraction pipeline that will run behind `remember`:
+The 3-agent extraction pipeline runs behind `remember` and ingestion, automatically enriching raw text into the knowledge graph via async background jobs:
 
 ```
 Episode (raw text)
@@ -166,4 +166,4 @@ Extraction Agent → extracts facts aligned to ontology
 Librarian Agent → deduplicates, normalizes, persists
 ```
 
-This pipeline is proven in the POC with BMW automotive data and SQLite. Production integration with the MCP server will use the same pattern against PostgreSQL.
+The pipeline runs against PostgreSQL via the Procrastinate job queue. A standalone playground (`src/pydantic_agents_playground/`) provides an isolated SQLite-based version for experimentation.
