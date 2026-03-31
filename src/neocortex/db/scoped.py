@@ -36,7 +36,12 @@ async def schema_scoped_connection(pool: asyncpg.Pool, schema_name: str):
 
 @asynccontextmanager
 async def graph_scoped_connection(pool: asyncpg.Pool, schema_name: str, agent_id: str | None = None):
-    """Run queries scoped to a graph schema and apply RLS role only for shared graphs."""
+    """Run queries scoped to a graph schema.
+
+    For shared graphs, agent_id is validated but no SET LOCAL ROLE is applied —
+    shared graphs don't use RLS. The owner_role column is set by the application
+    layer for provenance tracking.
+    """
     _validate_schema_name(schema_name)
     async with pool.acquire() as conn, conn.transaction():
         is_shared = await conn.fetchval(
@@ -46,13 +51,10 @@ async def graph_scoped_connection(pool: asyncpg.Pool, schema_name: str, agent_id
         if is_shared is None:
             raise ValueError(f"Unknown graph schema: {schema_name}")
 
-        if is_shared:
-            if agent_id is None:
-                raise ValueError("agent_id is required for shared graph access")
-            role_name = oauth_sub_to_pg_role(agent_id)
-            _validate_role_name(role_name)
-            await ensure_pg_role(conn, role_name)
-            await conn.execute(f'SET LOCAL ROLE "{role_name}"')
+        if is_shared and agent_id is None:
+            raise ValueError("agent_id is required for shared graph access")
+        # For shared graphs: no SET LOCAL ROLE — shared graphs don't use RLS.
+        # owner_role is set by the application layer for provenance.
 
         await conn.execute(f"SET LOCAL search_path TO {schema_name}, public")
         yield conn

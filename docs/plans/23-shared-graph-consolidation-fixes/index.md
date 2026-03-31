@@ -114,7 +114,7 @@ Unit tests for all changes. Document how to re-run Plan 22 for E2E validation.
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Remove RLS from Shared Graphs](stages/01-remove-shared-rls.md) | PENDING | | |
+| 1 | [Remove RLS from Shared Graphs](stages/01-remove-shared-rls.md) | DONE | Removed RLS policies from shared schema provisioning, simplified graph_scoped_connection (no SET LOCAL ROLE), set owner_role explicitly in INSERT statements for provenance, updated tests | `refactor(shared-graphs): remove RLS from shared schemas, retain owner_role for provenance` |
 | 2 | [Content-Merging Upsert](stages/02-content-merging-upsert.md) | PENDING | | |
 | 3 | [Extraction Pipeline Hardening](stages/03-extraction-pipeline-hardening.md) | PENDING | | |
 | 4 | [Graceful Update Failure Handling](stages/04-graceful-update-failure.md) | PENDING | | |

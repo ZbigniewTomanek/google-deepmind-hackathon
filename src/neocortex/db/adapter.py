@@ -131,7 +131,7 @@ class GraphServiceAdapter:
         """Return the appropriate scoped connection context manager.
 
         When target_schema is set (shared schema write), use graph_scoped_connection
-        which handles RLS. For personal schemas, use schema_scoped_connection.
+        which validates shared graph access. For personal schemas, use schema_scoped_connection.
         """
         assert self._pool is not None, "Connection pool required for scoped connections"
         if target_schema is not None:
@@ -200,14 +200,15 @@ class GraphServiceAdapter:
 
         async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance)
-                   VALUES ($1, $2, $3, $4::jsonb, $5)
+                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, owner_role)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6)
                    RETURNING id""",
                 agent_id,
                 content,
                 source_type,
                 json.dumps(episode_metadata),
                 importance,
+                agent_id,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -732,20 +733,38 @@ class GraphServiceAdapter:
                     d["properties"] = json.loads(d["properties"])
                 return Node(**d)
             else:
-                new_row = await conn.fetchrow(
-                    """INSERT INTO node (type_id, name, content, properties, embedding, source, importance)
-                       VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7)
-                       RETURNING id, type_id, name, content, properties, source, importance,
-                                 access_count, last_accessed_at, forgotten, forgotten_at,
-                                 created_at, updated_at""",
-                    type_id,
-                    name,
-                    content,
-                    props_json,
-                    emb_str,
-                    source,
-                    importance,
-                )
+                if target_schema is not None:
+                    new_row = await conn.fetchrow(
+                        """INSERT INTO node
+                           (type_id, name, content, properties, embedding, source, importance, owner_role)
+                           VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7, $8)
+                           RETURNING id, type_id, name, content, properties, source, importance,
+                                     access_count, last_accessed_at, forgotten, forgotten_at,
+                                     created_at, updated_at""",
+                        type_id,
+                        name,
+                        content,
+                        props_json,
+                        emb_str,
+                        source,
+                        importance,
+                        agent_id,
+                    )
+                else:
+                    new_row = await conn.fetchrow(
+                        """INSERT INTO node (type_id, name, content, properties, embedding, source, importance)
+                           VALUES ($1, $2, $3, $4::jsonb, $5::vector, $6, $7)
+                           RETURNING id, type_id, name, content, properties, source, importance,
+                                     access_count, last_accessed_at, forgotten, forgotten_at,
+                                     created_at, updated_at""",
+                        type_id,
+                        name,
+                        content,
+                        props_json,
+                        emb_str,
+                        source,
+                        importance,
+                    )
                 if new_row is None:
                     raise RuntimeError("Failed to create node")
                 d = dict(new_row)
@@ -958,20 +977,37 @@ class GraphServiceAdapter:
                 )
             else:
                 # Normal path: INSERT...ON CONFLICT (exact match or 0/2+ existing)
-                row = await conn.fetchrow(
-                    """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
-                       VALUES ($1, $2, $3, $4, $5::jsonb)
-                       ON CONFLICT (source_id, target_id, type_id)
-                       DO UPDATE SET
-                           weight = $4,
-                           properties = edge.properties || $5::jsonb
-                       RETURNING *""",
-                    source_id,
-                    target_id,
-                    type_id,
-                    weight,
-                    props_json,
-                )
+                if target_schema is not None:
+                    row = await conn.fetchrow(
+                        """INSERT INTO edge (source_id, target_id, type_id, weight, properties, owner_role)
+                           VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+                           ON CONFLICT (source_id, target_id, type_id)
+                           DO UPDATE SET
+                               weight = $4,
+                               properties = edge.properties || $5::jsonb
+                           RETURNING *""",
+                        source_id,
+                        target_id,
+                        type_id,
+                        weight,
+                        props_json,
+                        agent_id,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        """INSERT INTO edge (source_id, target_id, type_id, weight, properties)
+                           VALUES ($1, $2, $3, $4, $5::jsonb)
+                           ON CONFLICT (source_id, target_id, type_id)
+                           DO UPDATE SET
+                               weight = $4,
+                               properties = edge.properties || $5::jsonb
+                           RETURNING *""",
+                        source_id,
+                        target_id,
+                        type_id,
+                        weight,
+                        props_json,
+                    )
             if row is None:
                 raise RuntimeError("Failed to upsert edge")
             d = dict(row)
