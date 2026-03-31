@@ -180,6 +180,25 @@ def build_extractor_agent(
             "  0.3-0.6: Standard factual entity\n"
             "  0.6-0.8: Central concept referenced multiple times\n"
             "  0.8-1.0: Critical domain entity (core drug, disease, mechanism)",
+            "",
+            "## Temporal Corrections",
+            "When the text contains signals that new information CORRECTS or SUPERSEDES",
+            "previous knowledge, you MUST populate the `supersedes` and `temporal_signal`",
+            "fields on the relevant entity:",
+            "",
+            "- CORRECTION signals: 'CORRECTION', 'actually', 'error', 'bug fix',",
+            "  'misconception', 'wrong', 'incorrect'",
+            "  → Set temporal_signal='CORRECTS', supersedes='<old entity name>'",
+            "",
+            "- SUPERSESSION signals: 'UPDATE', 'REVERSAL', 'instead of', 'no longer',",
+            "  'changed to', 'replaced by', 'switched from', 'new strategy',",
+            "  'decided to switch', 'moving from X to Y'",
+            "  → Set temporal_signal='SUPERSEDES', supersedes='<old entity name>'",
+            "",
+            "When a correction is detected, use a VERSIONED name for the new entity:",
+            "  - Old: 'Metaphone3' → New: 'Metaphone3 Hybrid Strategy'",
+            "  - Old: 'Jonas Weber' role → New entity: 'Jonas Weber Security Role'",
+            "This prevents the librarian from merging the new entity into the old one.",
         ),
     )
 
@@ -309,15 +328,22 @@ def build_librarian_agent(
             "- 'launch: June' → 'launch: August 1' → node content MUST say 'August 1'",
             "- 'v2.3' → 'v3.0' → node content MUST say 'v3.0'",
             "",
-            "## Temporal Relationships",
-            "- If new information CORRECTS a previous fact (error fix, misconception):",
-            "  After updating the node, also create an edge of type 'CORRECTS' from the",
-            "  new/updated node to the old node.",
-            "- If new information SUPERSEDES a previous decision or version (newer version,",
-            "  reversed decision, updated strategy): After updating the node, also create",
-            "  an edge of type 'SUPERSEDES' from the new/updated node to the old node.",
-            "- Look for signals: 'CORRECTION', 'UPDATE', 'REVERSAL', 'actually', 'instead',",
-            "  'no longer', 'changed to', 'replaced by', 'switched from'.",
+            "## Temporal Corrections (MANDATORY)",
+            "When an extracted entity has `supersedes` set (non-null):",
+            "",
+            "  1. DO NOT merge this entity into the existing node with the superseded name.",
+            "  2. Create a NEW node with the extracted name (versioned name).",
+            "  3. Create an edge of the type specified in `temporal_signal`",
+            "     (either 'CORRECTS' or 'SUPERSEDES') FROM the new node TO the old node.",
+            "  4. Report both the new node creation and the temporal edge in your actions.",
+            "",
+            "This is non-negotiable. Temporal correction edges are critical for recall quality.",
+            "If you merge a correction into an existing node, the temporal signal is lost.",
+            "",
+            "Even without explicit `supersedes` fields, watch for these signals in the",
+            "episode text and create temporal edges when appropriate:",
+            "  - 'CORRECTION', 'UPDATE', 'REVERSAL', 'actually', 'instead',",
+            "    'no longer', 'changed to', 'replaced by', 'switched from'",
             "",
             "## Rules",
             "- ALWAYS provide comprehensive content when creating/updating nodes.",
@@ -874,12 +900,13 @@ def build_librarian_agent(
 
     @agent.instructions
     async def inject_context(ctx: RunContext[LibrarianAgentDeps]) -> str:
-        entities_str = (
-            "\n".join(
-                f"- {e.name} [{e.type_name}]: {e.description or 'no description'}" for e in ctx.deps.extracted_entities
-            )
-            or "- none"
-        )
+        def _format_entity(e: ExtractedEntity) -> str:
+            base = f"- {e.name} [{e.type_name}]: {e.description or 'no description'}"
+            if e.supersedes:
+                base += f" [SUPERSEDES={e.supersedes}, signal={e.temporal_signal}]"
+            return base
+
+        entities_str = "\n".join(_format_entity(e) for e in ctx.deps.extracted_entities) or "- none"
         relations_str = (
             "\n".join(
                 f"- {r.source_name} --[{r.relation_type}]--> {r.target_name}" for r in ctx.deps.extracted_relations
