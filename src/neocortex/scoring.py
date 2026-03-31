@@ -133,6 +133,35 @@ def compute_spreading_activation(
     return bonus
 
 
+def compute_supersession_adjustment(
+    node_id: int,
+    supersession_edges: dict[str, dict[int, list]],
+    superseded_penalty: float = 0.5,
+    superseding_boost: float = 1.2,
+) -> float:
+    """Returns a score multiplier based on supersession edges.
+
+    Args:
+        node_id: The node to check.
+        supersession_edges: Dict with keys "superseded_by" (node_id -> edges where
+            this node is the target of SUPERSEDES/CORRECTS) and "supersedes"
+            (node_id -> edges where this node is the source).
+        superseded_penalty: Multiplier for outdated nodes.
+        superseding_boost: Multiplier for correcting nodes.
+
+    Returns:
+        superseded_penalty for superseded nodes, superseding_boost for superseding
+        nodes, 1.0 otherwise.
+    """
+    if node_id in supersession_edges.get("superseded_by", {}):
+        return superseded_penalty
+
+    if node_id in supersession_edges.get("supersedes", {}):
+        return superseding_boost
+
+    return 1.0
+
+
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Cosine similarity between two vectors. Returns value in [-1, 1]."""
     dot = sum(x * y for x, y in zip(a, b, strict=False))

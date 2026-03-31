@@ -10,6 +10,7 @@ from neocortex.scoring import (
     compute_base_activation,
     compute_hybrid_score,
     compute_recency_score,
+    compute_supersession_adjustment,
     mmr_rerank,
 )
 
@@ -225,3 +226,43 @@ class TestTemporalRecency:
             + s.recall_weight_importance
         )
         assert abs(total - 1.0) < 0.001
+
+
+class TestSupersessionAdjustment:
+    """Tests for fact supersession scoring adjustments."""
+
+    def test_superseded_node_penalized(self):
+        """Node that has been superseded should get 0.5x score."""
+        edges = {"superseded_by": {42: [{"source_id": 99}]}, "supersedes": {}}
+        assert compute_supersession_adjustment(42, edges) == 0.5
+
+    def test_superseding_node_boosted(self):
+        """Node that supersedes another should get 1.2x score."""
+        edges = {"superseded_by": {}, "supersedes": {99: [{"target_id": 42}]}}
+        assert compute_supersession_adjustment(99, edges) == 1.2
+
+    def test_neutral_node_unaffected(self):
+        """Node with no supersession edges gets 1.0x score."""
+        edges = {"superseded_by": {}, "supersedes": {}}
+        assert compute_supersession_adjustment(7, edges) == 1.0
+
+    def test_custom_penalty_and_boost(self):
+        """Custom penalty/boost values are respected."""
+        edges = {"superseded_by": {1: [{"source_id": 2}]}, "supersedes": {}}
+        assert compute_supersession_adjustment(1, edges, superseded_penalty=0.3) == 0.3
+
+        edges = {"superseded_by": {}, "supersedes": {2: [{"target_id": 1}]}}
+        assert compute_supersession_adjustment(2, edges, superseding_boost=1.5) == 1.5
+
+    def test_superseded_takes_priority_over_superseding(self):
+        """If a node is both superseded and superseding, penalty wins."""
+        edges = {
+            "superseded_by": {5: [{"source_id": 10}]},
+            "supersedes": {5: [{"target_id": 1}]},
+        }
+        # Superseded check comes first
+        assert compute_supersession_adjustment(5, edges) == 0.5
+
+    def test_empty_supersession_edges(self):
+        """Empty dict returns neutral 1.0."""
+        assert compute_supersession_adjustment(42, {}) == 1.0

@@ -81,6 +81,10 @@ class MCPSettings(BaseSettings):
     # Enable/disable MMR postprocessing (disable to compare A/B)
     recall_mmr_enabled: bool = True
 
+    # Supersession scoring adjustments
+    recall_superseded_penalty: float = 0.5  # Multiplier for outdated nodes
+    recall_superseding_boost: float = 1.2  # Multiplier for correcting nodes
+
     # Spreading activation
     spreading_activation_decay: float = 0.6
     spreading_activation_max_depth: int = 2

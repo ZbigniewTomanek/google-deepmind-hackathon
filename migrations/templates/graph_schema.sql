@@ -155,7 +155,9 @@ INSERT INTO {schema_name}.edge_type (name, description) VALUES
     ('CONTRADICTS',  'Source contradicts target'),
     ('SUPPORTS',     'Source supports/confirms target'),
     ('SUMMARIZES',   'Source is a summary of target'),
-    ('DERIVED_FROM', 'Source was derived from target')
+    ('DERIVED_FROM', 'Source was derived from target'),
+    ('SUPERSEDES',   'Source supersedes/replaces target — target is outdated'),
+    ('CORRECTS',     'Source corrects an error or misconception in target')
 ON CONFLICT (name) DO NOTHING;
 
 -- Conditionally populated by SchemaManager when provisioning shared graphs.

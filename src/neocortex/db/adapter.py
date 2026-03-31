@@ -20,6 +20,7 @@ from neocortex.scoring import (
     compute_base_activation,
     compute_hybrid_score,
     compute_recency_score,
+    compute_supersession_adjustment,
     mmr_rerank,
 )
 
@@ -1752,6 +1753,33 @@ class GraphServiceAdapter:
 
             type_rows = await conn.fetch("SELECT id, name FROM node_type")
 
+            # Fetch supersession relationships for candidate nodes
+            candidate_node_ids = [int(r["id"]) for r in node_rows]
+            supersession_type_ids = await conn.fetch(
+                "SELECT id FROM edge_type WHERE name IN ('SUPERSEDES', 'CORRECTS')"
+            )
+            s_type_ids = [r["id"] for r in supersession_type_ids]
+
+            supersession_edges: dict[str, dict[int, list]] = {"superseded_by": {}, "supersedes": {}}
+
+            if s_type_ids and candidate_node_ids:
+                superseded_rows = await conn.fetch(
+                    "SELECT target_id, source_id FROM edge "
+                    "WHERE type_id = ANY($1::int[]) AND target_id = ANY($2::int[])",
+                    s_type_ids,
+                    candidate_node_ids,
+                )
+                superseding_rows = await conn.fetch(
+                    "SELECT source_id, target_id FROM edge "
+                    "WHERE type_id = ANY($1::int[]) AND source_id = ANY($2::int[])",
+                    s_type_ids,
+                    candidate_node_ids,
+                )
+                for r in superseded_rows:
+                    supersession_edges["superseded_by"].setdefault(r["target_id"], []).append(r)
+                for r in superseding_rows:
+                    supersession_edges["supersedes"].setdefault(r["source_id"], []).append(r)
+
         type_names = {int(row["id"]): str(row["name"]) for row in type_rows}
 
         # Build intermediate dicts (includes embedding for MMR, stripped before return)
@@ -1786,6 +1814,16 @@ class GraphServiceAdapter:
                 node_importance,
                 weights,
             )
+
+            # Apply supersession adjustment (penalize outdated, boost correcting)
+            node_id = int(row["id"])
+            adjustment = compute_supersession_adjustment(
+                node_id,
+                supersession_edges,
+                superseded_penalty=self._settings.recall_superseded_penalty,
+                superseding_boost=self._settings.recall_superseding_boost,
+            )
+            score *= adjustment
 
             embedding_vec = row.get("embedding_vec")
             result_dicts.append(
