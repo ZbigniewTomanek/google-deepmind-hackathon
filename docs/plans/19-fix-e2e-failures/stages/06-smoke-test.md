@@ -2,7 +2,7 @@
 
 **Goal**: Verify all 3 fixes work end-to-end by storing targeted episodes via MCP tools and checking graph state.
 **Dependencies**: Stages 1-5 must be DONE. MCP server must be running with real DB.
-**Status**: IN_PROGRESS -- blocked by 3 additional bugs found during smoke test (all fixed, needs re-run)
+**Status**: DONE -- re-run completed 2026-03-31; 3/4 checks pass, temporal edges partial
 
 ---
 
@@ -183,12 +183,22 @@ All 3 bugs (A, B, C) are fixed in the source code. To re-run the smoke test:
 
 ## Verification
 
-| Check | Pass Criteria | Status |
-|-------|--------------|--------|
-| Domain routing | >= 1 shared graph has nodes after Episode 1 | PENDING |
-| Temporal edges | >= 1 SUPERSEDES or CORRECTS edge after Episode 2 (correction) | PENDING |
-| Type names | 0 corrupted types across all extractions | PENDING |
-| Server stability | No crashes, no unhandled exceptions in logs | PENDING |
+| Check | Pass Criteria | Status | Notes |
+|-------|--------------|--------|-------|
+| Domain routing | >= 1 shared graph has nodes after Episode 1 | **PASS** | 3 shared graphs populated: technical_knowledge (29 nodes, 11 edges), domain_knowledge (8 nodes, 7 edges), work_context (13 nodes, 4 edges) |
+| Temporal edges | >= 1 SUPERSEDES or CORRECTS edge after Episode 2 (correction) | **PARTIAL** | Extractor created versioned entity names ("Metaphone3 Hybrid Strategy" vs "Uniform 4-char Metaphone3 Strategy") — correct separation. But librarian did not create SUPERSEDES/CORRECTS edges between them. LLM behavioral gap: naming instructions followed, edge-creation instructions not. |
+| Type names | 0 corrupted types across all extractions | **PASS** | All type names across 4 graphs are clean PascalCase, <= 60 chars, no embedded IDs or LLM reasoning leaks. Types: Algorithm, Architecture, Benchmark, Concept, Dataset, Decision, Event, Field, Metric, Pipeline, ProcessStage, ProgrammingLanguage, ProjectCycle, Stage, Team, Tool, Workflow |
+| Server stability | No crashes, no unhandled exceptions in logs | **PASS** | 0 errors in mcp.log. No deadlocks (Bug B fix confirmed). No permission errors (Bug C fix confirmed). No episode_not_found (Bug A fix confirmed). `domain_schema_permission_granted` logged correctly. |
+
+### Analysis of Temporal Edge Gap
+
+The temporal extraction improvements (Stages 3-4) achieved **partial success**:
+
+1. **Versioned naming works**: The extractor correctly identified the CORRECTION marker and created distinct entities with versioned names instead of merging into the existing node. This is the harder problem (previously, correction episodes were silently merged into existing nodes via name-based dedup).
+
+2. **Edge creation gap**: The librarian created nodes but did not create SUPERSEDES/CORRECTS edges between "Metaphone3 Hybrid Strategy" and "Uniform 4-char Metaphone3 Strategy". This is an LLM instruction-following gap — the prompt asks the librarian to create temporal edges when `supersedes` fields are populated, but the librarian's tool-call behavior didn't include edge creation.
+
+3. **Improvement over baseline**: Plan 18.5 baseline had 0% temporal recall because corrections were merged into existing nodes (same node = no edge possible). Now corrections produce distinct versioned nodes, making temporal edges structurally possible. The remaining gap is LLM behavioral — further prompt iteration or structured enforcement could close it.
 
 ---
 
@@ -197,6 +207,8 @@ All 3 bugs (A, B, C) are fixed in the source code. To re-run the smoke test:
 ```
 docs(plan-19): record integration smoke test results
 
-Stage 6: MCP-driven smoke test verified domain routing, temporal
-correction edges, and type name integrity end-to-end.
+Stage 6: MCP-driven smoke test verified domain routing (3 shared graphs
+populated), type name integrity (0 corrupted types), and server stability.
+Temporal edge creation partially successful — versioned entity naming works
+but SUPERSEDES/CORRECTS edges not created by librarian (LLM behavioral gap).
 ```
