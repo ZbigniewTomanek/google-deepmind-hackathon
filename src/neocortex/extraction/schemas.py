@@ -57,6 +57,18 @@ class ExtractedEntity(BaseModel):
     description: str | None = None
     properties: dict = Field(default_factory=dict, description="Scalar facts as key-value pairs")
     importance: float = Field(default=0.5, ge=0.0, le=1.0, description="How critical is this entity to the domain")
+    supersedes: str | None = Field(
+        default=None,
+        description="If this entity CORRECTS or SUPERSEDES an existing entity, "
+        "put the name of the old entity here. Signals: 'CORRECTION', 'UPDATE', "
+        "'instead of', 'replaced by', 'switched from', 'no longer'.",
+    )
+    temporal_signal: str | None = Field(
+        default=None,
+        description="The type of temporal relationship: 'CORRECTS' (error fix) "
+        "or 'SUPERSEDES' (newer version, reversed decision). "
+        "Only set when 'supersedes' is also set.",
+    )
 
     @field_validator("type_name")
     @classmethod
@@ -72,7 +84,10 @@ class ExtractedEntity(BaseModel):
 class ExtractedRelation(BaseModel):
     source_name: str
     target_name: str
-    relation_type: str = Field(description="Must match an existing edge type name")
+    relation_type: str = Field(
+        description="Must match an existing edge type name. "
+        "Use 'CORRECTS' or 'SUPERSEDES' for temporal correction relationships."
+    )
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
     properties: dict = Field(default_factory=dict, description="Evidence text, confidence, etc.")
 

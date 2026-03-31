@@ -114,7 +114,7 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 |---|-------|--------|-------|--------|
 | 1 | [Permission Fix](stages/01-permission-fix.md) | DONE | grant() in _ensure_schema existing path + WARNING log level | `fix(routing): grant write permissions` |
 | 2 | [Type Name Hardening](stages/02-type-hardening.md) | DONE | 60-char max, 5-segment max, ^[A-Z] regex, Pydantic validators on schemas | `fix(normalization): add length, word-count, uppercase` |
-| 3 | [Temporal Schema Extension](stages/03-temporal-schema.md) | PENDING | | |
+| 3 | [Temporal Schema Extension](stages/03-temporal-schema.md) | DONE | `supersedes` + `temporal_signal` on ExtractedEntity, temporal desc on ExtractedRelation | `feat(extraction): add temporal signal fields` |
 | 4 | [Temporal Prompt Strengthening](stages/04-temporal-prompts.md) | PENDING | | |
 | 5 | [Unit Tests](stages/05-unit-tests.md) | PENDING | | |
 | 6 | [Integration Smoke Test](stages/06-smoke-test.md) | PENDING | | |
