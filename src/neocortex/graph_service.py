@@ -325,11 +325,14 @@ class GraphService:
         emb_str = str(embedding)
         if type_id is not None:
             rows = await self._pg.fetch(
-                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
-                          1 - (embedding <=> $1::vector) AS similarity
-                   FROM node
-                   WHERE embedding IS NOT NULL AND type_id = $2
-                   ORDER BY embedding <=> $1::vector
+                """SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source,
+                          n.created_at, n.updated_at,
+                          COALESCE(nt.name, 'Untyped') AS resolved_type_name,
+                          1 - (n.embedding <=> $1::vector) AS similarity
+                   FROM node n
+                   LEFT JOIN node_type nt ON nt.id = n.type_id
+                   WHERE n.embedding IS NOT NULL AND n.type_id = $2
+                   ORDER BY n.embedding <=> $1::vector
                    LIMIT $3""",
                 emb_str,
                 type_id,
@@ -337,11 +340,14 @@ class GraphService:
             )
         else:
             rows = await self._pg.fetch(
-                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
-                          1 - (embedding <=> $1::vector) AS similarity
-                   FROM node
-                   WHERE embedding IS NOT NULL
-                   ORDER BY embedding <=> $1::vector
+                """SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source,
+                          n.created_at, n.updated_at,
+                          COALESCE(nt.name, 'Untyped') AS resolved_type_name,
+                          1 - (n.embedding <=> $1::vector) AS similarity
+                   FROM node n
+                   LEFT JOIN node_type nt ON nt.id = n.type_id
+                   WHERE n.embedding IS NOT NULL
+                   ORDER BY n.embedding <=> $1::vector
                    LIMIT $2""",
                 emb_str,
                 limit,
@@ -354,10 +360,13 @@ class GraphService:
         """Full-text search using PostgreSQL tsvector. Returns nodes ranked by ts_rank."""
         if type_id is not None:
             rows = await self._pg.fetch(
-                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
-                          ts_rank(tsv, plainto_tsquery('english', $1)) AS rank
-                   FROM node
-                   WHERE tsv @@ plainto_tsquery('english', $1) AND type_id = $2
+                """SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source,
+                          n.created_at, n.updated_at,
+                          COALESCE(nt.name, 'Untyped') AS resolved_type_name,
+                          ts_rank(n.tsv, plainto_tsquery('english', $1)) AS rank
+                   FROM node n
+                   LEFT JOIN node_type nt ON nt.id = n.type_id
+                   WHERE n.tsv @@ plainto_tsquery('english', $1) AND n.type_id = $2
                    ORDER BY rank DESC
                    LIMIT $3""",
                 query,
@@ -366,10 +375,13 @@ class GraphService:
             )
         else:
             rows = await self._pg.fetch(
-                """SELECT id, type_id, name, content, properties, source, created_at, updated_at,
-                          ts_rank(tsv, plainto_tsquery('english', $1)) AS rank
-                   FROM node
-                   WHERE tsv @@ plainto_tsquery('english', $1)
+                """SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source,
+                          n.created_at, n.updated_at,
+                          COALESCE(nt.name, 'Untyped') AS resolved_type_name,
+                          ts_rank(n.tsv, plainto_tsquery('english', $1)) AS rank
+                   FROM node n
+                   LEFT JOIN node_type nt ON nt.id = n.type_id
+                   WHERE n.tsv @@ plainto_tsquery('english', $1)
                    ORDER BY rank DESC
                    LIMIT $2""",
                 query,

@@ -1446,8 +1446,9 @@ class GraphServiceAdapter:
         schema = target_schema or await self._resolve_schema(agent_id, None)
         async with schema_scoped_connection(self._pool, schema) as conn:
             deleted = await conn.fetch(
-                "DELETE FROM node_type WHERE id NOT IN (SELECT DISTINCT type_id FROM node) "
-                "AND created_at > now() - make_interval(mins => $1) RETURNING name",
+                "DELETE FROM node_type WHERE id NOT IN "
+                "(SELECT DISTINCT type_id FROM node WHERE type_id IS NOT NULL) "
+                "AND created_at < now() - make_interval(mins => $1) RETURNING name",
                 max_age_minutes,
             )
             if deleted:
@@ -1613,12 +1614,7 @@ class GraphServiceAdapter:
                 query_embedding, agent_id=agent_id, limit=limit
             )
 
-        # 4. Collect all type ids for name resolution
-        type_ids = {int(hit["type_id"]) for hit in text_hits}
-        type_ids |= {int(hit["type_id"]) for hit in vector_hits}
-        type_names = await self._get_type_names(type_ids)
-
-        # 5. Merge nodes into a single dict keyed by id
+        # 4. Merge nodes into a single dict keyed by id (type resolved via JOIN)
         merged_nodes: dict[int, dict] = {}
         for hit in text_hits:
             nid = int(hit["id"])
@@ -1638,7 +1634,7 @@ class GraphServiceAdapter:
                     "vector_sim": float(hit.get("similarity") or 0.0),
                 }
 
-        # 6. Score nodes
+        # 5. Score nodes
         node_results: list[RecallItem] = []
         for nid, info in merged_nodes.items():
             hit = info["hit"]
@@ -1675,7 +1671,7 @@ class GraphServiceAdapter:
                     item_id=nid,
                     name=str(hit["name"]),
                     content=str(hit.get("content") or ""),
-                    item_type=type_names.get(int(hit["type_id"]), "Unknown"),
+                    item_type=str(hit.get("resolved_type_name", "Untyped")),
                     score=score,
                     activation_score=activation,
                     importance=node_importance,
@@ -1685,7 +1681,7 @@ class GraphServiceAdapter:
                 )
             )
 
-        # 7. Merge episodes — text matches + vector matches
+        # 6. Merge episodes — text matches + vector matches
         query_lower = query.lower()
         merged_episodes: dict[int, dict] = {}
         for episode in episodes:
@@ -1707,7 +1703,7 @@ class GraphServiceAdapter:
                     "vector_sim": float(hit.get("similarity") or 0.0),
                 }
 
-        # 8. Score episodes
+        # 7. Score episodes
         episode_results: list[RecallItem] = []
         for eid, info in merged_episodes.items():
             ep = info["episode"]
@@ -1789,19 +1785,21 @@ class GraphServiceAdapter:
             if query_embedding is not None:
                 emb_str = str(query_embedding)
                 node_rows = await conn.fetch(
-                    """SELECT id, name, content, source, type_id,
-                              ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
-                              CASE WHEN embedding IS NOT NULL
-                                   THEN 1 - (embedding <=> $2::vector)
+                    """SELECT n.id, n.name, n.content, n.source, n.type_id,
+                              COALESCE(nt.name, 'Untyped') AS resolved_type_name,
+                              ts_rank(n.tsv, plainto_tsquery('english', $1)) AS text_rank,
+                              CASE WHEN n.embedding IS NOT NULL
+                                   THEN 1 - (n.embedding <=> $2::vector)
                                    ELSE NULL
                               END AS vector_sim,
-                              access_count, last_accessed_at, importance,
-                              created_at, updated_at,
+                              n.access_count, n.last_accessed_at, n.importance,
+                              n.created_at, n.updated_at,
                               NULL::float[] AS embedding_vec
-                       FROM node
-                       WHERE forgotten = false
-                         AND (tsv @@ plainto_tsquery('english', $1)
-                          OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3))
+                       FROM node n
+                       LEFT JOIN node_type nt ON nt.id = n.type_id
+                       WHERE n.forgotten = false
+                         AND (n.tsv @@ plainto_tsquery('english', $1)
+                          OR (n.embedding IS NOT NULL AND (n.embedding <=> $2::vector) < $3))
                        ORDER BY text_rank DESC NULLS LAST
                        LIMIT $4""",
                     query,
@@ -1833,14 +1831,16 @@ class GraphServiceAdapter:
             else:
                 # Text-only path — no regression from existing behavior
                 node_rows = await conn.fetch(
-                    """SELECT id, name, content, source, type_id,
-                              ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
+                    """SELECT n.id, n.name, n.content, n.source, n.type_id,
+                              COALESCE(nt.name, 'Untyped') AS resolved_type_name,
+                              ts_rank(n.tsv, plainto_tsquery('english', $1)) AS text_rank,
                               NULL::double precision AS vector_sim,
-                              access_count, last_accessed_at, importance,
-                              created_at, updated_at
-                       FROM node
-                       WHERE forgotten = false
-                         AND tsv @@ plainto_tsquery('english', $1)
+                              n.access_count, n.last_accessed_at, n.importance,
+                              n.created_at, n.updated_at
+                       FROM node n
+                       LEFT JOIN node_type nt ON nt.id = n.type_id
+                       WHERE n.forgotten = false
+                         AND n.tsv @@ plainto_tsquery('english', $1)
                        ORDER BY text_rank DESC
                        LIMIT $2""",
                     query,
@@ -1860,8 +1860,6 @@ class GraphServiceAdapter:
                     escaped_query,
                     limit,
                 )
-
-            type_rows = await conn.fetch("SELECT id, name FROM node_type")
 
             # Fetch supersession relationships for candidate nodes
             candidate_node_ids = [int(r["id"]) for r in node_rows]
@@ -1889,8 +1887,6 @@ class GraphServiceAdapter:
                     supersession_edges["superseded_by"].setdefault(r["target_id"], []).append(r)
                 for r in superseding_rows:
                     supersession_edges["supersedes"].setdefault(r["source_id"], []).append(r)
-
-        type_names = {int(row["id"]): str(row["name"]) for row in type_rows}
 
         # Build intermediate dicts (includes embedding for MMR, stripped before return)
         result_dicts: list[dict] = []
@@ -1943,7 +1939,7 @@ class GraphServiceAdapter:
                     "item_id": int(row["id"]),
                     "name": str(row["name"]),
                     "content": str(row["content"] or ""),
-                    "item_type": type_names.get(int(row["type_id"]), "Unknown"),
+                    "item_type": str(row["resolved_type_name"]),
                     "activation_score": activation,
                     "importance": node_importance,
                     "source": str(row["source"]) if row["source"] is not None else None,
@@ -2031,17 +2027,6 @@ class GraphServiceAdapter:
                 )
             )
         return results
-
-    async def _get_type_names(self, type_ids: set[int]) -> dict[int, str]:
-        if not type_ids:
-            return {}
-
-        names: dict[int, str] = {}
-        for type_id in type_ids:
-            node_type = await self._graph.get_node_type(type_id)
-            if node_type is not None:
-                names[type_id] = node_type.name
-        return names
 
     async def _get_types(self, table_name: str, count_table: str, agent_id: str | None = None) -> list[TypeInfo]:
         if self._pool is None or self._router is None or agent_id is None:
