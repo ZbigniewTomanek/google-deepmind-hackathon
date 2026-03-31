@@ -351,6 +351,17 @@ def build_librarian_agent(
             "- Normalize names to canonical form (proper casing, full names).",
             "- When in doubt about type assignment, match the existing node's type.",
             "",
+            "## Shared Graph Context",
+            "You may be curating a shared knowledge graph where multiple agents contribute.",
+            "When you find an existing node via find_similar_nodes:",
+            "- The node may have been created by a different agent.",
+            "- You MUST still merge your new knowledge into it — do NOT skip updates",
+            '  because the node "belongs" to someone else.',
+            "- When merging, produce a COMPREHENSIVE description that combines the existing",
+            "  content with the new information. Never discard existing facts.",
+            '- Include both perspectives when they differ (e.g., "Backend team reports X.',
+            '  ML team reports Y.").',
+            "",
             "After all curation actions, return a CurationSummary describing what you did.",
         )
     else:
