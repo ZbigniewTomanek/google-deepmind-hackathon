@@ -522,6 +522,9 @@ class GraphServiceAdapter:
         props = properties or {}
         if target_schema is None and (self._pool is None or self._router is None):
             # Fallback: use GraphService directly with name-primary dedup
+            canonical, _fallback_aliases = canonicalize_name(name)
+            if canonical:
+                name = canonical
             all_nodes = await self._graph.list_nodes(limit=10000)
             name_matches = [n for n in all_nodes if n.name.lower() == name.lower()]
 
@@ -776,7 +779,9 @@ class GraphServiceAdapter:
             rows = await conn.fetch(
                 "SELECT n.id, n.type_id, n.name, n.content, n.properties, n.source, "
                 "n.importance, n.created_at, n.updated_at, "
-                "similarity(n.name, $1) AS sim "
+                "CASE WHEN n.id IN (SELECT node_id FROM node_alias WHERE lower(alias) = lower($1)) "
+                "     THEN GREATEST(similarity(n.name, $1), 1.0) "
+                "     ELSE similarity(n.name, $1) END AS sim "
                 "FROM node n "
                 "WHERE n.forgotten = false "
                 "AND (similarity(n.name, $1) >= $2 "

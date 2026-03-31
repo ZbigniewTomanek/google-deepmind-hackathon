@@ -44,9 +44,10 @@ def canonicalize_name(name: str) -> tuple[str, list[str]]:
     # 3. Title case normalization — only when input is all-lowercase
     if name == name.lower():
         name = name.title()
-        # Restore known acronyms
+        # Restore known acronyms (word boundaries prevent matching inside words
+        # e.g., "AI" must not match "ai" in "Main" or "Container")
         for acronym in _KNOWN_ACRONYMS:
-            pattern = re.compile(re.escape(acronym), re.IGNORECASE)
+            pattern = re.compile(r"\b" + re.escape(acronym) + r"\b", re.IGNORECASE)
             name = pattern.sub(acronym, name)
 
     # 4. Collapse internal whitespace
@@ -86,6 +87,10 @@ def normalize_node_type(name: str) -> str:
     if name == name.upper() and len(name) > 1:
         # ALL_CAPS single word with no separators → preserve as-is
         return name
+
+    # Single lowercase word → capitalize to PascalCase
+    if name == name.lower() and len(name) > 0:
+        return name.capitalize()
 
     # Already PascalCase or mixed case → keep as-is
     return name
