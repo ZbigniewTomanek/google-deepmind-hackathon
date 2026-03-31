@@ -114,6 +114,7 @@ class MCPSettings(BaseSettings):
     extractor_thinking_effort: ThinkingLevel = "low"
     librarian_model: str = "google-gla:gemini-3-flash-preview"
     librarian_thinking_effort: ThinkingLevel = "low"
+    extraction_tool_calls_limit: int = 150
 
     # Domain routing (upper ontology — automatic knowledge routing to shared graphs)
     # Note: requires extraction_enabled=True (domain routing uses the job queue)
