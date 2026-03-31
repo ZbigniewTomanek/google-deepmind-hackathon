@@ -115,7 +115,7 @@ Stages within each phase are sequential. Phases A, B, and C are independent of e
 | 2 | [MMR Diversity Reranking](stages/02-mmr-diversity-reranking.md) | DONE | mmr_rerank + _cosine_similarity in scoring.py, MMR settings, adapter fetches embeddings for MMR, 6 new tests | `feat(scoring): add MMR diversity reranking` |
 | 3 | [Temporal Recency Bias](stages/03-temporal-recency-bias.md) | DONE | Renamed param to `timestamp`, use max(created_at, updated_at) for nodes, rebalanced weights (recency 0.15, activation 0.20), 1.3× unconsolidated boost, 2 new tests | `fix(scoring): use updated_at for recency, rebalance weights, boost unconsolidated episodes` |
 | 4 | [Domain Classifier Fix](stages/04-domain-classifier-fix.md) | DONE | Empty-domains guard in router + classifier, keyword fallback in AgentDomainClassifier, seed_defaults in route_episode task, classification logging, 4 new tests | `fix(domains): fix empty domain list bug, add keyword fallback` |
-| 5 | [Type Name Validation](stages/05-type-name-validation.md) | PENDING | | |
+| 5 | [Type Name Validation](stages/05-type-name-validation.md) | DONE | Invalid char stripping + regex validation in normalize_node_type/normalize_edge_type, None returns handled in adapter/pipeline/agents, 10 new tests | `fix(normalization): reject malformed type names` |
 | 6 | [Fact Supersession](stages/06-fact-supersession.md) | PENDING | | |
 | 7 | [Type Consistency](stages/07-type-consistency.md) | PENDING | | |
 

@@ -421,8 +421,12 @@ class GraphServiceAdapter:
 
     async def get_or_create_node_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> NodeType:
-        name = normalize_node_type(name)
+    ) -> NodeType | None:
+        try:
+            name = normalize_node_type(name)
+        except ValueError as e:
+            logger.warning("invalid_node_type_rejected", raw_name=name, error=str(e))
+            return None
         if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_node_type_by_name(name)
             if existing is not None:
@@ -448,8 +452,12 @@ class GraphServiceAdapter:
 
     async def get_or_create_edge_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> EdgeType:
-        name = normalize_edge_type(name)
+    ) -> EdgeType | None:
+        try:
+            name = normalize_edge_type(name)
+        except ValueError as e:
+            logger.warning("invalid_edge_type_rejected", raw_name=name, error=str(e))
+            return None
         if target_schema is None and (self._pool is None or self._router is None):
             existing = await self._graph.get_edge_type_by_name(name)
             if existing is not None:

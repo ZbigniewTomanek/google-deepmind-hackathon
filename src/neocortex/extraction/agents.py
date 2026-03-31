@@ -639,6 +639,8 @@ def build_librarian_agent(
                 type_name,
                 target_schema=ctx.deps.target_schema,
             )
+            if node_type is None:
+                return {"error": f"Invalid type name '{type_name}' — rejected by validation"}
             embedding = None
             if ctx.deps.embeddings and content:
                 embedding = await ctx.deps.embeddings.embed(content)
@@ -732,6 +734,8 @@ def build_librarian_agent(
                 edge_type,
                 target_schema=ctx.deps.target_schema,
             )
+            if et is None:
+                return {"error": f"Invalid edge type '{edge_type}' — rejected by validation"}
 
             episode_id = ctx.deps.episode_id
             props = {**(properties or {})}

@@ -62,13 +62,13 @@ class MemoryRepository(Protocol):
 
     async def get_or_create_node_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> NodeType:
-        """Return existing node type by name or create a new one."""
+    ) -> NodeType | None:
+        """Return existing node type by name or create a new one. Returns None if name is invalid."""
 
     async def get_or_create_edge_type(
         self, agent_id: str, name: str, description: str | None = None, target_schema: str | None = None
-    ) -> EdgeType:
-        """Return existing edge type by name or create a new one."""
+    ) -> EdgeType | None:
+        """Return existing edge type by name or create a new one. Returns None if name is invalid."""
 
     # ── Episode Read ──
 

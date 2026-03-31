@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import re
 
+_VALID_NODE_TYPE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]*$")
+_VALID_EDGE_TYPE = re.compile(r"^[A-Z]([A-Z0-9_]*[A-Z0-9])?$")
+_INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_\- ]")
+
 _KNOWN_ACRONYMS: list[str] = [
     "API",
     "SQL",
@@ -58,6 +62,11 @@ def canonicalize_name(name: str) -> tuple[str, list[str]]:
 
 def normalize_edge_type(name: str) -> str:
     """Convert any edge type name to SCREAMING_SNAKE_CASE."""
+    # Strip invalid characters before processing (preserve hyphens for conversion)
+    name = _INVALID_CHARS.sub("", name).strip()
+    if not name:
+        raise ValueError("Edge type name is empty after stripping invalid characters")
+
     # Replace hyphens with underscores
     name = name.replace("-", "_")
     # Insert underscore before uppercase letters preceded by lowercase or digit (PascalCase split)
@@ -70,30 +79,41 @@ def normalize_edge_type(name: str) -> str:
     name = re.sub(r"_+", "_", name)
     # Strip leading/trailing underscores
     name = name.strip("_")
+
+    # Final validation
+    if not _VALID_EDGE_TYPE.match(name):
+        raise ValueError(f"Edge type '{name}' does not match SCREAMING_SNAKE pattern after normalization")
     return name
 
 
 def normalize_node_type(name: str) -> str:
     """Ensure PascalCase for node type names."""
+    # Strip invalid characters before any other processing
+    name = _INVALID_CHARS.sub("", name).strip()
+    if not name:
+        raise ValueError("Node type name is empty after stripping invalid characters")
+
     # Check if it has separators (underscores or spaces)
     has_separators = "_" in name or " " in name
 
     if has_separators:
         # Split on separators and capitalize each part
         parts = re.split(r"[_ ]+", name)
-        return "".join(part.capitalize() for part in parts if part)
-
-    # No separators — check if it's all-caps single word
-    if name == name.upper() and len(name) > 1:
+        result = "".join(part.capitalize() for part in parts if part)
+    elif name == name.upper() and len(name) > 1:
         # ALL_CAPS single word with no separators → preserve as-is
-        return name
+        result = name
+    elif name == name.lower() and len(name) > 0:
+        # Single lowercase word → capitalize to PascalCase
+        result = name.capitalize()
+    else:
+        # Already PascalCase or mixed case → keep as-is
+        result = name
 
-    # Single lowercase word → capitalize to PascalCase
-    if name == name.lower() and len(name) > 0:
-        return name.capitalize()
-
-    # Already PascalCase or mixed case → keep as-is
-    return name
+    # Final validation
+    if not _VALID_NODE_TYPE.match(result):
+        raise ValueError(f"Node type '{result}' does not match PascalCase pattern after normalization")
+    return result
 
 
 def names_are_similar(a: str, b: str, threshold: float = 0.6) -> bool:

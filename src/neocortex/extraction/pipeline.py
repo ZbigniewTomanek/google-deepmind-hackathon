@@ -108,11 +108,19 @@ async def run_extraction(
             model_settings=ont_cfg.model_settings,
         )
 
-        # 3. Persist new types
+        # 3. Persist new types (skip invalid names)
         for nt in ontology_result.output.new_node_types:
-            await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
+            if (
+                await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
+                is None
+            ):
+                logger.warning("skipping_invalid_node_type", name=nt.name)
         for et in ontology_result.output.new_edge_types:
-            await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
+            if (
+                await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
+                is None
+            ):
+                logger.warning("skipping_invalid_edge_type", name=et.name)
 
         # Reload types (now includes newly created)
         node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
@@ -260,11 +268,13 @@ async def _persist_payload(
     if episode and episode.metadata:
         importance_hint = episode.metadata.get("importance_hint")
 
-    # Persist any remaining type proposals
+    # Persist any remaining type proposals (skip invalid names)
     for nt in payload.accepted_node_types:
-        await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
+        if await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema) is None:
+            logger.warning("skipping_invalid_node_type", name=nt.name)
     for et in payload.accepted_edge_types:
-        await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
+        if await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema) is None:
+            logger.warning("skipping_invalid_edge_type", name=et.name)
 
     # Batch-embed entity descriptions (single API call instead of N+1)
     entity_embeddings: list[list[float] | None] = [None] * len(payload.entities)
@@ -290,6 +300,9 @@ async def _persist_payload(
     name_to_node_id: dict[str, int] = {}
     for i, entity in enumerate(payload.entities):
         node_type = await repo.get_or_create_node_type(agent_id, entity.type_name, target_schema=target_schema)
+        if node_type is None:
+            logger.warning("skipping_entity_invalid_type", name=entity.name, type_name=entity.type_name)
+            continue
         entity_importance = entity.importance
         if importance_hint is not None:
             entity_importance = max(entity_importance, importance_hint)
@@ -330,6 +343,9 @@ async def _persist_payload(
             )
             continue
         edge_type = await repo.get_or_create_edge_type(agent_id, rel.relation_type, target_schema=target_schema)
+        if edge_type is None:
+            logger.warning("edge_skipped_invalid_type", relation_type=rel.relation_type)
+            continue
         await repo.upsert_edge(
             agent_id=agent_id,
             source_id=src_id,
