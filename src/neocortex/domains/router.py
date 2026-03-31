@@ -121,7 +121,7 @@ class DomainRouter:
 
             can_write = await self._permissions.can_write_schema(agent_id, schema_name)
             if not can_write:
-                logger.debug(
+                logger.warning(
                     "domain_routing_permission_denied",
                     agent_id=agent_id,
                     schema_name=schema_name,
@@ -192,6 +192,20 @@ class DomainRouter:
             if self._schema_mgr is not None:
                 existing = await self._schema_mgr.get_graph(agent_id="shared", purpose=domain.slug)
                 if existing is not None:
+                    # Grant permissions for this agent (idempotent)
+                    await self._permissions.grant(
+                        agent_id=agent_id,
+                        schema_name=domain.schema_name,
+                        can_read=True,
+                        can_write=True,
+                        granted_by="domain_router",
+                    )
+                    logger.info(
+                        "domain_schema_permission_granted",
+                        agent_id=agent_id,
+                        schema_name=domain.schema_name,
+                        domain_slug=domain.slug,
+                    )
                     return domain.schema_name
                 # Schema name set but schema doesn't exist — fall through to create
             else:

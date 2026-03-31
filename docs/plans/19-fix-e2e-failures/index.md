@@ -112,7 +112,7 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Permission Fix](stages/01-permission-fix.md) | PENDING | | |
+| 1 | [Permission Fix](stages/01-permission-fix.md) | DONE | grant() in _ensure_schema existing path + WARNING log level | `fix(routing): grant write permissions` |
 | 2 | [Type Name Hardening](stages/02-type-hardening.md) | PENDING | | |
 | 3 | [Temporal Schema Extension](stages/03-temporal-schema.md) | PENDING | | |
 | 4 | [Temporal Prompt Strengthening](stages/04-temporal-prompts.md) | PENDING | | |
