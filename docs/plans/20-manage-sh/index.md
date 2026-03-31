@@ -63,7 +63,7 @@ Six stages, each independently testable and committable:
 | 1 | [Skeleton + utilities](stages/01-skeleton.md) | DONE | Skeleton with dispatch, utilities ported from launch.sh, status cmd, help | feat(scripts): add manage.sh skeleton |
 | 2 | [start / stop](stages/02-start-stop.md) | DONE | do_start with --fresh flag, do_stop with --all flag, persist-by-default semantics | feat(scripts): implement start/stop |
 | 3 | [snapshot save](stages/03-snapshot-save.md) | DONE | snapshot sub-dispatcher + save with pg_dump + media bundling + metadata JSON, stubs for list/load/delete, backups/ in .gitignore | feat(scripts): add snapshot save |
-| 4 | [snapshot list](stages/04-snapshot-list.md) | PENDING | | |
+| 4 | [snapshot list](stages/04-snapshot-list.md) | DONE | Formatted table with NAME/DATE/SIZE/MEDIA, handles empty dir, corrupted archives, missing metadata | feat(scripts): add snapshot list |
 | 5 | [snapshot load + delete](stages/05-snapshot-load-delete.md) | PENDING | | |
 | 6 | [Integration](stages/06-integration.md) | PENDING | | |
 

@@ -314,7 +314,41 @@ METAEOF
 }
 
 snapshot_list() {
-    fail "Not implemented yet"
+    if [[ ! -d "$BACKUPDIR" ]] || [[ -z "$(ls -A "$BACKUPDIR"/*.tar.gz 2>/dev/null)" ]]; then
+        log "No snapshots found. Create one with: $0 snapshot save <name>"
+        return 0
+    fi
+
+    printf '%-30s %-22s %8s  %s\n' "NAME" "DATE" "SIZE" "MEDIA"
+    printf '%-30s %-22s %8s  %s\n' "----" "----" "----" "-----"
+
+    # List .tar.gz files sorted by mtime, newest first
+    for f in $(ls -t "$BACKUPDIR"/*.tar.gz 2>/dev/null); do
+        local meta name created_at has_media size
+        size=$(ls -lh "$f" | awk '{print $5}')
+
+        # Try to extract snapshot.json from the archive
+        meta=$(tar -xzf "$f" -O ./snapshot.json 2>/dev/null) || meta=""
+
+        if [[ -n "$meta" ]]; then
+            name=$(echo "$meta" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])" 2>/dev/null) || name="?"
+            created_at=$(echo "$meta" | python3 -c "import sys,json; print(json.load(sys.stdin)['created_at'])" 2>/dev/null) || created_at="?"
+            has_media=$(echo "$meta" | python3 -c "import sys,json; print('yes' if json.load(sys.stdin).get('has_media') else 'no')" 2>/dev/null) || has_media="?"
+        else
+            # Fallback: use filename and file attributes
+            name=$(basename "$f" .tar.gz)
+            created_at="?"
+            has_media="?"
+            log "  Warning: could not read metadata from $(basename "$f")"
+        fi
+
+        # Format created_at for display (replace T and Z)
+        if [[ "$created_at" != "?" ]]; then
+            created_at=$(echo "$created_at" | sed 's/T/ /;s/Z//')
+        fi
+
+        printf '%-30s %-22s %8s  %s\n' "$name" "$created_at" "$size" "$has_media"
+    done
 }
 
 snapshot_load() {
