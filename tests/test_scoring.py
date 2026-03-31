@@ -9,6 +9,7 @@ from neocortex.scoring import (
     compute_base_activation,
     compute_hybrid_score,
     compute_recency_score,
+    mmr_rerank,
 )
 
 WEIGHTS = HybridWeights(vector=0.4, text=0.35, recency=0.25, activation=0.0, importance=0.0)
@@ -143,3 +144,59 @@ class TestBaseActivation:
 
         expected = 1.0 / (1.0 + math.exp(-math.log(11)))
         assert score == pytest.approx(expected, abs=0.01)
+
+
+class TestMMRRerank:
+    """Tests for Maximal Marginal Relevance diversity reranking."""
+
+    def test_mmr_rerank_promotes_diversity(self):
+        """Three similar items + one outlier: outlier should rank higher after MMR."""
+        similar_emb = [1.0, 0.0, 0.0]
+        outlier_emb = [0.0, 1.0, 0.0]
+        results = [
+            {"score": 0.9, "embedding": similar_emb, "name": "A"},
+            {"score": 0.85, "embedding": similar_emb, "name": "B"},
+            {"score": 0.80, "embedding": similar_emb, "name": "C"},
+            {"score": 0.75, "embedding": outlier_emb, "name": "D"},
+        ]
+        reranked = mmr_rerank(results, lambda_param=0.7)
+        names = [r["name"] for r in reranked]
+        assert names[0] == "A"  # Highest score still first
+        assert names.index("D") < names.index("C")  # Outlier promoted
+
+    def test_mmr_lambda_1_preserves_order(self):
+        """Lambda=1.0 should return original relevance order."""
+        results = [
+            {"score": 0.9, "embedding": [1, 0], "name": "A"},
+            {"score": 0.5, "embedding": [0, 1], "name": "B"},
+        ]
+        reranked = mmr_rerank(results, lambda_param=1.0)
+        assert [r["name"] for r in reranked] == ["A", "B"]
+
+    def test_mmr_handles_missing_embeddings(self):
+        """Items without embeddings appended at end."""
+        results = [
+            {"score": 0.9, "embedding": [1, 0], "name": "A"},
+            {"score": 0.8, "embedding": None, "name": "B"},
+            {"score": 0.7, "embedding": [0, 1], "name": "C"},
+        ]
+        reranked = mmr_rerank(results, lambda_param=0.7)
+        assert reranked[-1]["name"] == "B"  # No embedding → last
+
+    def test_mmr_single_result_passthrough(self):
+        """Single result is returned as-is."""
+        results = [{"score": 0.9, "embedding": [1, 0], "name": "A"}]
+        assert mmr_rerank(results) == results
+
+    def test_mmr_empty_results(self):
+        """Empty list is returned as-is."""
+        assert mmr_rerank([]) == []
+
+    def test_mmr_all_missing_embeddings(self):
+        """All items missing embeddings returns original list."""
+        results = [
+            {"score": 0.9, "embedding": None, "name": "A"},
+            {"score": 0.5, "embedding": None, "name": "B"},
+        ]
+        reranked = mmr_rerank(results, lambda_param=0.7)
+        assert reranked == results

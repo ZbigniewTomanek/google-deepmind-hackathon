@@ -15,7 +15,13 @@ from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.normalization import canonicalize_name, normalize_edge_type, normalize_node_type
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
-from neocortex.scoring import HybridWeights, compute_base_activation, compute_hybrid_score, compute_recency_score
+from neocortex.scoring import (
+    HybridWeights,
+    compute_base_activation,
+    compute_hybrid_score,
+    compute_recency_score,
+    mmr_rerank,
+)
 
 if TYPE_CHECKING:
     from neocortex.graph_router import GraphRouter
@@ -1664,7 +1670,8 @@ class GraphServiceAdapter:
                                    ELSE NULL
                               END AS vector_sim,
                               access_count, last_accessed_at, importance,
-                              created_at
+                              created_at,
+                              embedding::float[] AS embedding_vec
                        FROM node
                        WHERE forgotten = false
                          AND (tsv @@ plainto_tsquery('english', $1)
@@ -1685,7 +1692,8 @@ class GraphServiceAdapter:
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
-                              END AS vector_sim
+                              END AS vector_sim,
+                              embedding::float[] AS embedding_vec
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
                           OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
@@ -1731,7 +1739,8 @@ class GraphServiceAdapter:
 
         type_names = {int(row["id"]): str(row["name"]) for row in type_rows}
 
-        results: list[RecallItem] = []
+        # Build intermediate dicts (includes embedding for MMR, stripped before return)
+        result_dicts: list[dict] = []
         for row in node_rows:
             text_rank = float(row["text_rank"]) if row["text_rank"] is not None else None
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
@@ -1760,19 +1769,22 @@ class GraphServiceAdapter:
                 node_importance,
                 weights,
             )
-            results.append(
-                RecallItem(
-                    item_id=int(row["id"]),
-                    name=str(row["name"]),
-                    content=str(row["content"] or ""),
-                    item_type=type_names.get(int(row["type_id"]), "Unknown"),
-                    score=score,
-                    activation_score=activation,
-                    importance=node_importance,
-                    source=str(row["source"]) if row["source"] is not None else None,
-                    source_kind="node",
-                    graph_name=schema_name,
-                )
+
+            embedding_vec = row.get("embedding_vec")
+            result_dicts.append(
+                {
+                    "score": score,
+                    "embedding": list(embedding_vec) if embedding_vec is not None else None,
+                    "item_id": int(row["id"]),
+                    "name": str(row["name"]),
+                    "content": str(row["content"] or ""),
+                    "item_type": type_names.get(int(row["type_id"]), "Unknown"),
+                    "activation_score": activation,
+                    "importance": node_importance,
+                    "source": str(row["source"]) if row["source"] is not None else None,
+                    "source_kind": "node",
+                    "graph_name": schema_name,
+                }
             )
 
         for row in episode_rows:
@@ -1807,22 +1819,49 @@ class GraphServiceAdapter:
             if row.get("consolidated"):
                 score *= 0.5
 
-            results.append(
-                RecallItem(
-                    item_id=int(row["id"]),
-                    name=f"Episode #{int(row['id'])}",
-                    content=str(row["content"]),
-                    item_type="Episode",
-                    score=score,
-                    activation_score=activation,
-                    importance=ep_importance,
-                    source=str(row["source_type"]) if row["source_type"] is not None else None,
-                    source_kind="episode",
-                    graph_name=schema_name,
-                )
+            embedding_vec = row.get("embedding_vec")
+            result_dicts.append(
+                {
+                    "score": score,
+                    "embedding": list(embedding_vec) if embedding_vec is not None else None,
+                    "item_id": int(row["id"]),
+                    "name": f"Episode #{int(row['id'])}",
+                    "content": str(row["content"]),
+                    "item_type": "Episode",
+                    "activation_score": activation,
+                    "importance": ep_importance,
+                    "source": str(row["source_type"]) if row["source_type"] is not None else None,
+                    "source_kind": "episode",
+                    "graph_name": schema_name,
+                }
             )
 
-        results.sort(key=lambda item: item.score, reverse=True)
+        # Apply MMR diversity reranking if enabled
+        if self._settings.recall_mmr_enabled:
+            result_dicts = mmr_rerank(
+                result_dicts,
+                lambda_param=self._settings.recall_mmr_lambda,
+            )
+        else:
+            result_dicts.sort(key=lambda d: d["score"], reverse=True)
+
+        # Convert to RecallItem objects (strip embeddings)
+        results: list[RecallItem] = []
+        for d in result_dicts:
+            results.append(
+                RecallItem(
+                    item_id=d["item_id"],
+                    name=d["name"],
+                    content=d["content"],
+                    item_type=d["item_type"],
+                    score=d["score"],
+                    activation_score=d["activation_score"],
+                    importance=d["importance"],
+                    source=d["source"],
+                    source_kind=d["source_kind"],
+                    graph_name=d["graph_name"],
+                )
+            )
         return results
 
     async def _get_type_names(self, type_ids: set[int]) -> dict[int, str]:

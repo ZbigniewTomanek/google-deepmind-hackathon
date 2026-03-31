@@ -71,6 +71,12 @@ class MCPSettings(BaseSettings):
     # Prevents broad queries from boosting many items simultaneously.
     recall_access_increment_limit: int = 3
 
+    # MMR diversity reranking
+    # Lambda: 1.0 = pure relevance, 0.0 = pure diversity, default 0.7
+    recall_mmr_lambda: float = 0.7
+    # Enable/disable MMR postprocessing (disable to compare A/B)
+    recall_mmr_enabled: bool = True
+
     # Spreading activation
     spreading_activation_decay: float = 0.6
     spreading_activation_max_depth: int = 2

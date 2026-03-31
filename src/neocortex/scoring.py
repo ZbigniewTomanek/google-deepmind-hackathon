@@ -127,6 +127,70 @@ def compute_spreading_activation(
     return bonus
 
 
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two vectors. Returns value in [-1, 1]."""
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def mmr_rerank(
+    results: list[dict],
+    lambda_param: float = 0.7,
+    score_key: str = "score",
+    embedding_key: str = "embedding",
+) -> list[dict]:
+    """Maximal Marginal Relevance reranking for diversity.
+
+    Iteratively selects items that balance high relevance with
+    low similarity to already-selected items.
+
+    Args:
+        results: Scored recall results, each with a score and embedding.
+        lambda_param: Trade-off between relevance (1.0) and diversity (0.0).
+        score_key: Key for relevance score in result dicts.
+        embedding_key: Key for embedding vector in result dicts.
+
+    Returns:
+        Reranked list in MMR order.
+    """
+    if len(results) <= 1 or lambda_param >= 1.0:
+        return results
+
+    # Filter to items that have embeddings (can't compute similarity without them)
+    with_emb = [r for r in results if r.get(embedding_key) is not None]
+    without_emb = [r for r in results if r.get(embedding_key) is None]
+
+    if not with_emb:
+        return results
+
+    selected: list[dict] = []
+    candidates = list(with_emb)
+
+    # First pick: highest relevance score
+    candidates.sort(key=lambda r: r[score_key], reverse=True)
+    selected.append(candidates.pop(0))
+
+    while candidates:
+        best_mmr = -float("inf")
+        best_idx = 0
+        for i, cand in enumerate(candidates):
+            relevance = cand[score_key]
+            # Max cosine similarity to any already-selected item
+            max_sim = max(_cosine_similarity(cand[embedding_key], s[embedding_key]) for s in selected)
+            mmr_score = lambda_param * relevance - (1 - lambda_param) * max_sim
+            if mmr_score > best_mmr:
+                best_mmr = mmr_score
+                best_idx = i
+        selected.append(candidates.pop(best_idx))
+
+    # Append items without embeddings at the end (no diversity signal available)
+    return selected + without_emb
+
+
 def neighborhood_to_adjacency(
     neighborhood: list[dict],
     center_node_id: int,
