@@ -51,14 +51,14 @@ class MCPSettings(BaseSettings):
     # Hybrid recall weights (normalized at scoring time, so any ratio works)
     recall_weight_vector: float = 0.3
     recall_weight_text: float = 0.2
-    recall_weight_recency: float = 0.1
+    recall_weight_recency: float = 0.15
     recall_recency_half_life_hours: float = 168.0  # 7 days
     # Vector distance threshold: cosine distance below this counts as a match.
     # 0.5 distance = 0.5 similarity. Tune up for stricter matching, down for broader.
     recall_vector_distance_threshold: float = 0.5
 
     # Cognitive heuristic weights (wired in Stage 2+)
-    recall_weight_activation: float = 0.25
+    recall_weight_activation: float = 0.20
     recall_weight_importance: float = 0.15
 
     # ACT-R activation parameters
@@ -70,6 +70,10 @@ class MCPSettings(BaseSettings):
     # Max nodes/episodes whose access_count is incremented per recall query.
     # Prevents broad queries from boosting many items simultaneously.
     recall_access_increment_limit: int = 3
+
+    # Bonus multiplier for unconsolidated episodes (not yet extracted into graph).
+    # Compensates for lack of graph traversal bonus on fresh memories.
+    recall_unconsolidated_episode_boost: float = 1.3
 
     # MMR diversity reranking
     # Lambda: 1.0 = pure relevance, 0.0 = pure diversity, default 0.7

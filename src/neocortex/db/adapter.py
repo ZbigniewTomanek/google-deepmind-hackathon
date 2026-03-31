@@ -1524,7 +1524,9 @@ class GraphServiceAdapter:
         for nid, info in merged_nodes.items():
             hit = info["hit"]
             created_at = hit.get("created_at")
-            recency = compute_recency_score(created_at, half_life) if created_at else 0.5
+            updated_at = hit.get("updated_at")
+            recency_ts = max(created_at, updated_at) if (created_at and updated_at) else created_at
+            recency = compute_recency_score(recency_ts, half_life) if recency_ts else 0.5
 
             # Compute activation from access_count and last_accessed_at if available
             access_count = int(hit.get("access_count") or 0)
@@ -1618,6 +1620,11 @@ class GraphServiceAdapter:
                 ep_importance,
                 weights,
             )
+            consolidated = ep.consolidated if hasattr(ep, "consolidated") else ep.get("consolidated", True)
+            if consolidated:
+                score *= 0.5
+            else:
+                score *= self._settings.recall_unconsolidated_episode_boost
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -1670,7 +1677,7 @@ class GraphServiceAdapter:
                                    ELSE NULL
                               END AS vector_sim,
                               access_count, last_accessed_at, importance,
-                              created_at,
+                              created_at, updated_at,
                               embedding::float[] AS embedding_vec
                        FROM node
                        WHERE forgotten = false
@@ -1711,7 +1718,7 @@ class GraphServiceAdapter:
                               ts_rank(tsv, plainto_tsquery('english', $1)) AS text_rank,
                               NULL::double precision AS vector_sim,
                               access_count, last_accessed_at, importance,
-                              created_at
+                              created_at, updated_at
                        FROM node
                        WHERE forgotten = false
                          AND tsv @@ plainto_tsquery('english', $1)
@@ -1745,7 +1752,9 @@ class GraphServiceAdapter:
             text_rank = float(row["text_rank"]) if row["text_rank"] is not None else None
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
-            recency = compute_recency_score(created_at, half_life) if created_at else 0.5
+            updated_at = row.get("updated_at")
+            recency_ts = max(created_at, updated_at) if updated_at else created_at
+            recency = compute_recency_score(recency_ts, half_life) if created_at else 0.5
 
             access_count = int(row["access_count"] or 0)
             last_accessed = row["last_accessed_at"] or created_at
@@ -1818,6 +1827,9 @@ class GraphServiceAdapter:
             # Consolidated episodes get half the score — graph nodes take priority
             if row.get("consolidated"):
                 score *= 0.5
+            else:
+                # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
+                score *= self._settings.recall_unconsolidated_episode_boost
 
             embedding_vec = row.get("embedding_vec")
             result_dicts.append(

@@ -156,7 +156,7 @@ class TestStage1SchemaFoundation:
     def test_settings_have_cognitive_params(self):
         settings = MCPSettings()
         # New cognitive params
-        assert settings.recall_weight_activation == 0.25
+        assert settings.recall_weight_activation == 0.20
         assert settings.recall_weight_importance == 0.15
         assert settings.activation_decay_rate == 0.5
         assert settings.spreading_activation_decay == 0.6
@@ -166,10 +166,10 @@ class TestStage1SchemaFoundation:
         assert settings.edge_reinforcement_delta == 0.05
         assert settings.edge_weight_floor == 0.1
         assert settings.edge_weight_ceiling == 1.5
-        # Rebalanced weights (Stage 2)
+        # Rebalanced weights (Stage 3: temporal recency rebalance)
         assert settings.recall_weight_vector == 0.3
         assert settings.recall_weight_text == 0.2
-        assert settings.recall_weight_recency == 0.1
+        assert settings.recall_weight_recency == 0.15
 
     @pytest.mark.asyncio
     async def test_mock_repo_upsert_node_with_new_fields(self, repo: InMemoryRepository):

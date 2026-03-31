@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from neocortex.mcp_settings import MCPSettings
 from neocortex.scoring import (
     HybridWeights,
     compute_base_activation,
@@ -200,3 +201,27 @@ class TestMMRRerank:
         ]
         reranked = mmr_rerank(results, lambda_param=0.7)
         assert reranked == results
+
+
+class TestTemporalRecency:
+    """Tests for temporal recency bias — using updated_at and weight rebalancing."""
+
+    def test_recency_uses_updated_timestamp(self):
+        """Node updated recently should score higher than stale node."""
+        old_ts = datetime(2026, 1, 1, tzinfo=UTC)
+        recent_ts = datetime(2026, 3, 30, tzinfo=UTC)
+        old_score = compute_recency_score(old_ts, half_life_hours=168)
+        updated_score = compute_recency_score(recent_ts, half_life_hours=168)
+        assert updated_score > old_score * 2  # Significantly higher
+
+    def test_default_weights_sum_to_one(self):
+        """Default recall weights should sum to 1.0."""
+        s = MCPSettings()
+        total = (
+            s.recall_weight_vector
+            + s.recall_weight_text
+            + s.recall_weight_recency
+            + s.recall_weight_activation
+            + s.recall_weight_importance
+        )
+        assert abs(total - 1.0) < 0.001

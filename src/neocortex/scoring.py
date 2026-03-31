@@ -15,12 +15,18 @@ class HybridWeights(NamedTuple):
     importance: float
 
 
-def compute_recency_score(created_at: datetime, half_life_hours: float) -> float:
-    """Exponential decay score based on age. Returns value in [0, 1]."""
+def compute_recency_score(timestamp: datetime, half_life_hours: float) -> float:
+    """Exponential decay score based on age. Returns value in [0, 1].
+
+    Args:
+        timestamp: The relevant timestamp — use max(created_at, updated_at)
+                  for nodes, or created_at for episodes.
+        half_life_hours: Time in hours for score to decay to 0.5.
+    """
     now = datetime.now(UTC)
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
-    hours_ago = max((now - created_at).total_seconds() / 3600.0, 0.0)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    hours_ago = max((now - timestamp).total_seconds() / 3600.0, 0.0)
     return math.pow(2.0, -hours_ago / half_life_hours)
 
 

@@ -107,7 +107,7 @@ class InMemoryRepository:
     ) -> list[RecallItem]:
         query_lower = query.lower()
         # Must stay in sync with MCPSettings defaults
-        weights = HybridWeights(vector=0.3, text=0.2, recency=0.1, activation=0.25, importance=0.15)
+        weights = HybridWeights(vector=0.3, text=0.2, recency=0.15, activation=0.20, importance=0.15)
         half_life = 168.0  # 7 days
         matches: list[RecallItem] = []
 
@@ -139,6 +139,9 @@ class InMemoryRepository:
             # Consolidated episodes get half the score — graph nodes take priority
             if episode.get("consolidated", False):
                 score *= 0.5
+            else:
+                # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
+                score *= 1.3  # matches MCPSettings.recall_unconsolidated_episode_boost default
 
             matches.append(
                 RecallItem(
@@ -164,7 +167,8 @@ class InMemoryRepository:
             if not (name_match or content_match):
                 continue
 
-            recency = compute_recency_score(node.created_at, half_life)
+            recency_ts = max(node.created_at, node.updated_at) if node.updated_at else node.created_at
+            recency = compute_recency_score(recency_ts, half_life)
             last_acc = node.last_accessed_at or node.created_at
             activation = compute_base_activation(node.access_count, last_acc)
             score = compute_hybrid_score(
