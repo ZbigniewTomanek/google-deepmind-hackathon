@@ -62,22 +62,24 @@ Additionally, for episodes specifically, add an **extraction-freshness bonus**: 
      ```
    - Note: The parameter rename from `created_at` to `timestamp` is a signature change. Update all call sites.
 
-3. **Pass `max(created_at, updated_at)` for node recency**
-   - File: `src/neocortex/db/adapter.py`
-   - In `_recall_in_schema` (around lines 1641-1710) where node results are prepared for scoring, ensure the timestamp used for recency is `max(created_at, updated_at)`:
-     ```python
-     # When building the result dict for scoring:
-     recency_ts = max(row["created_at"], row["updated_at"]) if row["updated_at"] else row["created_at"]
-     ```
-   - Ensure `updated_at` is included in the SELECT query if not already present.
-
-4. **Include `updated_at` in recall SQL for nodes**
-   - File: `src/neocortex/db/adapter.py`
-   - Check the SELECT in the node recall query (around line 1650). If `updated_at` is not selected, add it:
+3. **Include `updated_at` in recall SQL and use it for recency**
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema`
+   - `updated_at` is currently **NOT included** in the node recall SQL SELECT (confirmed). Add it to the node query (around line 1650):
      ```sql
      SELECT id, type_id, name, content, ..., created_at, updated_at, ...
      FROM node WHERE ...
      ```
+   - In the inline scoring block (lines ~1717-1798), where `compute_recency_score` is called for nodes, compute the recency timestamp:
+     ```python
+     recency_ts = max(row["created_at"], row["updated_at"]) if row.get("updated_at") else row["created_at"]
+     recency = compute_recency_score(recency_ts, self._settings.recall_recency_half_life_hours)
+     ```
+   - For episodes, `created_at` is still the correct timestamp (episodes are immutable).
+
+4. **Update `compute_recency_score` parameter name for clarity**
+   - File: `src/neocortex/scoring.py`, function `compute_recency_score` (lines 18-24)
+   - Rename the parameter from `created_at` to `timestamp` to reflect that it now accepts any timestamp (not just creation time). Update the docstring accordingly.
+   - Update all call sites in `db/adapter.py` — search for `compute_recency_score(` and update the keyword argument name.
 
 5. **Add unconsolidated episode boost**
    - File: `src/neocortex/db/adapter.py` or `src/neocortex/scoring.py`
@@ -88,7 +90,7 @@ Additionally, for episodes specifically, add an **extraction-freshness bonus**: 
          score *= settings.recall_unconsolidated_episode_boost
      ```
    - This must happen BEFORE sorting/ranking but AFTER the base hybrid score computation.
-   - Note: Currently the adapter applies a 0.5× penalty for consolidated episodes (lines 1779-1780). Review whether this penalty should be adjusted or removed now that unconsolidated episodes get a boost instead.
+   - **Decision**: Keep the existing 0.5× consolidated penalty (lines 1779-1780) — it serves a different purpose (deprioritizing episodes whose content is already in graph nodes). The 1.3× unconsolidated boost is complementary: it compensates for fresh episodes that lack graph traversal bonuses. Both adjustments coexist.
 
 6. **Add tests for temporal recency**
    - File: `tests/test_scoring.py`

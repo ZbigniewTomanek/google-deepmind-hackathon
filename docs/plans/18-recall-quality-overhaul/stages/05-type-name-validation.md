@@ -32,7 +32,7 @@ Valid patterns:
 
      _VALID_NODE_TYPE = re.compile(r"^[A-Z][a-zA-Z0-9]*$")
      _VALID_EDGE_TYPE = re.compile(r"^[A-Z][A-Z0-9_]*[A-Z0-9]$")
-     _INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_ ]")
+     _INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_\- ]")  # preserves hyphens for edge type processing
 
      def normalize_node_type(name: str) -> str:
          """Ensure PascalCase for node type names."""
@@ -110,7 +110,7 @@ Valid patterns:
      ```
 
 5. **Test the validation**
-   - File: `tests/test_normalization.py` (create if it doesn't exist, or add to existing normalization tests)
+   - File: `tests/unit/test_normalization.py` (create if it doesn't exist, or add to existing normalization tests)
    - Add tests:
      ```python
      def test_node_type_rejects_json_corruption():
@@ -142,19 +142,16 @@ Valid patterns:
      ```
 
 6. **Verify existing normalization tests still pass**
-   - Check for existing tests that might test edge cases of the normalization functions.
-   - The `_INVALID_CHARS` strip may change behavior for inputs that previously passed through — verify that legitimate names still work (e.g., hyphens in edge types are converted to underscores before the strip, so `"RELATES-TO"` → `"RELATES_TO"` still works because `-` is replaced by `_` in the existing code before our strip step).
-   - **Important**: The strip must happen FIRST (before existing casing logic) to avoid the existing code operating on corrupted input. But hyphens need to survive until the existing `name.replace("-", "_")` step in edge types. Solution: strip only non-alphanumeric, non-underscore, non-hyphen, non-space chars:
-     ```python
-     _INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_\- ]")
-     ```
-     Then the existing code handles hyphens → underscores, spaces → underscores normally.
+   - Check existing tests in `tests/unit/test_normalization.py` for edge cases.
+   - The `_INVALID_CHARS` regex preserves hyphens (`[^a-zA-Z0-9_\- ]`) so that the existing `name.replace("-", "_")` step in edge types still works correctly.
+   - Verify: `normalize_edge_type("RELATES-TO")` → `"RELATES_TO"` (hyphen handling preserved).
+   - Verify: `normalize_node_type("DataStore")` → `"DataStore"` (existing behavior preserved).
 
 ---
 
 ## Verification
 
-- [ ] `uv run pytest tests/test_normalization.py -v` — all tests pass (both new and existing)
+- [ ] `uv run pytest tests/unit/test_normalization.py -v` — all tests pass (both new and existing)
 - [ ] `normalize_node_type("Constraint}OceanScience")` raises `ValueError`
 - [ ] `normalize_node_type("DataStore")` returns `"DataStore"` (existing behavior preserved)
 - [ ] `normalize_edge_type("RELATES-TO")` returns `"RELATES_TO"` (hyphen handling preserved)

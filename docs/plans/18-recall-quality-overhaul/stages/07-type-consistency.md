@@ -42,29 +42,35 @@ Root causes:
 
 2. **Pass entity→type examples to the ontology context injection**
    - File: `src/neocortex/extraction/agents.py`, `inject_context` for ontology agent (around lines 92-131)
-   - Currently it passes `existing_node_types` as a flat list of names. Enhance it to include sample entities per type:
+   - Currently it passes `existing_node_types` as a flat list of names. Enhance it to include sample entities per type.
+   - **Important**: The adapter has `list_nodes_page(agent_id, target_schema, type_id)` (not `browse_nodes` with `type_name`). Instead of N individual queries, add a single efficient helper method:
      ```python
-     # In inject_context for ontology agent:
-     # Fetch top 5 nodes per type to show the agent what's already typed
-     type_examples = {}
-     for t in node_types:
-         examples = await repo.browse_nodes(agent_id, type_name=t.name, limit=5, target_schema=target_schema)
-         if examples:
-             type_examples[t.name] = [n.name for n in examples]
-
-     # Add to context:
-     context += "\n\nExisting types with example entities:\n"
-     for type_name, examples in type_examples.items():
-         context += f"- {type_name}: {', '.join(examples)}\n"
-     context += "\nIf the text mentions any of these entities, reuse their existing type.\n"
+     # Add to db/adapter.py:
+     async def get_type_examples(self, agent_id: str, target_schema: str | None = None, limit_per_type: int = 5, max_types: int = 20) -> dict[str, list[str]]:
+         """Fetch sample node names grouped by type for context injection."""
+         schema = target_schema or self._personal_schema(agent_id)
+         async with schema_scoped_connection(self._pool, schema) as conn:
+             rows = await conn.fetch(
+                 "SELECT nt.name as type_name, "
+                 "  (SELECT array_agg(sub.name ORDER BY sub.importance DESC) "
+                 "   FROM (SELECT name, importance FROM node WHERE type_id = nt.id AND NOT forgotten LIMIT $1) sub"
+                 "  ) as examples "
+                 "FROM node_type nt "
+                 "WHERE EXISTS (SELECT 1 FROM node WHERE type_id = nt.id AND NOT forgotten) "
+                 "LIMIT $2",
+                 limit_per_type, max_types,
+             )
+             return {r["type_name"]: r["examples"] for r in rows if r["examples"]}
      ```
-   - **Performance concern**: This adds N queries (one per type). Limit to types with `count > 0` and cap at 20 types to bound latency. Use a dedicated efficient query if possible:
-     ```sql
-     SELECT nt.name as type_name, array_agg(n.name ORDER BY n.importance DESC) as examples
-     FROM node_type nt
-     JOIN node n ON n.type_id = nt.id AND n.forgotten = false
-     GROUP BY nt.name
-     LIMIT 20
+   - Add `get_type_examples` to the `MemoryRepository` protocol in `db/protocol.py` and a no-op implementation in `db/mock.py` (returns `{}`).
+   - In `inject_context` for ontology agent:
+     ```python
+     type_examples = await repo.get_type_examples(agent_id, target_schema=target_schema)
+     if type_examples:
+         context += "\n\nExisting types with example entities:\n"
+         for type_name, examples in type_examples.items():
+             context += f"- {type_name}: {', '.join(examples)}\n"
+         context += "\nIf the text mentions any of these entities, reuse their existing type.\n"
      ```
 
 3. **Pass entity→type anchoring to the extractor agent**
@@ -110,10 +116,11 @@ Root causes:
    - Implement `cleanup_empty_types` in the adapter:
      ```python
      async def cleanup_empty_types(self, agent_id, max_age_minutes=5, target_schema=None):
+         schema = target_schema or self._personal_schema(agent_id)
          async with schema_scoped_connection(self._pool, schema) as conn:
              deleted = await conn.fetch(
                  "DELETE FROM node_type WHERE id NOT IN (SELECT DISTINCT type_id FROM node) "
-                 "AND created_at > now() - interval '$1 minutes' RETURNING name",
+                 "AND created_at > now() - make_interval(mins => $1) RETURNING name",
                  max_age_minutes,
              )
              if deleted:

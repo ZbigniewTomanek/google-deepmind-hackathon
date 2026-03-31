@@ -108,34 +108,42 @@ Default `λ = 0.7` (bias toward relevance but with meaningful diversity pressure
          return dot / (norm_a * norm_b)
      ```
 
-3. **Integrate MMR into the recall pipeline**
-   - File: `src/neocortex/tools/recall.py`
-   - After scoring and before returning results, apply MMR reranking:
+3. **Integrate MMR into the adapter's recall pipeline**
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema` (lines ~1717-1798)
+   - Scoring and result building happen inline in this method — `tools/recall.py` calls `repo.recall()` which delegates here. After scoring all results and before sorting/truncating, apply MMR:
      ```python
      from neocortex.scoring import mmr_rerank
 
-     # After collecting and scoring all results:
-     if settings.recall_mmr_enabled:
-         results = mmr_rerank(
-             results,
-             lambda_param=settings.recall_mmr_lambda,
+     # After computing hybrid scores for all results, before sorting:
+     if self._settings.recall_mmr_enabled:
+         result_dicts = mmr_rerank(
+             result_dicts,
+             lambda_param=self._settings.recall_mmr_lambda,
          )
      ```
-   - Ensure embeddings are available in the result dicts at this point. If not, they need to be fetched from the DB during recall and passed through. Check `_recall_in_schema` — embeddings may already be fetched for vector scoring but stripped before return.
-
-4. **Ensure embeddings survive to the MMR step**
-   - File: `src/neocortex/db/adapter.py`
-   - In `_recall_in_schema` (around lines 1641-1710), check whether the embedding vector is included in the result dict. If it's used for vector distance calculation via pgvector but then discarded, keep it through to the scoring step.
-   - The embedding is needed temporarily for MMR — it can be stripped from the final response after reranking.
-   - If embedding is fetched in SQL as part of the vector search but not included in the result, add it:
+   - The result dicts at this stage must include the `"embedding"` key (see Step 4).
+   - After MMR reranking, strip embeddings before building `RecallItem` objects:
      ```python
-     result["embedding"] = row["embedding"]  # Keep for MMR
-     ```
-   - After MMR reranking, strip embeddings from the response to avoid bloating:
-     ```python
-     for r in results:
+     for r in result_dicts:
          r.pop("embedding", None)
      ```
+
+4. **Fetch raw embedding vectors from SQL for MMR**
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema`
+   - Currently, vector similarity is computed entirely in PostgreSQL via pgvector's `<=>` operator — the raw embedding vector is **never fetched into Python**. MMR needs the actual vectors for pairwise cosine similarity.
+   - In the node recall SQL query (around lines 1641-1659), add `embedding::float[]` to the SELECT:
+     ```sql
+     SELECT id, name, content, ..., created_at,
+            embedding::float[] as embedding_vec,  -- ADD for MMR
+            1 - (embedding <=> $1) as vector_sim
+     FROM node WHERE ...
+     ```
+   - Similarly for the episode recall SQL query (around lines 1662-1679).
+   - When building result dicts for scoring, include the embedding:
+     ```python
+     result["embedding"] = row["embedding_vec"]  # Keep for MMR; stripped after reranking
+     ```
+   - **Performance note**: Fetching 768-dim float vectors for ~50-100 candidates adds ~300KB to query results. This is acceptable for recall-time latency. The pure-Python `_cosine_similarity` in MMR is O(n² × d); if latency becomes an issue, limit MMR to the top 30 candidates by initial score before reranking.
 
 5. **Add tests for MMR reranking**
    - File: `tests/test_scoring.py`

@@ -27,11 +27,11 @@ E2E testing showed ALL 28 episodes routed with `domain_count: 0`. Root cause ana
 ## Steps
 
 1. **Ensure domains are seeded in job context**
-   - File: `src/neocortex/ingestion/episode_processor.py` (or wherever the job context initializes services)
-   - Also check: `src/neocortex/jobs/tasks.py` (the route_episode task)
-   - In the route_episode task setup, call `await domain_service.seed_defaults()` before invoking `route_and_extract()`. This is idempotent (uses `ON CONFLICT DO NOTHING`).
-   - If the task gets a `domain_router` from a shared services dict, ensure that dict's initialization includes seeding.
-   - Trace the actual service initialization path: `get_services()` in `tasks.py` → wherever the DomainRouter and its DomainService are created.
+   - File: `src/neocortex/jobs/tasks.py`, function `route_episode` (lines 94-126)
+   - The task obtains services via `get_services()` (imported from `neocortex.jobs.context`, line 106) and gets the domain router: `domain_router = services.get("domain_router")` (line 109).
+   - The root cause is that `seed_defaults()` is called in `services.py` during MCP/ingestion startup, but the job worker's service initialization (`neocortex/jobs/context.py`) may not call it.
+   - Fix: In the job context initialization (find the service factory in `neocortex/jobs/context.py`), ensure `await domain_service.seed_defaults()` is called during setup. This is idempotent (`ON CONFLICT DO NOTHING`).
+   - If `seed_defaults()` cannot be added to the job context factory, add it as an early step in the `route_episode` task itself before calling `route_and_extract()`.
 
 2. **Add empty-domains validation in `DomainRouter`**
    - File: `src/neocortex/domains/router.py`, method `route_and_extract` (around line 59)
@@ -58,17 +58,18 @@ E2E testing showed ALL 28 episodes routed with `domain_count: 0`. Root cause ana
 
 4. **Add keyword fallback to `AgentDomainClassifier`**
    - File: `src/neocortex/domains/classifier.py`
-   - After the LLM classification call, if `matched_domains` is empty, fall back to keyword matching (reuse the logic from `MockDomainClassifier._KEYWORD_MAP`):
+   - Note: The classifier creates the PydanticAI agent inline per `classify` call (line 55), not as `self._agent`. The LLM result is obtained via `result = await agent.run(text, model_settings=self._model_settings)`, and the classification is `result.output` (a `ClassificationResult`).
+   - After the LLM classification call, if `matched_domains` is empty, fall back to keyword matching (reuse the logic from `MockDomainClassifier._KEYWORD_MAP` at line 72):
      ```python
      async def classify(self, text: str, domains: list[SemanticDomain]) -> ClassificationResult:
          # ... existing LLM classification ...
-         result = await self._agent.run(prompt, ...)
+         result = await agent.run(text, model_settings=self._model_settings)
 
          # Fallback: if LLM returned no matches, try keyword matching
          if not result.output.matched_domains:
-             result = self._keyword_fallback(text, domains)
+             return self._keyword_fallback(text, domains)
 
-         return result
+         return result.output
 
      def _keyword_fallback(self, text: str, domains: list[SemanticDomain]) -> ClassificationResult:
          """Keyword-based classification fallback when LLM returns no matches."""
@@ -85,13 +86,13 @@ E2E testing showed ALL 28 episodes routed with `domain_count: 0`. Root cause ana
              if slug not in domain_slugs:
                  continue
              if any(kw in text_lower for kw in keywords):
-                 matches.append(DomainMatch(slug=slug, confidence=0.6, reason="keyword_fallback"))
+                 matches.append(DomainClassification(domain_slug=slug, confidence=0.6, reasoning="keyword_fallback"))
 
          # Default to domain_knowledge if nothing else matched
          if not matches and "domain_knowledge" in domain_slugs:
-             matches.append(DomainMatch(slug="domain_knowledge", confidence=0.4, reason="default_fallback"))
+             matches.append(DomainClassification(domain_slug="domain_knowledge", confidence=0.4, reasoning="default_fallback"))
 
-         return ClassificationResult(matched_domains=matches, proposed_domains=[])
+         return ClassificationResult(matched_domains=matches, proposed_domain=None)
      ```
 
 5. **Add structured logging for classification results**
@@ -103,8 +104,8 @@ E2E testing showed ALL 28 episodes routed with `domain_count: 0`. Root cause ana
          agent_id=agent_id,
          episode_id=episode_id,
          matched_count=len(classification.matched_domains),
-         matched_slugs=[m.slug for m in classification.matched_domains],
-         method="llm" if classification.matched_domains and classification.matched_domains[0].reason != "keyword_fallback" else "keyword_fallback",
+         matched_slugs=[m.domain_slug for m in classification.matched_domains],
+         method="llm" if classification.matched_domains and classification.matched_domains[0].reasoning != "keyword_fallback" else "keyword_fallback",
      )
      ```
 
@@ -128,7 +129,7 @@ E2E testing showed ALL 28 episodes routed with `domain_count: 0`. Root cause ana
              domains=SEED_DOMAINS,
          )
          assert len(result.matched_domains) > 0
-         assert any(m.slug == "technical_knowledge" for m in result.matched_domains)
+         assert any(m.domain_slug == "technical_knowledge" for m in result.matched_domains)
      ```
    - File: `tests/test_domain_router.py`
    - Add test:

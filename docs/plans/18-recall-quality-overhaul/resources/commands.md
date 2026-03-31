@@ -19,7 +19,7 @@ uv run pytest tests/test_scoring.py -v -k "supersession"
 uv run pytest tests/test_domain_classifier.py tests/test_domain_router.py -v
 
 # Run normalization tests (Stage 5)
-uv run pytest tests/test_normalization.py -v
+uv run pytest tests/unit/test_normalization.py -v
 
 # Run all tests with coverage
 uv run pytest tests/ -v --cov=src/neocortex --cov-report=term-missing

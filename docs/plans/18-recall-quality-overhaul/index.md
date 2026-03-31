@@ -81,25 +81,27 @@ Stages within each phase are sequential. Phases A, B, and C are independent of e
 ## Files That May Be Changed
 
 ### Scoring & Recall
-- `src/neocortex/scoring.py` — Activation dampening, MMR reranking, temporal recency
-- `src/neocortex/mcp_settings.py` — New settings: activation cap, MMR lambda, recency mode
-- `src/neocortex/tools/recall.py` — Integrate MMR postprocessor
-- `src/neocortex/db/adapter.py` — Include `updated_at` in recall queries, per-query access increment cap
+- `src/neocortex/scoring.py` — Activation dampening, MMR reranking, temporal recency, supersession adjustment
+- `src/neocortex/mcp_settings.py` — New settings: activation cap, MMR lambda, recency mode, supersession multipliers
+- `src/neocortex/db/adapter.py` — Inline scoring changes in `_recall_in_schema`, embedding fetch for MMR, `updated_at` in SQL, access increment cap, supersession edge fetch, `get_type_examples` helper, `cleanup_empty_types`
 
 ### Domain Routing
 - `src/neocortex/domains/router.py` — Validate non-empty domains, add fallback
 - `src/neocortex/domains/classifier.py` — Log warning on empty domains, keyword fallback
-- `src/neocortex/ingestion/episode_processor.py` — Ensure domains seeded before routing
+- `src/neocortex/jobs/context.py` — Ensure domains seeded in job worker context
 
 ### Extraction & Normalization
 - `src/neocortex/normalization.py` — Character validation regex
 - `src/neocortex/extraction/agents.py` — Correction detection prompts, type reuse guidance
 - `src/neocortex/extraction/pipeline.py` — Pass entity-type mapping to ontology agent
-- `migrations/init/004_seed_ontology.sql` — Add temporal edge types (SUPERSEDES, CORRECTS)
+- `migrations/init/009_temporal_edge_types.sql` — New migration: add SUPERSEDES, CORRECTS edge types
+- `migrations/templates/graph_schema.sql` — Add temporal edge types to per-graph template
+- `src/neocortex/db/protocol.py` — Add `get_type_examples`, `cleanup_empty_types` to protocol
+- `src/neocortex/db/mock.py` — No-op implementations for new protocol methods
 
 ### Tests
-- `tests/test_scoring.py` — Dampening, MMR, temporal bias
-- `tests/test_normalization.py` — Invalid character rejection
+- `tests/test_scoring.py` — Dampening, MMR, temporal bias, supersession
+- `tests/unit/test_normalization.py` — Invalid character rejection
 - `tests/test_domain_classifier.py` — Empty domains handling
 - `tests/test_domain_router.py` — Fallback routing
 

@@ -63,16 +63,23 @@ Additionally, introduce a **per-query access increment cap**: when a single reca
          return 1.0 / (1.0 + math.exp(-base_level))  # sigmoid
      ```
 
-3. **Thread `access_exponent` setting through the call chain**
-   - File: `src/neocortex/scoring.py`, function `compute_hybrid_score` (lines 50-80)
-   - The function that calls `compute_base_activation` must pass the new parameter from settings.
-   - Trace callers: `scoring.py:compute_hybrid_score` → called from `db/adapter.py:_score_and_rank_nodes` and `_score_and_rank_episodes`
-   - Add `access_exponent` parameter to `compute_hybrid_score` signature and forward it.
+3. **Thread `access_exponent` through the adapter's inline scoring**
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema` (lines ~1717-1798)
+   - Note: `compute_hybrid_score` does NOT call `compute_base_activation` — they are independent functions. Activation is pre-computed and passed into `compute_hybrid_score` as the `activation` parameter. Scoring is done **inline** in `_recall_in_schema`, not in separate `_score_and_rank_*` functions (those don't exist).
+   - Find all calls to `compute_base_activation` in `_recall_in_schema` (there are multiple — for nodes and episodes) and add the `access_exponent` kwarg. Settings are available as `self._settings`.
 
-4. **Thread settings from recall tool into scoring**
-   - File: `src/neocortex/tools/recall.py`
-   - Where `compute_hybrid_score` is called, pass `settings.activation_access_exponent`.
-   - If settings aren't directly available at the scoring call site, thread them through `_recall_in_schema` or equivalent.
+4. **Pass `access_exponent` from settings at each call site**
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema` (lines ~1717-1798)
+   - Scoring is done inline in this method — `tools/recall.py` calls `repo.recall()` which delegates to the adapter. Find each `compute_base_activation(...)` call and add the new parameter:
+     ```python
+     activation = compute_base_activation(
+         row["access_count"],
+         row["last_accessed_at"],
+         decay_rate=self._settings.activation_decay_rate,
+         access_exponent=self._settings.activation_access_exponent,  # NEW
+     )
+     ```
+   - There are multiple calls (for nodes and episodes). Update all of them.
 
 5. **Cap per-query access increments** in `db/adapter.py`
    - File: `src/neocortex/db/adapter.py`
@@ -89,6 +96,12 @@ Additionally, introduce a **per-query access increment cap**: when a single reca
          )
      ```
    - Similarly for `record_episode_access`.
+   - At the call sites (inside `recall()` or `_recall_in_schema`), pass the setting:
+     ```python
+     await self.record_node_access(
+         agent_id, node_ids, limit=self._settings.recall_access_increment_limit
+     )
+     ```
 
 6. **Update existing tests** in `test_scoring.py`
    - File: `tests/test_scoring.py`

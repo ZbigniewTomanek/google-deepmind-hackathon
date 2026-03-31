@@ -26,9 +26,10 @@ The seed ontology (`004_seed_ontology.sql`) includes `CONTRADICTS` and `SUPPORTS
 ## Steps
 
 1. **Seed temporal edge types**
-   - File: `migrations/init/004_seed_ontology.sql`
-   - Add to the edge type seed list:
+   - **Do NOT modify** `migrations/init/004_seed_ontology.sql` — it has already been applied in existing databases. Modifying it won't retroactively add the new types.
+   - Create a new migration file (use the next available number, e.g., `migrations/init/009_temporal_edge_types.sql`):
      ```sql
+     -- Temporal edge types for fact supersession (Plan 18, Stage 6)
      INSERT INTO edge_type (name, description) VALUES
        ('SUPERSEDES', 'Source supersedes/replaces target — target is outdated'),
        ('CORRECTS', 'Source corrects an error or misconception in target')
@@ -36,7 +37,7 @@ The seed ontology (`004_seed_ontology.sql`) includes `CONTRADICTS` and `SUPPORTS
      ```
    - Also add these to the schema template so new per-graph schemas get them:
    - File: `migrations/templates/graph_schema.sql`
-   - Find the seed edge types section and add the same INSERT.
+   - Find the seed edge types section and append the same INSERT.
 
 2. **Update the librarian agent prompt to create supersession edges**
    - File: `src/neocortex/extraction/agents.py`
@@ -54,25 +55,28 @@ The seed ontology (`004_seed_ontology.sql`) includes `CONTRADICTS` and `SUPPORTS
      ```
    - Ensure the librarian has access to a tool for creating edges (it should already have `create_or_update_edge` or similar from the existing tool-driven mode).
 
-3. **Add supersession scoring in the recall pipeline**
+3. **Add supersession scoring function**
    - File: `src/neocortex/scoring.py`
    - Add a function to compute a supersession adjustment:
      ```python
      def compute_supersession_adjustment(
          node_id: int,
-         supersession_edges: dict[int, list[dict]],
+         supersession_edges: dict[str, dict[int, list]],
      ) -> float:
          """Returns a score multiplier based on supersession edges.
 
-         - Nodes that have been SUPERSEDED/CORRECTED by another node get penalty (0.5×)
-         - Nodes that SUPERSEDE/CORRECT another node get boost (1.2×)
-         - Nodes with no supersession edges get neutral (1.0×)
+         Args:
+             node_id: The node to check.
+             supersession_edges: Dict with keys "superseded_by" (node_id → edges where
+                 this node is the target of SUPERSEDES/CORRECTS) and "supersedes"
+                 (node_id → edges where this node is the source).
+
+         Returns:
+             0.5 for superseded nodes, 1.2 for superseding nodes, 1.0 otherwise.
          """
-         # Check if this node has been superseded (incoming SUPERSEDES/CORRECTS targeting it)
          if node_id in supersession_edges.get("superseded_by", {}):
              return 0.5  # Penalize outdated nodes
 
-         # Check if this node supersedes others (outgoing SUPERSEDES/CORRECTS from it)
          if node_id in supersession_edges.get("supersedes", {}):
              return 1.2  # Boost correcting nodes
 
@@ -80,8 +84,8 @@ The seed ontology (`004_seed_ontology.sql`) includes `CONTRADICTS` and `SUPPORTS
      ```
 
 4. **Fetch supersession edges during recall**
-   - File: `src/neocortex/db/adapter.py`
-   - In `_recall_in_schema`, after fetching candidate nodes, fetch supersession edges:
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema`
+   - After fetching candidate nodes but **before the inline scoring block** (lines ~1717-1798), fetch supersession edges:
      ```python
      # Fetch supersession relationships for candidate nodes
      supersession_type_ids = await conn.fetch(
@@ -89,29 +93,36 @@ The seed ontology (`004_seed_ontology.sql`) includes `CONTRADICTS` and `SUPPORTS
      )
      type_ids = [r["id"] for r in supersession_type_ids]
 
+     supersession_edges: dict[str, dict[int, list]] = {"superseded_by": {}, "supersedes": {}}
+
      if type_ids and candidate_node_ids:
-         # Nodes that have been superseded (they are targets of SUPERSEDES/CORRECTS edges)
          superseded_rows = await conn.fetch(
              "SELECT target_id, source_id FROM edge "
              "WHERE type_id = ANY($1::int[]) AND target_id = ANY($2::int[])",
              type_ids, candidate_node_ids,
          )
-         # Nodes that supersede others (they are sources of SUPERSEDES/CORRECTS edges)
          superseding_rows = await conn.fetch(
              "SELECT source_id, target_id FROM edge "
              "WHERE type_id = ANY($1::int[]) AND source_id = ANY($2::int[])",
              type_ids, candidate_node_ids,
          )
+         for r in superseded_rows:
+             supersession_edges["superseded_by"].setdefault(r["target_id"], []).append(r)
+         for r in superseding_rows:
+             supersession_edges["supersedes"].setdefault(r["source_id"], []).append(r)
      ```
-   - Build a lookup dict and pass it into the scoring step.
 
-5. **Apply supersession adjustment in scoring**
-   - File: `src/neocortex/scoring.py` or wherever the final score is computed
-   - After computing `hybrid_score`, multiply by the supersession adjustment:
+5. **Apply supersession adjustment in the inline scoring block**
+   - File: `src/neocortex/db/adapter.py`, method `_recall_in_schema` (lines ~1717-1798)
+   - After computing `hybrid_score` for each node, apply the adjustment:
      ```python
+     from neocortex.scoring import compute_supersession_adjustment
+
+     # After: score = compute_hybrid_score(...)
      adjustment = compute_supersession_adjustment(node_id, supersession_edges)
-     final_score = hybrid_score * adjustment
+     score *= adjustment
      ```
+   - Supersession adjustment applies to **nodes only** (episodes don't have SUPERSEDES edges).
 
 6. **Add settings for supersession adjustments**
    - File: `src/neocortex/mcp_settings.py`
