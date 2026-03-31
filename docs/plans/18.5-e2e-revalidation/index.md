@@ -93,13 +93,13 @@ This plan produces **no code changes**. Output artifacts:
 
 | # | Stage | Status | Notes |
 |---|-------|--------|-------|
-| 1 | [Setup & Baseline](stages/01-setup-baseline.md) | PENDING | |
-| 2 | [Episode Ingestion](stages/02-episode-ingestion.md) | PENDING | |
-| 3 | [Extraction Wait & Monitoring](stages/03-extraction-wait.md) | PENDING | |
-| 4 | [Domain Routing Validation](stages/04-domain-routing.md) | PENDING | |
-| 5 | [Graph Quality Inspection](stages/05-graph-quality.md) | PENDING | |
-| 6 | [Recall Quality Measurement](stages/06-recall-measurement.md) | PENDING | |
-| 7 | [Report Generation](stages/07-report.md) | PENDING | |
+| 1 | [Setup & Baseline](stages/01-setup-baseline.md) | DONE | Empty baseline (0 graphs). Smoke test episode_id=1. Source repo OK. |
+| 2 | [Episode Ingestion](stages/02-episode-ingestion.md) | DONE | 28 episodes stored, IDs 2--29 (smoke test=1). No errors. |
+| 3 | [Extraction Wait & Monitoring](stages/03-extraction-wait.md) | DONE | 206 nodes, 33 edges, 27/29 consolidated (93%). ~30 min wait. |
+| 4 | [Domain Routing Validation](stages/04-domain-routing.md) | DONE | M5: 0% (0/28 routed) FAIL. Shared schemas exist but empty. |
+| 5 | [Graph Quality Inspection](stages/05-graph-quality.md) | DONE | M6: 4 corrupted FAIL. M7: ~5 dupes SAME. 1 SUPERSEDES, 0 CORRECTS. |
+| 6 | [Recall Quality Measurement](stages/06-recall-measurement.md) | DONE | M1:0.666 PASS. M2:1/9 PASS. M3:2/3 PASS. M4:0/3 FAIL. |
+| 7 | [Report Generation](stages/07-report.md) | DONE | Report: demo-data/e2e-revalidation-report.md. Overall: FAIL 3/6. |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

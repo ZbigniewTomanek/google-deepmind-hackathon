@@ -1743,7 +1743,7 @@ class GraphServiceAdapter:
                               END AS vector_sim,
                               access_count, last_accessed_at, importance,
                               created_at, updated_at,
-                              embedding::float[] AS embedding_vec
+                              NULL::float[] AS embedding_vec
                        FROM node
                        WHERE forgotten = false
                          AND (tsv @@ plainto_tsquery('english', $1)
@@ -1765,7 +1765,7 @@ class GraphServiceAdapter:
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
                               END AS vector_sim,
-                              embedding::float[] AS embedding_vec
+                              NULL::float[] AS embedding_vec
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
                           OR (embedding IS NOT NULL AND (embedding <=> $2::vector) < $3)
