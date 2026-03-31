@@ -15,7 +15,7 @@ Personal graphs are fully isolated. Agent A cannot see Agent B's personal data. 
 
 ## Shared Graphs
 
-Shared graphs enable cross-agent knowledge bases. They use Row-Level Security (RLS) so multiple agents can safely read from and write to the same schema.
+Shared graphs enable cross-agent knowledge bases. Access is controlled by app-level permissions (`graph_permissions` table + `PermissionChecker`), allowing any authorized agent to read from and write to the same schema — including updating other agents' contributions for knowledge consolidation.
 
 ```
 ncx_shared__technical_knowledge    — programming, tools, architecture
@@ -81,7 +81,7 @@ New domains can be proposed by the classifier and auto-provisioned (schema creat
 |----------|---------|-------------|
 | `NEOCORTEX_DOMAIN_ROUTING_ENABLED` | `true` | Enable/disable domain routing |
 | `NEOCORTEX_DOMAIN_CLASSIFICATION_THRESHOLD` | `0.3` | Minimum confidence to route |
-| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `gemini-3-flash-preview` | Classification model |
+| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `google-gla:gemini-3-flash-preview` | Classification model (any Pydantic AI provider string) |
 
 ## Permissions
 

@@ -210,16 +210,17 @@ All prefixed with `NEOCORTEX_` (Pydantic BaseSettings).
 |----------|---------|-------------|
 | `NEOCORTEX_DOMAIN_ROUTING_ENABLED` | `true` | Auto-route to shared domain graphs |
 | `NEOCORTEX_DOMAIN_CLASSIFICATION_THRESHOLD` | `0.3` | Minimum confidence for routing |
-| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `gemini-3-flash-preview` | Classification model |
+| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `google-gla:gemini-3-flash-preview` | Classification model (any Pydantic AI provider string) |
 
 ### Extraction Pipeline
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NEOCORTEX_EXTRACTION_ENABLED` | `true` | Run background extraction |
-| `NEOCORTEX_ONTOLOGY_MODEL` | `gemini-3-flash-preview` | Ontology agent model |
-| `NEOCORTEX_EXTRACTOR_MODEL` | `gemini-3-flash-preview` | Extractor agent model |
-| `NEOCORTEX_LIBRARIAN_MODEL` | `gemini-3-flash-preview` | Librarian agent model |
+| `NEOCORTEX_ONTOLOGY_MODEL` | `google-gla:gemini-3-flash-preview` | Ontology agent model (any Pydantic AI provider string) |
+| `NEOCORTEX_EXTRACTOR_MODEL` | `google-gla:gemini-3-flash-preview` | Extractor agent model (any Pydantic AI provider string) |
+| `NEOCORTEX_LIBRARIAN_MODEL` | `google-gla:gemini-3-flash-preview` | Librarian agent model (any Pydantic AI provider string) |
+| `NEOCORTEX_EXTRACTION_TOOL_CALLS_LIMIT` | `150` | Max tool calls per extraction run |
 
 ## Snapshots
 

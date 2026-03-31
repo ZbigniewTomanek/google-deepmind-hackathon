@@ -28,7 +28,7 @@ NeoCortex is structured as a layered system: MCP tools at the top provide a simp
      +--------v---------------v---------------v------+-----+
      |              PostgreSQL 16                     |
      |  pgvector (semantic) + tsvector (BM25)         |
-     |  multi-schema isolation + RLS                  |
+     |  multi-schema isolation + permissions           |
      +------------------------------------------------+
 ```
 
@@ -134,10 +134,10 @@ Examples:
 
 ### Isolation Model
 
-| Schema Type | RLS | Role Scoping | Use Case |
-|-------------|-----|-------------|----------|
-| Per-agent (`ncx_alice__personal`) | No | search_path only | Private agent memory |
-| Shared (`ncx_shared__knowledge`) | Yes | search_path + SET ROLE | Cross-agent knowledge base |
+| Schema Type | Access Control | Use Case |
+|-------------|---------------|----------|
+| Per-agent (`ncx_alice__personal`) | search_path isolation | Private agent memory |
+| Shared (`ncx_shared__knowledge`) | App-level permissions (`graph_permissions`) | Cross-agent knowledge base |
 
 ## Authentication
 

@@ -218,7 +218,7 @@ All configuration via environment variables (Pydantic BaseSettings):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NEOCORTEX_DOMAIN_ROUTING_ENABLED` | `true` | Enable automatic routing to shared domain graphs. Requires `extraction_enabled=true` (uses the job queue) |
-| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `gemini-3-flash-preview` | Gemini model for domain classification |
+| `NEOCORTEX_DOMAIN_CLASSIFIER_MODEL` | `google-gla:gemini-3-flash-preview` | Model for domain classification (any Pydantic AI provider string) |
 | `NEOCORTEX_DOMAIN_CLASSIFIER_THINKING_EFFORT` | `low` | Thinking effort for domain classifier |
 | `NEOCORTEX_DOMAIN_CLASSIFICATION_THRESHOLD` | `0.3` | Minimum confidence for domain match |
 

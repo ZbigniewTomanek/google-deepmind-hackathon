@@ -11,7 +11,7 @@ Most agent memory is either flat files (fragile, size-limited) or vector stores 
 - **Self-organizing knowledge graph** — a 3-agent extraction pipeline (Ontology, Extractor, Librarian) autonomously builds and maintains a structured graph from raw text. No manual schema design.
 - **Cognitive scoring** — recall uses 5 signals: vector similarity, full-text search, recency decay, ACT-R activation (biological forgetting curves), and node importance. Weights redistribute gracefully when signals are missing.
 - **Graph-native retrieval** — spreading activation propagates energy through edges, surfacing indirectly related knowledge. Hebbian reinforcement strengthens frequently co-activated paths.
-- **PostgreSQL-native** — pgvector + tsvector + RLS in one system. No external graph database.
+- **PostgreSQL-native** — pgvector + tsvector + multi-schema isolation in one system. No external graph database.
 
 Unlike Mem0 (vector store with graph addon), Zep/Graphiti (conversation-focused temporal graphs), or Letta (OS-inspired paging) — NeoCortex builds a real knowledge graph autonomously and retrieves from it using cognitive science principles.
 
@@ -38,7 +38,7 @@ Unlike Mem0 (vector store with graph addon), Zep/Graphiti (conversation-focused 
      +-------v----------------v--------------v-------+-----+
      |              PostgreSQL 16                     |
      |  pgvector (semantic) + tsvector (BM25)         |
-     |  multi-schema isolation + RLS                  |
+     |  multi-schema isolation + permissions           |
      +-------------------------------------------------+
 ```
 
@@ -78,7 +78,7 @@ Full setup guide: [Configuration](docs/configuration.md)
 
 - **3-agent extraction pipeline** — Ontology, Extractor, Librarian agents turn raw text into structured knowledge ([how it works](docs/how-it-works.md))
 - **Hybrid recall with cognitive scoring** — 5 signals, ACT-R activation, spreading activation, Hebbian reinforcement ([details](docs/how-it-works.md#how-recall-works))
-- **Multi-agent isolation** — per-agent PostgreSQL schemas + shared graphs with RLS and permissions ([multi-agent](docs/multi-agent.md))
+- **Multi-agent isolation** — per-agent PostgreSQL schemas + shared graphs with app-level permissions ([multi-agent](docs/multi-agent.md))
 - **Domain routing** — automatic classification into shared semantic graphs ([details](docs/multi-agent.md#domain-routing))
 - **Multimodal ingestion** — text, documents, events, audio, video via REST API ([configuration](docs/configuration.md#ingestion-api))
 - **Developer TUI** — interactive terminal for testing remember/recall/discover
@@ -87,7 +87,7 @@ Full setup guide: [Configuration](docs/configuration.md)
 
 | Component | Technology |
 |-----------|------------|
-| LLM | Gemini (via Pydantic AI) |
+| LLM | Any Pydantic AI provider (default: Gemini; supports OpenAI, Anthropic, etc.) |
 | Embeddings | Gemini embedding model (768 dims) |
 | Database | PostgreSQL 16 + pgvector + tsvector |
 | MCP Server | FastMCP (Python) |
@@ -109,4 +109,4 @@ Full setup guide: [Configuration](docs/configuration.md)
 
 ## License
 
-Apache 2.0
+AGPL-3.0
