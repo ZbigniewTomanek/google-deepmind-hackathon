@@ -24,7 +24,7 @@ from pydantic_agents_playground.schemas import (
 MODEL_NAME = "google-gla:gemini-3-flash-preview"
 
 
-def build_model(use_test_model: bool):
+def build_model(use_test_model: bool) -> str | TestModel:
     if use_test_model:
         logger.info("Using TestModel for agent execution")
         return TestModel()

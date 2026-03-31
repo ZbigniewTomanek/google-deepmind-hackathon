@@ -232,6 +232,7 @@ def test_extraction_settings_defaults():
     for prefix in ("ontology", "extractor", "librarian"):
         assert getattr(s, f"{prefix}_model") == "google-gla:gemini-3-flash-preview"
         assert getattr(s, f"{prefix}_thinking_effort") == "low"
+    assert s.domain_classifier_model == "google-gla:gemini-3-flash-preview"
 
 
 # ── ServiceContext includes job_app ──

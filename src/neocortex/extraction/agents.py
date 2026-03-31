@@ -47,7 +47,7 @@ class AgentInferenceConfig:
         return None
 
 
-def _build_model(config: AgentInferenceConfig):
+def _build_model(config: AgentInferenceConfig) -> str | TestModel:
     """Build the LLM model from inference config."""
     if config.use_test_model:
         logger.debug("Using TestModel for extraction agents")
