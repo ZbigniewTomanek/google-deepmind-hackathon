@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "MCP server providing structured long-term memory for AI agents via PostgreSQL knowledge graph"
 requires-python = ">=3.13"
 dependencies = [
-    "pydantic-ai-slim[google]>=1.72.0",
+    "pydantic-ai-slim[google,openai,anthropic]>=1.72.0",
     "loguru>=0.7.3",
     "asyncpg>=0.30.0",
     "pydantic>=2.0",
