@@ -13,7 +13,7 @@ None.
 
 1. **Create `scripts/manage.sh`** with `#!/usr/bin/env bash`, `set -euo pipefail`.
 
-2. **Port shared config variables** from `launch.sh`:
+2. **Port existing config variables** from `launch.sh`:
    ```bash
    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
    PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -23,9 +23,13 @@ None.
    PIDFILE_MCP="$PROJECT_DIR/.mcp.pid"
    PIDFILE_INGESTION="$PROJECT_DIR/.ingestion.pid"
    LOGDIR="$PROJECT_DIR/log"
-   BACKUPDIR="$PROJECT_DIR/backups"      # NEW
-   MEDIA_STORE="$PROJECT_DIR/media_store" # NEW
-   COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+   ```
+
+   **Add new variables** (not in launch.sh — these are new to manage.sh):
+   ```bash
+   COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"  # NEW: replaces hardcoded paths
+   BACKUPDIR="$PROJECT_DIR/backups"                 # NEW: snapshot storage
+   MEDIA_STORE="$PROJECT_DIR/media_store"           # NEW: media file store path
    ```
 
 3. **Port utility functions** verbatim from `launch.sh`:
@@ -79,9 +83,37 @@ None.
    ```
 
 7. **Implement `do_status()`** — lightweight status check:
-   - Check if PG container is running
-   - Check if MCP / ingestion PIDs are alive
-   - Print ports and log locations
+   ```bash
+   do_status() {
+       log "Service status:"
+       # PostgreSQL
+       if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U neocortex -d neocortex >/dev/null 2>&1; then
+           ok "  PostgreSQL:  running"
+       else
+           log "  PostgreSQL:  stopped"
+       fi
+       # MCP
+       if [[ -f "$PIDFILE_MCP" ]] && kill -0 "$(cat "$PIDFILE_MCP")" 2>/dev/null; then
+           ok "  MCP server:  running (PID $(cat "$PIDFILE_MCP"), port $MCP_PORT)"
+       else
+           log "  MCP server:  stopped"
+       fi
+       # Ingestion
+       if [[ -f "$PIDFILE_INGESTION" ]] && kill -0 "$(cat "$PIDFILE_INGESTION")" 2>/dev/null; then
+           ok "  Ingestion:   running (PID $(cat "$PIDFILE_INGESTION"), port $INGESTION_PORT)"
+       else
+           log "  Ingestion:   stopped"
+       fi
+       # Logs
+       log "  Logs:        $LOGDIR/"
+       # Snapshots
+       local snap_count=0
+       if [[ -d "$BACKUPDIR" ]]; then
+           snap_count=$(find "$BACKUPDIR" -name '*.tar.gz' 2>/dev/null | wc -l | tr -d ' ')
+       fi
+       log "  Snapshots:   $snap_count saved in $BACKUPDIR/"
+   }
+   ```
 
 8. **`chmod +x scripts/manage.sh`**
 

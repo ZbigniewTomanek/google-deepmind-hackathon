@@ -23,30 +23,35 @@ Implement restore-from-snapshot and snapshot cleanup commands.
 
 2. **Pre-flight checks**:
    - `require_pg_running` (need PG to restore into)
-   - Warn if MCP/ingestion are running: "App services are running. Stop them first
-     for a clean restore, or use --force to continue."
-   - Parse `--force` flag to skip the warning
+   - If MCP/ingestion are running, auto-stop them (print a message):
+     ```
+     log "Stopping app services for clean restore..."
+     kill_pidfile "$PIDFILE_MCP"
+     kill_pidfile "$PIDFILE_INGESTION"
+     kill_port "$MCP_PORT"
+     kill_port "$INGESTION_PORT"
+     ```
 
 3. **Restore flow**:
    ```
    a. Extract archive to temp dir
-   b. Stop MCP + ingestion if running (to avoid connections during restore)
-   c. Restore DB:
-      docker compose -f "$COMPOSE_FILE" exec -T \
-        -e PGPASSWORD=neocortex postgres \
-        psql -U neocortex -d neocortex < <(gunzip -c "$tmpdir/db.sql.gz")
+   b. Restore DB (pipe pattern — do NOT use process substitution with docker exec):
+      gunzip -c "$tmpdir/db.sql.gz" | \
+        docker compose -f "$COMPOSE_FILE" exec -T \
+          -e PGPASSWORD=neocortex postgres \
+          psql -U neocortex -d neocortex
 
       Note: pg_dump --clean --if-exists generates DROP IF EXISTS + CREATE
       statements, so this replaces existing data.
-   d. Restore media (if present in snapshot):
+   c. Restore media (if present in snapshot):
       if [[ -d "$tmpdir/media_store" ]]; then
           rm -rf "$MEDIA_STORE"
           cp -r "$tmpdir/media_store" "$MEDIA_STORE"
           ok "Media store restored"
       fi
-   e. Cleanup temp dir
-   f. ok "Snapshot loaded: <name>"
-   g. Suggest: "Run '$0 start' to bring services back up."
+   d. Cleanup temp dir
+   e. ok "Snapshot loaded: <name>"
+   f. Suggest: "Run '$0 start' to bring services back up."
    ```
 
 4. **Safety**: The `--clean --if-exists` flags in the dump mean restore

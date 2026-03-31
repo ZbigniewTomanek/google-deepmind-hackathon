@@ -9,8 +9,8 @@
 
 ## Context
 
-`launch.sh` runs `docker compose down -v` on every start, destroying all PostgreSQL
-data. This is fine for quick dev but hostile to:
+`launch.sh` runs `docker compose down -v` in `do_start()` on every start, destroying
+all PostgreSQL data. This is fine for quick dev but hostile to:
 
 - **Personal long-running use** — accumulated knowledge graphs wiped on restart
 - **Demo/testing workflows** — no way to save a "known good" state and restore it
@@ -50,8 +50,10 @@ Six stages, each independently testable and committable:
 |------|--------|
 | `scripts/manage.sh` | **New** — unified management script |
 | `scripts/launch.sh` | **Deleted** |
-| `scripts/run_e2e.sh` | Updated to call `manage.sh` |
+| `scripts/run_e2e.sh` | Updated to delegate lifecycle to `manage.sh` (local mode only; `--docker` mode unchanged) |
 | `CLAUDE.md` | References updated (launch.sh -> manage.sh) |
+| `.claude/skills/neocortex/SKILL.md` | References updated (launch.sh -> manage.sh) |
+| `.claude/skills/neocortex/KNOWN_ISSUES.md` | References updated (launch.sh -> manage.sh) |
 | `.gitignore` | Add `backups/` |
 
 ## Progress Tracker

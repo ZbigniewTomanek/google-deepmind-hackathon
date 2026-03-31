@@ -44,19 +44,22 @@ a pg_dump of the database and a copy of `media_store/`.
       if [[ -d "$MEDIA_STORE" ]] && [[ -n "$(ls -A "$MEDIA_STORE" 2>/dev/null)" ]]; then
           cp -r "$MEDIA_STORE" "$tmpdir/media_store"
       fi
-   g. Write metadata file "$tmpdir/snapshot.json":
+   g. Capture PG version for metadata:
+      pg_ver=$(docker compose -f "$COMPOSE_FILE" exec -T postgres \
+        pg_dump --version | head -1)
+   h. Write metadata file "$tmpdir/snapshot.json":
       {
         "name": "<name>",
         "created_at": "<ISO 8601>",
-        "pg_version": "<from pg_dump output>",
+        "pg_version": "$pg_ver",
         "has_media": true/false,
         "original_host": "$(hostname)"
       }
-   h. Create tar archive:
+   i. Create tar archive:
       mkdir -p "$BACKUPDIR"
       tar -czf "$BACKUPDIR/${filename}.tar.gz" -C "$tmpdir" .
-   i. Cleanup temp dir
-   j. Print: ok "Snapshot saved: $BACKUPDIR/${filename}.tar.gz"
+   j. Cleanup temp dir
+   k. Print: ok "Snapshot saved: $BACKUPDIR/${filename}.tar.gz"
       Show file size
    ```
 

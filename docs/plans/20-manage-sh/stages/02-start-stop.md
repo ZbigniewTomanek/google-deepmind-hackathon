@@ -52,7 +52,11 @@ the existing Docker volume; `start --fresh` wipes and recreates it (old behavior
       FI
    ```
 
-   Key difference from old `launch.sh do_stop()`: never uses `down -v` (volume preserved).
+   Note: the old `launch.sh do_stop()` also keeps PG running and never uses
+   `down -v`. The real behavioral change is in `do_start()` — old `launch.sh`
+   always runs `docker compose down -v` on start, wiping the volume every time.
+   New `manage.sh start` preserves the volume by default; only `start --fresh`
+   wipes it (equivalent to old behavior).
 
 3. **Connection info output** should match current format:
    ```
