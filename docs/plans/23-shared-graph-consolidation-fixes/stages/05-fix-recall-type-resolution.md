@@ -9,11 +9,11 @@
 
 The recall system has two code paths that build `type_names` maps:
 
-1. **Personal graph recall** (`adapter.py:1562-1565`): `_get_type_names(type_ids)` —
+1. **Personal graph recall** (`adapter.py:1560-1565`): `_get_type_names(type_ids)` —
    targeted lookup by IDs collected from matching nodes.
 
-2. **Shared graph recall** (`adapter.py:1839`): `SELECT id, name FROM node_type` —
-   fetches ALL types in the schema, builds `{id: name}` dict.
+2. **Shared graph recall** (`adapter.py:1810`): `SELECT id, name FROM node_type` —
+   fetches ALL types in the schema; dict built at line 1839: `{id: name}`.
 
 The "Unknown" fallback at `adapter.py:1624` and `adapter.py:1892`:
 ```python
@@ -38,11 +38,14 @@ Fires when a node's `type_id` has no matching entry in `node_type`. Possible cau
 ### 2. Add JOIN-based type resolution to shared-graph recall
 
 - File: `src/neocortex/db/adapter.py`
-- Lines: ~1790-1840 (shared recall query and type resolution)
+- Function: `_recall_in_schema` (starts at line 1714)
+- Lines to change:
+  - **Line ~1810**: `type_rows = await conn.fetch("SELECT id, name FROM node_type")` — **delete** this line
+  - **Line ~1839**: `type_names = {int(row["id"]): str(row["name"]) for row in type_rows}` — **delete** this line
+  - **Line ~1892**: `type_names.get(int(row["type_id"]), "Unknown")` — **replace** (see below)
 - Details:
-  - Find the recall query that fetches `node_rows`. It currently fetches `type_id`
-    from the `node` table and resolves it separately via `type_names` dict.
-  - **Change**: Add a LEFT JOIN to `node_type` in the recall query itself:
+  - Add a `LEFT JOIN node_type nt ON nt.id = n.type_id` to the node recall query
+    and select `COALESCE(nt.name, 'Untyped') AS resolved_type_name`:
     ```sql
     SELECT n.id, n.name, n.content, n.type_id,
            COALESCE(nt.name, 'Untyped') AS resolved_type_name,
@@ -54,8 +57,11 @@ Fires when a node's `type_id` has no matching entry in `node_type`. Possible cau
     WHERE n.forgotten = false
       AND ...
     ```
-  - Then use `row["resolved_type_name"]` instead of `type_names.get(...)`.
-  - This eliminates the separate type lookup AND handles orphaned type IDs.
+  - Full list of downstream changes:
+    1. Delete the `type_rows` fetch (line ~1810)
+    2. Delete the `type_names` dict comprehension (line ~1839)
+    3. At line ~1892, replace `type_names.get(int(row["type_id"]), "Unknown")`
+       with `row["resolved_type_name"]`
   - **Note**: The LEFT JOIN adds minimal overhead — `node_type` is a small table
     (typically <50 rows) and the join is on primary key.
 
@@ -64,13 +70,16 @@ Fires when a node's `type_id` has no matching entry in `node_type`. Possible cau
 - File: `src/neocortex/db/adapter.py`
 - Lines: ~1555-1625 (personal recall code path)
 - Details:
-  - The `_get_type_names` approach at line 1565 works differently — it collects
-    type IDs from results and does a batch lookup.
-  - Apply the same JOIN approach for consistency, or verify that `_get_type_names`
-    correctly handles all IDs (check its implementation).
-  - If `_get_type_names` already handles missing IDs gracefully (returns empty dict
-    for missing), the "Unknown" fallback is the only issue. Change the fallback
-    string to something more informative or use the JOIN approach.
+  - `_get_type_names` (line 1981) iterates type IDs and calls
+    `self._graph.get_node_type(type_id)` for each. Missing IDs return `None`
+    and are simply omitted from the dict — so the "Unknown" fallback at line 1624
+    fires for any orphaned type.
+  - Apply the same LEFT JOIN approach to the personal recall query for consistency:
+    add `LEFT JOIN node_type nt ON nt.id = n.type_id` and select
+    `COALESCE(nt.name, 'Untyped') AS resolved_type_name`.
+  - Then delete the `_get_type_names` call at line 1565, and replace
+    `type_names.get(int(hit["type_id"]), "Unknown")` at line 1624 with
+    `hit["resolved_type_name"]`.
 
 ### 4. Protect against `cleanup_empty_types` race condition
 

@@ -23,6 +23,9 @@
 - File: `tests/unit/test_shared_graph_consolidation.py` (new)
 - Details:
   - Test using `InMemoryRepository` (no Docker needed).
+  - Follow existing test patterns: `@pytest.mark.asyncio`, `InMemoryRepository`
+    from `neocortex.db.mock`, `MCPSettings` from `neocortex.mcp_settings`,
+    `AsyncMock`/`MagicMock` from `unittest.mock`.
   - Scenarios:
     - **Test cross_agent_upsert**: Agent A upserts node "Python" with content
       "A programming language". Agent B upserts same node "Python" with content
@@ -30,15 +33,22 @@
       content reflects B's update (the librarian is expected to merge).
     - **Test update_zero_rows_fallback**: Mock the UPDATE to return None.
       Verify: fallback INSERT creates a new node, no RuntimeError raised.
-    - **Test owner_role_provenance**: Agent A creates node in shared graph.
-      Verify `owner_role` is set to A's role name. Agent B updates it.
-      Verify `owner_role` retains A's original value (provenance preserved).
+  - **Note**: `owner_role` provenance cannot be tested with `InMemoryRepository`
+    because the `Node` model has no `owner_role` field and the mock doesn't
+    track it. Owner role provenance is verified via the RLS integration tests
+    in Step 1 (which require PostgreSQL).
 
 ### 3. Add tool_calls_limit configuration test
 
-- File: `tests/unit/test_settings.py` (or wherever settings tests live)
+- File: `tests/unit/test_shared_graph_consolidation.py` (same file — no dedicated
+  `test_settings.py` exists; settings are tested inline across test files)
 - Details:
-  - Verify `extraction_tool_calls_limit` defaults to 150.
+  - Verify `extraction_tool_calls_limit` defaults to 150:
+    ```python
+    def test_extraction_tool_calls_limit_default():
+        settings = MCPSettings(mock_db=True)
+        assert settings.extraction_tool_calls_limit == 150
+    ```
   - Verify it can be overridden via environment variable
     `NEOCORTEX_EXTRACTION_TOOL_CALLS_LIMIT=200`.
 

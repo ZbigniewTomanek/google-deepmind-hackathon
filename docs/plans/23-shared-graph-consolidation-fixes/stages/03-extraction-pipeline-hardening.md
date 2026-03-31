@@ -9,11 +9,12 @@
 
 ### 1. Add `extraction_tool_calls_limit` to settings
 
-- File: `src/neocortex/settings.py`
+- File: `src/neocortex/mcp_settings.py` (class `MCPSettings`)
 - Details:
-  - Find the settings class used by the extraction pipeline. Check imports in
-    `pipeline.py` and `jobs/tasks.py` to determine which settings class is relevant.
-  - Add a new field:
+  - The extraction pipeline uses `MCPSettings` — accessed via
+    `services["settings"]` in `jobs/tasks.py` (line 53). Existing extraction
+    settings are at lines 107-116 (e.g., `extraction_enabled`, model configs).
+  - Add the new field near the other extraction settings:
     ```python
     extraction_tool_calls_limit: int = 150
     ```
@@ -34,8 +35,15 @@
     ```python
     usage_limits=UsageLimits(tool_calls_limit=tool_calls_limit),
     ```
-  - Update the caller in `jobs/tasks.py` (`extract_episode` task) to pass the
-    setting value. The task has access to services/settings via the worker context.
+  - Update the caller in `jobs/tasks.py` (`extract_episode` task, lines 16-27)
+    to pass the setting value. Call chain:
+    ```python
+    # jobs/tasks.py — extract_episode task
+    services = get_services()                    # line 52
+    settings = services["settings"]              # line 53 — MCPSettings instance
+    # ... then pass to run_extraction:
+    await run_extraction(..., tool_calls_limit=settings.extraction_tool_calls_limit)
+    ```
 
 ### 3. Remove eager cleanup from initial extraction run
 

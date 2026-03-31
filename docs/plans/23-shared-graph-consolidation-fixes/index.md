@@ -163,5 +163,6 @@ revise affected stages, and get user confirmation before continuing.
 
 - **Remove RLS entirely from shared graphs** — user directive: agents must fix each other's false knowledge. App-level `graph_permissions` + `PermissionChecker` already handle authorization at the API boundary.
 - **Keep `owner_role` column** — retain for audit/provenance tracking (who contributed what), just don't enforce via RLS.
+- **`owner_role` stores raw `agent_id`** — with RLS removed, pg-role-formatted names (`ncx_agent_alice`) are unnecessary overhead. Raw `agent_id` (e.g., `"alice"`) is simpler, more readable, and avoids importing `oauth_sub_to_pg_role` into adapter.py.
 - **Content merging = append with separator** — LLM-based synthesis is too expensive per-upsert. Instead, the librarian prompt already instructs merging old+new content; the DB just needs to stop overwriting.
 - **Tool call limit as setting** — configurable per-deployment, default raised from 50 to 150.

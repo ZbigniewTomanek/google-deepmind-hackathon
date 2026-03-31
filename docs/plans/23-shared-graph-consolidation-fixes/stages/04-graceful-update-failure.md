@@ -48,15 +48,32 @@
     new_row = await conn.fetchrow(...)
     ```
 
-### 2. Check upsert_edge for same pattern
+### 2. Fix upsert_edge RuntimeError
 
 - File: `src/neocortex/db/adapter.py`
+- Lines: 962-976 (`upsert_edge`)
 - Details:
-  - Find the `upsert_edge` method. Check if it has a similar RuntimeError pattern.
-  - The edge upsert likely uses `ON CONFLICT (source_id, target_id, type_id) DO UPDATE`
-    which handles the upsert atomically in SQL — no separate SELECT + UPDATE.
-  - If so, no change needed for edges.
-  - If there IS a RuntimeError on edge update failure, apply the same fallback pattern.
+  - `upsert_edge` uses `INSERT INTO edge ... ON CONFLICT (source_id, target_id, type_id) DO UPDATE`
+    (lines 962-974) — an atomic upsert, unlike `upsert_node`'s separate SELECT+UPDATE.
+  - Line 975-976: `if row is None: raise RuntimeError("Failed to upsert edge")`
+  - Because this is an atomic `ON CONFLICT DO UPDATE`, a `None` return indicates a
+    genuine DB error (not an RLS conflict). However, crashing the entire librarian
+    over one failed edge is still disproportionate.
+  - **Fix**: Replace the RuntimeError with a warning log and return `None`:
+    ```python
+    if row is None:
+        logger.bind(action_log=True).warning(
+            "upsert_edge_failed",
+            source_id=source_id,
+            target_id=target_id,
+            type_id=type_id,
+            agent_id=agent_id,
+            msg="INSERT ON CONFLICT returned no row — unexpected DB error",
+        )
+        return None
+    ```
+  - Update the `upsert_edge` return type to `Edge | None` and ensure callers
+    (librarian tools) handle `None` gracefully (log and continue).
 
 ### 3. Verify no other RuntimeError("Failed to update") patterns exist
 
