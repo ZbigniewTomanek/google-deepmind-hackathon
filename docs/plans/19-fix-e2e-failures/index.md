@@ -116,7 +116,7 @@ All pass `^[a-zA-Z][a-zA-Z0-9]*$` because there's no length limit, no uppercase-
 | 2 | [Type Name Hardening](stages/02-type-hardening.md) | DONE | 60-char max, 5-segment max, ^[A-Z] regex, Pydantic validators on schemas | `fix(normalization): add length, word-count, uppercase` |
 | 3 | [Temporal Schema Extension](stages/03-temporal-schema.md) | DONE | `supersedes` + `temporal_signal` on ExtractedEntity, temporal desc on ExtractedRelation | `feat(extraction): add temporal signal fields` |
 | 4 | [Temporal Prompt Strengthening](stages/04-temporal-prompts.md) | DONE | Extractor: temporal detection section with CORRECTS/SUPERSEDES signals + versioned naming. Librarian: MANDATORY temporal workflow replacing passive guidance; context injection surfaces supersedes fields. | `feat(extraction): enforce temporal correction detection` |
-| 5 | [Unit Tests](stages/05-unit-tests.md) | PENDING | | |
+| 5 | [Unit Tests](stages/05-unit-tests.md) | DONE | 67 new/modified tests: normalization length/segment rejection, Pydantic validators, domain routing permission grants, temporal fields | `test(plan-19): add unit tests` |
 | 6 | [Integration Smoke Test](stages/06-smoke-test.md) | PENDING | | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`

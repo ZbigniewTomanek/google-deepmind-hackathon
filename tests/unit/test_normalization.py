@@ -177,3 +177,63 @@ def test_edge_type_empty_after_strip_raises():
 )
 def test_names_are_similar(a: str, b: str, expected: bool) -> None:
     assert names_are_similar(a, b) == expected
+
+
+# --- normalize_node_type: length and word-count rejection (Plan 19, M6) ---
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "DatasetNoteTheSearchResultsShowed" + "x" * 400,  # 440+ chars
+        "OperationbrCreateOrUpdate" + "x" * 300,  # 300+ chars
+        "A" * 61,  # Just over limit
+    ],
+)
+def test_normalize_node_type_rejects_too_long(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="too long"):
+        normalize_node_type(bad_name)
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "FeatureMergesWithEntityObjectId167",  # 7 PascalCase segments
+        "ThisIsAVeryLongCompoundTypeName",  # 6 segments
+    ],
+)
+def test_normalize_node_type_rejects_too_many_segments(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="too many segments"):
+        normalize_node_type(bad_name)
+
+
+def test_normalize_node_type_enforces_uppercase_start() -> None:
+    assert normalize_node_type("algorithm") == "Algorithm"
+    assert normalize_node_type("tool") == "Tool"
+
+
+@pytest.mark.parametrize(
+    "good_name,expected",
+    [
+        ("Algorithm", "Algorithm"),
+        ("SoftwareSystem", "SoftwareSystem"),
+        ("Bug", "Bug"),
+    ],
+)
+def test_normalize_node_type_accepts_valid(good_name: str, expected: str) -> None:
+    assert normalize_node_type(good_name) == expected
+
+
+# --- normalize_edge_type: length and word-count rejection (Plan 19, M6) ---
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "A" * 61,
+        "RELATES_TO_" + "X" * 50,
+    ],
+)
+def test_normalize_edge_type_rejects_too_long(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="too long"):
+        normalize_edge_type(bad_name)
