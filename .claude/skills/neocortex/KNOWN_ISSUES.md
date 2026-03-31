@@ -46,7 +46,7 @@ Create `dev_tokens.json` with one entry per agent:
 Start services:
 
 ```bash
-./scripts/launch.sh
+./scripts/manage.sh start
 ```
 
 ---

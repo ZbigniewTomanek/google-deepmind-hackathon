@@ -65,7 +65,7 @@ Six stages, each independently testable and committable:
 | 3 | [snapshot save](stages/03-snapshot-save.md) | DONE | snapshot sub-dispatcher + save with pg_dump + media bundling + metadata JSON, stubs for list/load/delete, backups/ in .gitignore | feat(scripts): add snapshot save |
 | 4 | [snapshot list](stages/04-snapshot-list.md) | DONE | Formatted table with NAME/DATE/SIZE/MEDIA, handles empty dir, corrupted archives, missing metadata | feat(scripts): add snapshot list |
 | 5 | [snapshot load + delete](stages/05-snapshot-load-delete.md) | DONE | resolve_snapshot helper, load with --force flag + auto-stop services, delete with --yes flag + confirmation prompt | feat(scripts): add snapshot load and delete commands |
-| 6 | [Integration](stages/06-integration.md) | PENDING | | |
+| 6 | [Integration](stages/06-integration.md) | DONE | run_e2e.sh delegates to manage.sh, launch.sh deleted, CLAUDE.md + SKILL.md + KNOWN_ISSUES.md updated, no stale refs | refactor(scripts): replace launch.sh with manage.sh |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

@@ -21,7 +21,10 @@ Operational guide for working with and debugging the NeoCortex agent memory syst
 
 ```bash
 # Start everything (PG + MCP :8000 + ingestion :8001)
-./scripts/launch.sh
+./scripts/manage.sh start
+
+# Start fresh (wipe existing data)
+./scripts/manage.sh start --fresh
 
 # Mock mode (no Docker)
 NEOCORTEX_MOCK_DB=true uv run python -m neocortex
@@ -30,8 +33,11 @@ NEOCORTEX_MOCK_DB=true uv run python -m neocortex.ingestion
 # Run tests
 uv run pytest tests/ -v
 
-# Stop services
-./scripts/launch.sh --stop
+# Stop app services (PG keeps running)
+./scripts/manage.sh stop
+
+# Stop everything including PostgreSQL
+./scripts/manage.sh stop --all
 ```
 
 Connect to the database:
