@@ -67,7 +67,7 @@ The NeoCortex extraction pipeline enqueues async jobs via Procrastinate (`extrac
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | [REST API job endpoints](stages/01-rest-api-job-endpoints.md) | DONE | Pool on app.state, 6 endpoints (list/summary/detail/cancel/retry + mock guard), 18 tests | `feat(admin): add REST endpoints for job monitoring` |
-| 2 | [TUI jobs HTTP client](stages/02-tui-jobs-http-client.md) | PENDING | | |
+| 2 | [TUI jobs HTTP client](stages/02-tui-jobs-http-client.md) | DONE | JobsClient class with 5 methods, --ingestion-url CLI flag, wired into NeoCortexApp | `feat(tui): add JobsClient HTTP client and --ingestion-url CLI flag` |
 | 3 | [TUI jobs mode layout](stages/03-tui-jobs-mode-layout.md) | PENDING | | |
 | 4 | [Auto-polling refresh](stages/04-auto-polling-refresh.md) | PENDING | | |
 | 5 | [Job actions and detail view](stages/05-job-actions-detail-view.md) | PENDING | | |

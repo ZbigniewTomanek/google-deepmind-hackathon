@@ -12,7 +12,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static, TextArea
 
-from neocortex.tui.client import NeoCortexClient
+from neocortex.tui.client import JobsClient, NeoCortexClient
 
 MODE_OPTIONS = [("Remember", "remember"), ("Recall", "recall"), ("Discover", "discover")]
 
@@ -123,11 +123,17 @@ class NeoCortexApp(App):
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
 
-    def __init__(self, server_url: str = "http://localhost:8000", token: str | None = None):
+    def __init__(
+        self,
+        server_url: str = "http://localhost:8000",
+        ingestion_url: str = "http://localhost:8001",
+        token: str | None = None,
+    ):
         super().__init__()
         self._server_url = server_url
         self._token = token
         self._client = NeoCortexClient(base_url=server_url, token=token)
+        self._jobs_client = JobsClient(base_url=ingestion_url, token=token)
         self._active_panel = "remember"
         self._discover_stack: list[DiscoverLevel] = []
         # Rows indexed by table row position for drill-down
