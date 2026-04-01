@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from neocortex.admin.auth import require_admin
+from neocortex.ingestion.auth import get_agent_id
 from neocortex.schemas.permissions import PermissionGrant, PermissionInfo
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -166,3 +169,234 @@ async def drop_graph(
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Graph '{schema_name}' not found")
     return {"status": "dropped", "schema_name": schema_name}
+
+
+# ---------------------------------------------------------------------------
+# Job monitoring
+# ---------------------------------------------------------------------------
+
+
+class JobSummary(BaseModel):
+    """Aggregate counts by status."""
+
+    todo: int = 0
+    doing: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    cancelled: int = 0
+    total: int = 0
+
+
+class JobInfo(BaseModel):
+    """Single job record."""
+
+    id: int
+    task_name: str
+    status: str
+    queue_name: str
+    args: dict
+    attempts: int
+    scheduled_at: datetime | None = None
+    started_at: datetime | None = None
+    created_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class JobEvent(BaseModel):
+    type: str
+    at: datetime
+
+
+class JobDetail(JobInfo):
+    events: list[JobEvent] = []
+
+
+def _require_pool(request: Request):
+    pool = getattr(request.app.state, "pool", None)
+    if pool is None:
+        raise HTTPException(501, "Job monitoring requires a real database")
+    return pool
+
+
+_LIST_JOBS_SQL = """\
+SELECT j.id, j.task_name, j.status::text, j.queue_name,
+       j.args, j.attempts, j.scheduled_at,
+       (SELECT at FROM procrastinate_events e
+        WHERE e.job_id = j.id AND e.type = 'started'
+        ORDER BY at DESC LIMIT 1) AS started_at,
+       (SELECT MIN(at) FROM procrastinate_events e
+        WHERE e.job_id = j.id AND e.type = 'deferred') AS created_at,
+       (SELECT MAX(at) FROM procrastinate_events e
+        WHERE e.job_id = j.id
+          AND e.type IN ('succeeded', 'failed', 'cancelled')
+       ) AS finished_at
+FROM procrastinate_jobs j
+WHERE j.queue_name = 'extraction'
+  AND ($1::text IS NULL OR j.args->>'agent_id' = $1)
+  AND ($2::text IS NULL OR j.status::text = $2)
+  AND ($3::text IS NULL OR j.task_name = $3)
+ORDER BY j.id DESC
+LIMIT $4 OFFSET $5
+"""
+
+_SUMMARY_SQL = """\
+SELECT
+    count(*) FILTER (WHERE status = 'todo') AS todo,
+    count(*) FILTER (WHERE status = 'doing') AS doing,
+    count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
+    count(*) FILTER (WHERE status = 'failed') AS failed,
+    count(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+    count(*) AS total
+FROM procrastinate_jobs
+WHERE queue_name = 'extraction'
+  AND ($1::text IS NULL OR args->>'agent_id' = $1)
+"""
+
+_DETAIL_SQL = """\
+SELECT j.id, j.task_name, j.status::text, j.queue_name,
+       j.args, j.attempts, j.scheduled_at,
+       (SELECT at FROM procrastinate_events e
+        WHERE e.job_id = j.id AND e.type = 'started'
+        ORDER BY at DESC LIMIT 1) AS started_at,
+       (SELECT MIN(at) FROM procrastinate_events e
+        WHERE e.job_id = j.id AND e.type = 'deferred') AS created_at,
+       (SELECT MAX(at) FROM procrastinate_events e
+        WHERE e.job_id = j.id
+          AND e.type IN ('succeeded', 'failed', 'cancelled')
+       ) AS finished_at
+FROM procrastinate_jobs j
+WHERE j.id = $1
+"""
+
+_EVENTS_SQL = """\
+SELECT type, at FROM procrastinate_events WHERE job_id = $1 ORDER BY at
+"""
+
+_CANCEL_SQL = """\
+UPDATE procrastinate_jobs SET status = 'cancelled' WHERE id = $1 AND status = 'todo' RETURNING id
+"""
+
+_INSERT_CANCEL_EVENT_SQL = """\
+INSERT INTO procrastinate_events (job_id, type, at) VALUES ($1, 'cancelled', NOW())
+"""
+
+
+async def _resolve_effective_agent_id(
+    request: Request,
+    agent_id: str,
+    all_agents: bool,
+) -> str | None:
+    """Return None (no filter) if admin requests all_agents, else the caller's ID."""
+    if all_agents:
+        permissions = request.app.state.permissions
+        if not await permissions.is_admin(agent_id):
+            raise HTTPException(403, "Admin required for all_agents view")
+        return None
+    return agent_id
+
+
+@router.get("/jobs", response_model=list[JobInfo])
+async def list_jobs(
+    request: Request,
+    agent_id: Annotated[str, Depends(get_agent_id)],
+    status: str | None = None,
+    task_name: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    all_agents: bool = False,
+):
+    pool = _require_pool(request)
+    effective_agent_id = await _resolve_effective_agent_id(request, agent_id, all_agents)
+    rows = await pool.fetch(
+        _LIST_JOBS_SQL,
+        effective_agent_id,
+        status,
+        task_name,
+        limit,
+        offset,
+    )
+    return [JobInfo(**dict(r)) for r in rows]
+
+
+@router.get("/jobs/summary", response_model=JobSummary)
+async def job_summary(
+    request: Request,
+    agent_id: Annotated[str, Depends(get_agent_id)],
+    all_agents: bool = False,
+):
+    pool = _require_pool(request)
+    effective_agent_id = await _resolve_effective_agent_id(request, agent_id, all_agents)
+    row = await pool.fetchrow(_SUMMARY_SQL, effective_agent_id)
+    return JobSummary(**dict(row))
+
+
+@router.get("/jobs/{job_id}", response_model=JobDetail)
+async def job_detail(
+    job_id: int,
+    request: Request,
+    agent_id: Annotated[str, Depends(get_agent_id)],
+):
+    pool = _require_pool(request)
+    row = await pool.fetchrow(_DETAIL_SQL, job_id)
+    if row is None:
+        raise HTTPException(404, "Job not found")
+    events = await pool.fetch(_EVENTS_SQL, job_id)
+    return JobDetail(
+        **dict(row),
+        events=[JobEvent(**dict(e)) for e in events],
+    )
+
+
+@router.delete("/jobs/{job_id}")
+async def cancel_job(
+    job_id: int,
+    request: Request,
+    agent_id: Annotated[str, Depends(get_agent_id)],
+):
+    pool = _require_pool(request)
+    # Verify the caller owns the job or is admin
+    job_row = await pool.fetchrow(
+        "SELECT args->>'agent_id' AS owner FROM procrastinate_jobs WHERE id = $1",
+        job_id,
+    )
+    if job_row is None:
+        raise HTTPException(404, "Job not found")
+    owner = job_row["owner"]
+    if owner != agent_id:
+        permissions = request.app.state.permissions
+        if not await permissions.is_admin(agent_id):
+            raise HTTPException(403, "Not authorized to cancel this job")
+    result = await pool.fetchrow(_CANCEL_SQL, job_id)
+    if result is None:
+        raise HTTPException(409, "Job cannot be cancelled (not in 'todo' status)")
+    await pool.execute(_INSERT_CANCEL_EVENT_SQL, job_id)
+    return {"status": "cancelled", "job_id": job_id}
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_job(
+    job_id: int,
+    request: Request,
+    agent_id: Annotated[str, Depends(get_agent_id)],
+):
+    pool = _require_pool(request)
+    row = await pool.fetchrow(
+        "SELECT task_name, args, status::text AS status FROM procrastinate_jobs WHERE id = $1",
+        job_id,
+    )
+    if row is None:
+        raise HTTPException(404, "Job not found")
+    if row["status"] not in ("failed", "cancelled"):
+        raise HTTPException(409, "Only failed or cancelled jobs can be retried")
+    # Verify ownership or admin
+    original_args = json.loads(row["args"]) if isinstance(row["args"], str) else dict(row["args"])
+    owner = original_args.get("agent_id")
+    if owner != agent_id:
+        permissions = request.app.state.permissions
+        if not await permissions.is_admin(agent_id):
+            raise HTTPException(403, "Not authorized to retry this job")
+    job_app = request.app.state.services_ctx.get("job_app")
+    if not job_app:
+        raise HTTPException(501, "Job retry requires extraction to be enabled")
+    new_job_id = await job_app.configure_task(row["task_name"]).defer_async(**original_args)
+    return {"status": "retried", "original_job_id": job_id, "new_job_id": new_job_id}
