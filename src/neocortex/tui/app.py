@@ -106,15 +106,20 @@ class NeoCortexApp(App):
     }
     #jobs-area {
         height: auto;
-        max-height: 6;
+        max-height: 5;
     }
     #jobs-summary {
-        height: 3;
+        height: auto;
+        max-height: 2;
         padding: 0 1;
     }
     #jobs-filter-row {
         height: auto;
         max-height: 3;
+    }
+    #jobs-filter-row Button {
+        min-width: 10;
+        margin-top: 0;
     }
     #remember-input {
         height: 6;
@@ -464,8 +469,16 @@ class NeoCortexApp(App):
                 limit=50,
             )
         except Exception as e:
-            self._set_status(f"Error: {type(e).__name__}: {e}")
-            self.query_one("#jobs-summary", Static).update(f"Connection error: {e}")
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                code = getattr(resp, "status_code", "?")
+                msg = f"HTTP {code} from ingestion API"
+            elif "ConnectError" in type(e).__name__ or "ConnectionRefused" in str(e):
+                msg = "Cannot connect to ingestion API"
+            else:
+                msg = f"{type(e).__name__}: {e}"
+            self._set_status(f"Jobs error: {msg}")
+            self.query_one("#jobs-summary", Static).update(f"⚠ {msg}")
             return
 
         # Update summary bar — API returns flat fields (todo, doing, etc.)
