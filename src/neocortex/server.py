@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 
 from fastmcp import FastMCP
+from loguru import logger
 from starlette.responses import JSONResponse
 
 from neocortex.auth import create_auth
@@ -29,6 +30,11 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
                     fetch_job_polling_interval=settings.worker_polling_interval,
                     install_signal_handlers=False,
                 )
+            )
+            logger.info(
+                "extraction_worker_started",
+                concurrency=settings.worker_concurrency,
+                poll_interval=settings.worker_polling_interval,
             )
 
         try:

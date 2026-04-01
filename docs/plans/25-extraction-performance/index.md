@@ -73,7 +73,7 @@ The knowledge extraction pipeline takes **~1 minute per episode** through a 3-ag
 | 2 | [Parallel metadata fetches](stages/02-.md) | DONE | Replaced 3 sequential DB calls (get_node_types, get_edge_types, get_type_examples) with asyncio.gather | `perf(extraction): parallelize metadata fetches with asyncio.gather` |
 | 3 | [Type cache+merge after ontology](stages/03-.md) | DONE | Replaced 2 DB reload calls with in-memory merge of created types into existing lists | `perf(extraction): merge new types in-memory instead of reloading from DB` |
 | 4 | [Pre-computed entity embeddings](stages/04-.md) | DONE | Added precomputed_embeddings dict to LibrarianAgentDeps; batch-embed descriptions before librarian call; create_or_update_node checks cache before calling embed() | `perf(extraction): pre-compute entity embeddings in batch before librarian` |
-| 5 | [Fire-and-forget cleanup & polish](stages/05-.md) | PENDING | | |
+| 5 | [Fire-and-forget cleanup & polish](stages/05-.md) | DONE | Fire-and-forget cleanup_empty_types via asyncio.create_task in both code paths; stage timing instrumentation (metadata_fetch, ontology_agent, type_persist, extractor_agent, embedding_precompute, librarian_agent); worker concurrency logged at startup | `perf(extraction): fire-and-forget cleanup and add stage timing instrumentation` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

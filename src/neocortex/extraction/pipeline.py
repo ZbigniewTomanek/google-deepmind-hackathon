@@ -7,6 +7,7 @@ and persists the resulting knowledge graph via the MemoryRepository protocol.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -74,6 +75,9 @@ async def run_extraction(
     extractor_agent = build_extractor_agent(ext_cfg)
     librarian_agent = build_librarian_agent(lib_cfg, use_tools=librarian_use_tools)
 
+    # Set to keep fire-and-forget task references alive (prevents GC + satisfies RUF006)
+    _bg_tasks: set[asyncio.Task[None]] = set()
+
     for episode_id in episode_ids:
         episode = await repo.get_episode(agent_id, episode_id, target_schema=read_schema)
         if not episode:
@@ -89,18 +93,27 @@ async def run_extraction(
             text_len=len(text),
         )
 
+        async def _cleanup_bg() -> None:
+            try:
+                await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
+            except Exception:
+                logger.opt(exception=True).warning("cleanup_empty_types_failed")
+
         # 1. Load current ontology from the target graph (parallel)
+        t0 = time.monotonic()
         node_types, edge_types, type_examples = await asyncio.gather(
             repo.get_node_types(agent_id, target_schema=target_schema),
             repo.get_edge_types(agent_id, target_schema=target_schema),
             repo.get_type_examples(agent_id, target_schema=target_schema),
         )
+        logger.debug("stage_timing", stage="metadata_fetch", elapsed_s=round(time.monotonic() - t0, 2))
 
         # Build type description dicts for richer context
         node_type_descs = {t.name: (t.description or "") for t in node_types}
         edge_type_descs = {t.name: (t.description or "") for t in edge_types}
 
         # 2. Ontology stage
+        t0 = time.monotonic()
         ontology_result = await ontology_agent.run(
             f"Analyze this text and propose ontology extensions:\n\n{text}",
             deps=OntologyAgentDeps(
@@ -114,8 +127,10 @@ async def run_extraction(
             ),
             model_settings=ont_cfg.model_settings,
         )
+        logger.debug("stage_timing", stage="ontology_agent", elapsed_s=round(time.monotonic() - t0, 2))
 
         # 3. Persist new types and merge into existing lists
+        t0 = time.monotonic()
         existing_node_names = {t.name for t in node_types}
         for nt in ontology_result.output.new_node_types:
             created = await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
@@ -137,8 +152,10 @@ async def run_extraction(
         # Rebuild description dicts with merged types (no reload needed)
         node_type_descs = {t.name: (t.description or "") for t in node_types}
         edge_type_descs = {t.name: (t.description or "") for t in edge_types}
+        logger.debug("stage_timing", stage="type_persist", elapsed_s=round(time.monotonic() - t0, 2))
 
         # 4. Extraction stage
+        t0 = time.monotonic()
         extraction_result = await extractor_agent.run(
             f"Extract entities and relations from:\n\n{text}",
             deps=ExtractorAgentDeps(
@@ -152,6 +169,7 @@ async def run_extraction(
             ),
             model_settings=ext_cfg.model_settings,
         )
+        logger.debug("stage_timing", stage="extractor_agent", elapsed_s=round(time.monotonic() - t0, 2))
 
         # 5. Librarian stage
         if librarian_use_tools:
@@ -160,6 +178,7 @@ async def run_extraction(
             # semantics, so re-running the librarian is naturally idempotent.
 
             # Pre-compute embeddings for extracted entity descriptions (single batch call)
+            t0 = time.monotonic()
             precomputed_embeddings: dict[str, list[float]] = {}
             if embeddings:
                 descriptions = [e.description for e in extraction_result.output.entities if e.description]
@@ -168,7 +187,9 @@ async def run_extraction(
                     for desc, emb in zip(descriptions, batch_results, strict=True):
                         if emb is not None:
                             precomputed_embeddings[desc] = emb
+            logger.debug("stage_timing", stage="embedding_precompute", elapsed_s=round(time.monotonic() - t0, 2))
 
+            t0 = time.monotonic()
             librarian_result = await librarian_agent.run(
                 "Integrate the extracted entities and relations into the knowledge graph.",
                 deps=LibrarianAgentDeps(
@@ -188,6 +209,8 @@ async def run_extraction(
                 usage_limits=UsageLimits(tool_calls_limit=tool_calls_limit),
             )
 
+            logger.debug("stage_timing", stage="librarian_agent", elapsed_s=round(time.monotonic() - t0, 2))
+
             # Mark episode as consolidated
             await repo.mark_episode_consolidated(agent_id, episode_id)
 
@@ -206,8 +229,10 @@ async def run_extraction(
                 summary=summary.summary,
             )
 
-            # Clean up empty types created during this extraction
-            await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
+            # Clean up empty types (fire-and-forget — non-blocking)
+            task = asyncio.create_task(_cleanup_bg())
+            _bg_tasks.add(task)
+            task.add_done_callback(_bg_tasks.discard)
         else:
             # Fallback: non-tool librarian → _persist_payload
             # Inject bounded name list for dedup context
@@ -262,8 +287,10 @@ async def run_extraction(
                 relations=len(payload.relations),
             )
 
-            # Clean up empty types created during this extraction
-            await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
+            # Clean up empty types (fire-and-forget — non-blocking)
+            task = asyncio.create_task(_cleanup_bg())
+            _bg_tasks.add(task)
+            task.add_done_callback(_bg_tasks.discard)
 
 
 async def _persist_payload(
