@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import ClassVar
 
 from rich.text import Text
@@ -10,6 +11,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.timer import Timer
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static, TextArea
 
 from neocortex.tui.client import JobsClient, NeoCortexClient
@@ -156,6 +158,7 @@ class NeoCortexApp(App):
         self._jobs_all_agents: bool = False  # toggle for admin view
         self._jobs_data: list[dict] = []  # cached job rows for drill-down
         self._jobs_selected_id: int | None = None
+        self._jobs_poll_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -213,6 +216,10 @@ class NeoCortexApp(App):
         self.query_one("#discover-browse-btn", Button).display = False
         self.query_one("#jobs-area").display = False
 
+    async def on_unmount(self) -> None:
+        self._stop_jobs_polling()
+        await self._jobs_client.close()
+
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "mode-select":
             self._show_mode(str(event.value))
@@ -228,6 +235,7 @@ class NeoCortexApp(App):
         self.query_one("#discover-area").display = mode == "discover"
         self.query_one("#jobs-area").display = mode == "jobs"
         if mode == "discover":
+            self._stop_jobs_polling()
             self._discover_reset()
         elif mode == "jobs":
             # Clear shared widgets from other modes before populating
@@ -237,7 +245,9 @@ class NeoCortexApp(App):
             table.display = True
             self.query_one("#results-text").display = False
             self._do_refresh_jobs()
+            self._start_jobs_polling()
         else:
+            self._stop_jobs_polling()
             # Leaving jobs mode — clear jobs state so stale data doesn't linger
             self._jobs_data = []
             self._jobs_selected_id = None
@@ -384,11 +394,29 @@ class NeoCortexApp(App):
             if node_name and graph_name:
                 self._do_inspect_node(node_name, graph_name)
 
+    # --- Jobs polling ---
+
+    def _start_jobs_polling(self) -> None:
+        """Start the auto-refresh timer for jobs mode."""
+        if self._jobs_poll_timer is None:
+            self._jobs_poll_timer = self.set_interval(4, self._poll_jobs, name="jobs_poll")
+
+    def _stop_jobs_polling(self) -> None:
+        """Stop the auto-refresh timer."""
+        if self._jobs_poll_timer is not None:
+            self._jobs_poll_timer.stop()
+            self._jobs_poll_timer = None
+
+    def _poll_jobs(self) -> None:
+        """Timer callback — trigger an async job refresh."""
+        if self._active_panel == "jobs":
+            self._do_refresh_jobs()
+
     # --- Jobs ---
 
     @work(exclusive=True)
     async def _do_refresh_jobs(self) -> None:
-        self._set_status("Loading jobs...")
+        self._set_status("Refreshing jobs...")
         try:
             summary = await self._jobs_client.summary(all_agents=self._jobs_all_agents)
             jobs = await self._jobs_client.list_jobs(
@@ -419,7 +447,8 @@ class NeoCortexApp(App):
         self._jobs_data = jobs
         self._show_jobs_table(jobs)
         filter_label = self._jobs_filter_status or "all"
-        self._set_status(f"Jobs: {len(jobs)} ({filter_label})")
+        now = datetime.now().strftime("%H:%M:%S")
+        self._set_status(f"Jobs: {len(jobs)} ({filter_label}) — refreshed {now}")
 
     def _show_jobs_table(self, jobs: list[dict]) -> None:
         """Populate the results DataTable with job rows."""
