@@ -6,7 +6,7 @@ Agents are domain-agnostic — they work with any text, not just medical content
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -269,6 +269,7 @@ class LibrarianAgentDeps:
     target_schema: str | None = None
     episode_id: int | None = None  # Source tracking in mutation tools
     known_node_names: list[str] | None = None  # Fallback dedup context (non-tool mode)
+    precomputed_embeddings: dict[str, list[float]] = field(default_factory=dict)
 
 
 def build_librarian_agent(
@@ -712,7 +713,9 @@ def build_librarian_agent(
                 return {"error": f"Invalid type name '{type_name}' — rejected by validation"}
             embedding = None
             if ctx.deps.embeddings and content:
-                embedding = await ctx.deps.embeddings.embed(content)
+                embedding = ctx.deps.precomputed_embeddings.get(content)
+                if embedding is None:
+                    embedding = await ctx.deps.embeddings.embed(content)
 
             episode_id = ctx.deps.episode_id
             props = {**(properties or {})}

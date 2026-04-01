@@ -159,6 +159,16 @@ async def run_extraction(
             # No cleanup_partial_curation needed: create_or_update_node uses upsert
             # semantics, so re-running the librarian is naturally idempotent.
 
+            # Pre-compute embeddings for extracted entity descriptions (single batch call)
+            precomputed_embeddings: dict[str, list[float]] = {}
+            if embeddings:
+                descriptions = [e.description for e in extraction_result.output.entities if e.description]
+                if descriptions:
+                    batch_results = await embeddings.embed_batch(descriptions)
+                    for desc, emb in zip(descriptions, batch_results, strict=True):
+                        if emb is not None:
+                            precomputed_embeddings[desc] = emb
+
             librarian_result = await librarian_agent.run(
                 "Integrate the extracted entities and relations into the knowledge graph.",
                 deps=LibrarianAgentDeps(
@@ -172,6 +182,7 @@ async def run_extraction(
                     agent_id=agent_id,
                     target_schema=target_schema,
                     episode_id=episode_id,
+                    precomputed_embeddings=precomputed_embeddings,
                 ),
                 model_settings=lib_cfg.model_settings,
                 usage_limits=UsageLimits(tool_calls_limit=tool_calls_limit),
