@@ -13,6 +13,7 @@ Complete API reference for the NeoCortex ingestion and admin endpoints.
 - [Admin: Graphs](#admin-graphs)
 - [Admin: Permissions](#admin-permissions)
 - [Admin: Agents](#admin-agents)
+- [Admin: Jobs (Monitoring)](#admin-jobs-monitoring)
 - [Response Models](#response-models)
 - [Error Codes](#error-codes)
 
@@ -255,6 +256,135 @@ Bootstrap admin (`admin` by default) cannot be demoted.
 
 ---
 
+## Admin: Jobs (Monitoring)
+
+Job endpoints monitor the Procrastinate extraction pipeline (`queue_name = 'extraction'`). Unlike other admin endpoints, these use the **caller's agent identity** by default (not admin-only) — agents can see their own jobs. The `all_agents` flag requires admin.
+
+Procrastinate job statuses: `todo` (queued), `doing` (processing), `succeeded`, `failed`, `cancelled`.
+
+### List jobs
+
+```
+GET /admin/jobs
+Authorization: Bearer <token>
+```
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `status` | `todo\|doing\|succeeded\|failed\|cancelled` | all | Filter by status |
+| `task_name` | string | all | Filter by task (e.g. `extract_episode`, `route_episode`) |
+| `limit` | int (1–1000) | 50 | Page size |
+| `offset` | int (≥0) | 0 | Pagination offset |
+| `all_agents` | bool | false | Show all agents' jobs (admin required) |
+
+**Response:** `JobInfo[]`
+
+```bash
+# Own jobs only
+curl localhost:8001/admin/jobs \
+  -H "Authorization: Bearer claude-code-work"
+
+# Failed jobs only
+curl "localhost:8001/admin/jobs?status=failed" \
+  -H "Authorization: Bearer claude-code-work"
+
+# All agents (admin)
+curl "localhost:8001/admin/jobs?all_agents=true" \
+  -H "Authorization: Bearer admin"
+```
+
+### Job summary (status counts)
+
+```
+GET /admin/jobs/summary
+Authorization: Bearer <token>
+```
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `all_agents` | bool | false | Count all agents' jobs (admin required) |
+
+**Response:** `JobSummary`
+
+```bash
+curl localhost:8001/admin/jobs/summary \
+  -H "Authorization: Bearer claude-code-work"
+# {"todo": 2, "doing": 1, "succeeded": 15, "failed": 0, "cancelled": 0, "total": 18}
+```
+
+### Job detail
+
+```
+GET /admin/jobs/{job_id}
+Authorization: Bearer <token>
+```
+
+Returns full job info including event timeline (deferred, started, succeeded/failed/cancelled). Caller must own the job or be admin.
+
+**Response:** `JobDetail`
+
+```bash
+curl localhost:8001/admin/jobs/42 \
+  -H "Authorization: Bearer claude-code-work"
+```
+
+### Cancel job
+
+```
+DELETE /admin/jobs/{job_id}
+Authorization: Bearer <token>
+```
+
+Cancels a job **only if status is `todo`** (queued). In-flight (`doing`) jobs cannot be cancelled. Caller must own the job or be admin.
+
+```bash
+curl -X DELETE localhost:8001/admin/jobs/42 \
+  -H "Authorization: Bearer claude-code-work"
+# {"status": "cancelled", "job_id": 42}
+```
+
+Returns `409` if the job is not in `todo` status.
+
+### Retry job
+
+```
+POST /admin/jobs/{job_id}/retry
+Authorization: Bearer <token>
+```
+
+Re-defers the same task with the same args as a **new job**. Only `failed` or `cancelled` jobs can be retried. Caller must own the job or be admin. Requires extraction to be enabled on the server.
+
+```bash
+curl -X POST localhost:8001/admin/jobs/42/retry \
+  -H "Authorization: Bearer claude-code-work"
+# {"status": "retried", "original_job_id": 42, "new_job_id": 57}
+```
+
+Returns `409` if the job status is not `failed` or `cancelled`.
+
+### Polling pattern for agents
+
+To monitor job progress, poll the summary and list endpoints:
+
+```bash
+# Poll summary every 4s to check pipeline status
+while true; do
+  curl -s localhost:8001/admin/jobs/summary \
+    -H "Authorization: Bearer claude-code-work" | jq .
+  sleep 4
+done
+
+# Or use the TUI (has built-in 4s auto-polling):
+uv run python -m neocortex.tui --ingestion-url http://localhost:8001
+# Press 'j' to enter Jobs mode
+```
+
+---
+
 ## Response Models
 
 ### IngestionResult
@@ -303,6 +433,60 @@ Extends `IngestionResult` with:
 }
 ```
 
+### JobSummary
+
+```json
+{
+  "todo": 2,
+  "doing": 1,
+  "succeeded": 15,
+  "failed": 0,
+  "cancelled": 0,
+  "total": 18
+}
+```
+
+### JobInfo
+
+```json
+{
+  "id": 42,
+  "task_name": "extract_episode",
+  "status": "succeeded",
+  "queue_name": "extraction",
+  "args": {"agent_id": "alice", "episode_id": "abc-123"},
+  "attempts": 1,
+  "scheduled_at": "2026-04-01T10:00:00",
+  "started_at": "2026-04-01T10:00:01",
+  "created_at": "2026-04-01T10:00:00",
+  "finished_at": "2026-04-01T10:00:05"
+}
+```
+
+### JobDetail
+
+Extends `JobInfo` with event timeline:
+
+```json
+{
+  "id": 42,
+  "task_name": "extract_episode",
+  "status": "failed",
+  "queue_name": "extraction",
+  "args": {"agent_id": "alice", "episode_id": "abc-123"},
+  "attempts": 2,
+  "scheduled_at": "2026-04-01T10:00:00",
+  "started_at": "2026-04-01T10:00:01",
+  "created_at": "2026-04-01T10:00:00",
+  "finished_at": "2026-04-01T10:00:05",
+  "events": [
+    {"type": "deferred", "at": "2026-04-01T10:00:00"},
+    {"type": "started", "at": "2026-04-01T10:00:01"},
+    {"type": "failed", "at": "2026-04-01T10:00:05"}
+  ]
+}
+```
+
 ---
 
 ## Error Codes
@@ -313,4 +497,6 @@ Extends `IngestionResult` with:
 | 403 | Forbidden | Agent lacks write permission for `target_graph`, or not admin for `/admin/*` |
 | 413 | Payload Too Large | File exceeds size limit (10 MB for docs, 100 MB for media) |
 | 415 | Unsupported Media Type | Content type not in accepted list for endpoint |
+| 409 | Conflict | Cancel on non-`todo` job, retry on non-`failed`/`cancelled` job |
 | 422 | Validation Error | Empty text, empty events array, malformed metadata JSON |
+| 501 | Not Implemented | Job endpoints called in mock mode (no real DB) |

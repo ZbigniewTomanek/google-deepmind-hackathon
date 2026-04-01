@@ -1,6 +1,6 @@
 ---
 name: neocortex-project
-description: "Work with, debug, and operate the NeoCortex agent memory system. Covers database schema, diagnostic SQL queries, REST API endpoints, permission model, known issues from E2E testing, and ingestion workflows. Use when the user asks about NeoCortex internals, needs help debugging graph/recall/extraction issues, wants to inspect or query the database, manage permissions, ingest data, or understand system behavior."
+description: "Work with, debug, and operate the NeoCortex agent memory system. Covers database schema, diagnostic SQL queries, REST API endpoints, job monitoring, permission model, known issues from E2E testing, and ingestion workflows. Use when the user asks about NeoCortex internals, needs help debugging graph/recall/extraction issues, wants to inspect or query the database, manage permissions, monitor or manage extraction jobs, ingest data, or understand system behavior."
 ---
 
 # NeoCortex Project Skill
@@ -14,6 +14,7 @@ Operational guide for working with and debugging the NeoCortex agent memory syst
 - [Database Schema & Diagnostic Queries](DB_SCHEMA.md)
 - [Multi-Agent Setup & Debugging](KNOWN_ISSUES.md)
 - [REST API Endpoints](ENDPOINTS.md)
+- [Job Monitoring & Pipeline Status](ENDPOINTS.md#admin-jobs-monitoring)
 - [Permissions & Shared Graphs](PERMISSIONS.md)
 - [Ingestion Script](#ingestion-script)
 
@@ -54,7 +55,7 @@ psql "postgresql://neocortex:neocortex@localhost:5432/neocortex"
 
 **Recall pipeline**: hybrid scoring = vector similarity (cosine, 768-dim Gemini embeddings) + full-text (tsvector) + recency decay. Fan-out across personal + all readable shared schemas.
 
-**Extraction pipeline**: episode stored -> ontology agent proposes types -> extraction agent creates nodes/edges -> domain router classifies and fans out to shared schemas.
+**Extraction pipeline**: episode stored -> ontology agent proposes types -> extraction agent creates nodes/edges -> domain router classifies and fans out to shared schemas. Jobs run via Procrastinate on the `extraction` queue. Monitor status, cancel, or retry via [REST endpoints on :8001](ENDPOINTS.md#admin-jobs-monitoring) or the TUI (`j` key).
 
 **Domain routing**: Gemini classifier assigns semantic domains (user_profile, technical_knowledge, work_context, domain_knowledge). Additive — never replaces personal graph. Skipped when `target_graph` is explicit.
 
