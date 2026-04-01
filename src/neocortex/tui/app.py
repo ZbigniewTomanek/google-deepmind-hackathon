@@ -14,7 +14,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Sel
 
 from neocortex.tui.client import JobsClient, NeoCortexClient
 
-MODE_OPTIONS = [("Remember", "remember"), ("Recall", "recall"), ("Discover", "discover")]
+MODE_OPTIONS = [("Remember", "remember"), ("Recall", "recall"), ("Discover", "discover"), ("Jobs", "jobs")]
 
 # Consistent color palette for type names
 _TYPE_COLORS = [
@@ -93,6 +93,18 @@ class NeoCortexApp(App):
     #remember-area, #recall-area, #discover-area {
         height: auto;
     }
+    #jobs-area {
+        height: auto;
+        max-height: 6;
+    }
+    #jobs-summary {
+        height: 3;
+        padding: 0 1;
+    }
+    #jobs-filter-row {
+        height: auto;
+        max-height: 3;
+    }
     #remember-input {
         height: 6;
     }
@@ -119,6 +131,7 @@ class NeoCortexApp(App):
         Binding("r", "switch_mode('remember')", "Remember", show=True),
         Binding("q", "switch_mode('recall')", "Recall", show=True),
         Binding("d", "switch_mode('discover')", "Discover", show=True),
+        Binding("j", "switch_mode('jobs')", "Jobs", show=True),
         Binding("b", "discover_back", "Back", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
@@ -138,6 +151,11 @@ class NeoCortexApp(App):
         self._discover_stack: list[DiscoverLevel] = []
         # Rows indexed by table row position for drill-down
         self._discover_row_data: list[dict] = []
+        # Jobs mode state
+        self._jobs_filter_status: str | None = None  # None = all statuses
+        self._jobs_all_agents: bool = False  # toggle for admin view
+        self._jobs_data: list[dict] = []  # cached job rows for drill-down
+        self._jobs_selected_id: int | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -171,6 +189,17 @@ class NeoCortexApp(App):
                             yield Button("Graphs", variant="primary", id="discover-graphs-btn")
                             yield Button("Browse Nodes", variant="success", id="discover-browse-btn")
                             yield Button("Back", variant="default", id="discover-back-btn")
+                    # Jobs mode — status summary + filter buttons
+                    with Vertical(id="jobs-area"):
+                        yield Static("", id="jobs-summary")
+                        with Horizontal(id="jobs-filter-row"):
+                            yield Button("All", variant="primary", id="jobs-filter-all-btn")
+                            yield Button("Queued", variant="default", id="jobs-filter-todo-btn")
+                            yield Button("Running", variant="warning", id="jobs-filter-doing-btn")
+                            yield Button("Failed", variant="error", id="jobs-filter-failed-btn")
+                            yield Button("Cancelled", variant="default", id="jobs-filter-cancelled-btn")
+                            yield Button("Refresh", variant="success", id="jobs-refresh-btn")
+                            yield Button("All Agents", variant="default", id="jobs-toggle-agents-btn")
                 with VerticalScroll(id="results-area"):
                     yield DataTable(id="results-table", cursor_type="row")
                     yield Static("", id="results-text")
@@ -182,6 +211,7 @@ class NeoCortexApp(App):
         table.display = False
         self.query_one("#discover-back-btn", Button).display = False
         self.query_one("#discover-browse-btn", Button).display = False
+        self.query_one("#jobs-area").display = False
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "mode-select":
@@ -196,8 +226,21 @@ class NeoCortexApp(App):
         self.query_one("#remember-area").display = mode == "remember"
         self.query_one("#recall-area").display = mode == "recall"
         self.query_one("#discover-area").display = mode == "discover"
+        self.query_one("#jobs-area").display = mode == "jobs"
         if mode == "discover":
             self._discover_reset()
+        elif mode == "jobs":
+            # Clear shared widgets from other modes before populating
+            table = self.query_one("#results-table", DataTable)
+            table.clear(columns=True)
+            self.query_one("#results-text", Static).update("")
+            table.display = True
+            self.query_one("#results-text").display = False
+            self._do_refresh_jobs()
+        else:
+            # Leaving jobs mode — clear jobs state so stale data doesn't linger
+            self._jobs_data = []
+            self._jobs_selected_id = None
         self._set_status("Ready")
 
     def _set_status(self, text: str) -> None:
@@ -286,6 +329,29 @@ class NeoCortexApp(App):
                 type_name = current.data.get("type_name", "")
                 if graph_name and type_name:
                     self._do_browse_nodes(graph_name, type_name)
+        # Jobs mode buttons
+        elif event.button.id == "jobs-filter-all-btn":
+            self._jobs_filter_status = None
+            self._do_refresh_jobs()
+        elif event.button.id == "jobs-filter-todo-btn":
+            self._jobs_filter_status = "todo"
+            self._do_refresh_jobs()
+        elif event.button.id == "jobs-filter-doing-btn":
+            self._jobs_filter_status = "doing"
+            self._do_refresh_jobs()
+        elif event.button.id == "jobs-filter-failed-btn":
+            self._jobs_filter_status = "failed"
+            self._do_refresh_jobs()
+        elif event.button.id == "jobs-filter-cancelled-btn":
+            self._jobs_filter_status = "cancelled"
+            self._do_refresh_jobs()
+        elif event.button.id == "jobs-refresh-btn":
+            self._do_refresh_jobs()
+        elif event.button.id == "jobs-toggle-agents-btn":
+            self._jobs_all_agents = not self._jobs_all_agents
+            btn = self.query_one("#jobs-toggle-agents-btn", Button)
+            btn.label = "My Jobs" if self._jobs_all_agents else "All Agents"
+            self._do_refresh_jobs()
 
     # --- DataTable row selection for drill-down ---
 
@@ -317,6 +383,85 @@ class NeoCortexApp(App):
             graph_name = current.data.get("graph_name", "")
             if node_name and graph_name:
                 self._do_inspect_node(node_name, graph_name)
+
+    # --- Jobs ---
+
+    @work(exclusive=True)
+    async def _do_refresh_jobs(self) -> None:
+        self._set_status("Loading jobs...")
+        try:
+            summary = await self._jobs_client.summary(all_agents=self._jobs_all_agents)
+            jobs = await self._jobs_client.list_jobs(
+                status=self._jobs_filter_status,
+                all_agents=self._jobs_all_agents,
+                limit=50,
+            )
+        except Exception as e:
+            self._set_status(f"Error: {type(e).__name__}: {e}")
+            self.query_one("#jobs-summary", Static).update(f"Connection error: {e}")
+            return
+
+        # Update summary bar
+        counts = summary.get("counts", {})
+        total = summary.get("total", 0)
+        queued = counts.get("todo", 0)
+        running = counts.get("doing", 0)
+        done = counts.get("succeeded", 0)
+        failed = counts.get("failed", 0)
+        cancelled = counts.get("cancelled", 0)
+        summary_text = (
+            f"\u23f3 Queued: {queued}  |  \u25b6 Running: {running}  |  "
+            f"\u2713 Done: {done}  |  \u2717 Failed: {failed}  |  "
+            f"\u2298 Cancelled: {cancelled}  |  Total: {total}"
+        )
+        self.query_one("#jobs-summary", Static).update(summary_text)
+
+        self._jobs_data = jobs
+        self._show_jobs_table(jobs)
+        filter_label = self._jobs_filter_status or "all"
+        self._set_status(f"Jobs: {len(jobs)} ({filter_label})")
+
+    def _show_jobs_table(self, jobs: list[dict]) -> None:
+        """Populate the results DataTable with job rows."""
+        table = self.query_one("#results-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns("ID", "Task", "Status", "Agent", "Episodes", "Target", "Attempts", "Created", "Started")
+        table.display = True
+        self.query_one("#results-text").display = False
+
+        status_colors = {
+            "todo": "cyan",
+            "doing": "yellow",
+            "succeeded": "green",
+            "failed": "red",
+            "cancelled": "magenta",
+        }
+
+        for job in jobs:
+            job_id = str(job.get("id", "?"))
+            task = job.get("task_name", "?")
+            status = job.get("status", "?")
+            attempts = str(job.get("attempts", 0))
+            created = job.get("scheduled_at", "")
+            started = job.get("started_at", "") or ""
+
+            # Extract agent/episodes/target from args
+            args = job.get("args", {})
+            agent_id = args.get("agent_id", "")
+            episodes = ", ".join(str(e) for e in args.get("episode_ids", [])) if args.get("episode_ids") else ""
+            target = args.get("target_schema", "")
+
+            # Truncate timestamps
+            if created and len(created) > 19:
+                created = created[:19]
+            if started and len(started) > 19:
+                started = started[:19]
+
+            # Color-code status
+            color = status_colors.get(status, "white")
+            status_text = Text(status, style=color)
+
+            table.add_row(job_id, task, status_text, agent_id, episodes, target, attempts, created, started)
 
     # --- Remember ---
 
