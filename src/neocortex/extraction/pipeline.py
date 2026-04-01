@@ -6,6 +6,7 @@ and persists the resulting knowledge graph via the MemoryRepository protocol.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -87,16 +88,16 @@ async def run_extraction(
             text_len=len(text),
         )
 
-        # 1. Load current ontology from the target graph
-        node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
-        edge_types = await repo.get_edge_types(agent_id, target_schema=target_schema)
+        # 1. Load current ontology from the target graph (parallel)
+        node_types, edge_types, type_examples = await asyncio.gather(
+            repo.get_node_types(agent_id, target_schema=target_schema),
+            repo.get_edge_types(agent_id, target_schema=target_schema),
+            repo.get_type_examples(agent_id, target_schema=target_schema),
+        )
 
         # Build type description dicts for richer context
         node_type_descs = {t.name: (t.description or "") for t in node_types}
         edge_type_descs = {t.name: (t.description or "") for t in edge_types}
-
-        # Fetch entity→type examples for context injection
-        type_examples = await repo.get_type_examples(agent_id, target_schema=target_schema)
 
         # 2. Ontology stage
         ontology_result = await ontology_agent.run(
