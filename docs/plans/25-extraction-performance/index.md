@@ -1,7 +1,7 @@
-# Plan 17: Extraction Pipeline Performance Optimization
+# Plan 25: Extraction Pipeline Performance Optimization
 
 **Date**: 2026-04-01
-**Branch**: `plan-17-extraction-performance`
+**Branch**: `plan-25-extraction-performance`
 **Predecessors**: [Plan 07](../07-extraction-pipeline-integration.md), [Plan 11](../11-upper-ontology-routing.md)
 **Goal**: Increase extraction throughput via worker parallelism and reduce per-episode latency via batching and caching.
 
@@ -30,7 +30,7 @@ The knowledge extraction pipeline takes **~1 minute per episode** through a 3-ag
 
 **Phase B (Stages 3-4)**: Per-episode latency — parallel DB fetches, type cache+merge, pre-computed embedding cache. Cuts ~5-15s per episode.
 
-**Phase C (Stage 5)**: Polish — fire-and-forget cleanup, episode-level parallelism within a single job.
+**Phase C (Stage 5)**: Polish — fire-and-forget cleanup, stage timing instrumentation.
 
 ---
 
