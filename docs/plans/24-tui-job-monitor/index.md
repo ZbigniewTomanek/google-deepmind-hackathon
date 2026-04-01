@@ -70,7 +70,7 @@ The NeoCortex extraction pipeline enqueues async jobs via Procrastinate (`extrac
 | 2 | [TUI jobs HTTP client](stages/02-tui-jobs-http-client.md) | DONE | JobsClient class with 5 methods, --ingestion-url CLI flag, wired into NeoCortexApp | `feat(tui): add JobsClient HTTP client and --ingestion-url CLI flag` |
 | 3 | [TUI jobs mode layout](stages/03-tui-jobs-mode-layout.md) | DONE | Jobs mode with summary bar, filter buttons, job list table, color-coded statuses, All Agents toggle | `feat(tui): add Jobs mode with status summary bar and job list table` |
 | 4 | [Auto-polling refresh](stages/04-auto-polling-refresh.md) | DONE | 4s timer, start/stop on mode switch, timestamp in status, cleanup on unmount | `feat(tui): add auto-polling refresh for jobs mode (4s interval)` |
-| 5 | [Job actions and detail view](stages/05-job-actions-detail-view.md) | PENDING | | |
+| 5 | [Job actions and detail view](stages/05-job-actions-detail-view.md) | DONE | Row drill-down, detail panel with args/timing/events, cancel (c) + retry (x) actions, key_b dispatcher for back navigation, context-sensitive action hints | `feat(tui): add job detail drill-down with cancel and retry actions` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

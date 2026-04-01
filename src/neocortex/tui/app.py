@@ -134,7 +134,8 @@ class NeoCortexApp(App):
         Binding("q", "switch_mode('recall')", "Recall", show=True),
         Binding("d", "switch_mode('discover')", "Discover", show=True),
         Binding("j", "switch_mode('jobs')", "Jobs", show=True),
-        Binding("b", "discover_back", "Back", show=False),
+        Binding("c", "cancel_job", "Cancel", show=False),
+        Binding("x", "retry_job", "Retry", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
 
@@ -291,8 +292,22 @@ class NeoCortexApp(App):
             current_kind == "details" and self._discover_stack[-1].data.get("kind") == "node"
         )
 
+    def key_b(self) -> None:
+        """Dispatch 'b' key to the correct back action based on mode."""
+        if self._active_panel == "jobs":
+            self.action_jobs_back()
+        elif self._active_panel == "discover":
+            self.action_discover_back()
+
+    def action_jobs_back(self) -> None:
+        """Return from job detail to job list."""
+        if self._active_panel != "jobs" or self._jobs_selected_id is None:
+            return
+        self._jobs_selected_id = None
+        self._do_refresh_jobs()
+
     def action_discover_back(self) -> None:
-        """Pop one level from discover stack (keyboard shortcut 'b')."""
+        """Pop one level from discover stack."""
         if self._active_panel != "discover" or not self._discover_stack:
             return
         self._discover_stack.pop()
@@ -366,6 +381,12 @@ class NeoCortexApp(App):
     # --- DataTable row selection for drill-down ---
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if self._active_panel == "jobs":
+            row_idx = event.cursor_row
+            if 0 <= row_idx < len(self._jobs_data):
+                job = self._jobs_data[row_idx]
+                self._do_show_job_detail(job["id"])
+            return
         if self._active_panel != "discover" or not self._discover_stack:
             return
         current = self._discover_stack[-1]
@@ -491,6 +512,191 @@ class NeoCortexApp(App):
             status_text = Text(status, style=color)
 
             table.add_row(job_id, task, status_text, agent_id, episodes, target, attempts, created, started)
+
+    # --- Job detail drill-down ---
+
+    @work(exclusive=True)
+    async def _do_show_job_detail(self, job_id: int) -> None:
+        self._set_status(f"Fetching job #{job_id}...")
+        try:
+            job = await self._jobs_client.get_job(job_id)
+        except Exception as e:
+            resp = getattr(e, "response", None)
+            if resp is not None and getattr(resp, "status_code", 0) == 404:
+                self._set_status(f"Job #{job_id} not found")
+            else:
+                self._set_status(f"Error: {type(e).__name__}: {e}")
+            return
+        self._jobs_selected_id = job_id
+        self._show_job_detail_text(job)
+        self._set_status(f"Job #{job_id} — {job.get('status', '?')}")
+
+    def _show_job_detail_text(self, job: dict) -> None:
+        """Render full job detail as Rich Text."""
+        status = job.get("status", "?")
+        status_colors = {
+            "todo": "cyan",
+            "doing": "yellow",
+            "succeeded": "green",
+            "failed": "red",
+            "cancelled": "magenta",
+        }
+        color = status_colors.get(status, "white")
+
+        t = Text()
+        # Header
+        title = f" Job #{job.get('id', '?')} "
+        t.append(f"╭─{title}{'─' * max(0, 56 - len(title))}╮\n")
+
+        t.append("│  ", style="dim")
+        t.append("Task: ", style="bold")
+        task_name = job.get("task_name", "?")
+        t.append(f"{task_name:<52}", style="bright_white")
+        t.append("│\n", style="dim")
+
+        t.append("│  ", style="dim")
+        t.append("Status: ", style="bold")
+        status_display = f"{status:<50}"
+        t.append(status_display, style=color)
+        t.append("│\n", style="dim")
+
+        t.append(f"│{'':58}│\n", style="dim")
+
+        # Args
+        args = job.get("args", {})
+        if args:
+            t.append("│  ", style="dim")
+            t.append("Arguments:", style="bold")
+            t.append(f"{'':<48}", style="dim")
+            t.append("│\n", style="dim")
+
+            for key in ("agent_id", "episode_ids", "target_schema", "domain_hint"):
+                val = args.get(key)
+                if val is not None:
+                    val_str = str(val)
+                    if len(val_str) > 44:
+                        val_str = val_str[:41] + "..."
+                    t.append("│    ", style="dim")
+                    t.append(f"{key}: ", style="italic")
+                    t.append(f"{val_str:<{max(0, 52 - len(key))}}")
+                    t.append("│\n", style="dim")
+
+            t.append(f"│{'':58}│\n", style="dim")
+
+        # Timing
+        t.append("│  ", style="dim")
+        t.append("Timing:", style="bold")
+        t.append(f"{'':<51}", style="dim")
+        t.append("│\n", style="dim")
+
+        created = job.get("scheduled_at", "")
+        started = job.get("started_at", "")
+        finished = job.get("finished_at", "")
+
+        if created:
+            t.append("│    ", style="dim")
+            t.append("Created:  ", style="italic")
+            t.append(f"{created[:19]:<48}")
+            t.append("│\n", style="dim")
+        if started:
+            t.append("│    ", style="dim")
+            t.append("Started:  ", style="italic")
+            t.append(f"{started[:19]:<48}")
+            t.append("│\n", style="dim")
+        if finished:
+            t.append("│    ", style="dim")
+            t.append("Finished: ", style="italic")
+            t.append(f"{finished[:19]:<48}")
+            t.append("│\n", style="dim")
+
+        t.append(f"│{'':58}│\n", style="dim")
+
+        # Attempts
+        attempts = job.get("attempts", 0)
+        t.append("│  ", style="dim")
+        t.append("Attempts: ", style="bold")
+        t.append(f"{attempts:<48}")
+        t.append("│\n", style="dim")
+
+        # Events
+        events = job.get("events", [])
+        if events:
+            t.append(f"│{'':58}│\n", style="dim")
+            t.append("│  ", style="dim")
+            t.append("Event Timeline:", style="bold")
+            t.append(f"{'':<43}", style="dim")
+            t.append("│\n", style="dim")
+
+            for ev in events:
+                ev_type = ev.get("type", "?")
+                ev_at = ev.get("at", "")
+                if ev_at and len(ev_at) > 19:
+                    ev_at = ev_at[:19]
+                line = f"{ev_at}  {ev_type}"
+                if len(line) > 54:
+                    line = line[:51] + "..."
+                t.append("│    ", style="dim")
+                t.append(f"{line:<54}")
+                t.append("│\n", style="dim")
+
+        t.append(f"│{'':58}│\n", style="dim")
+
+        # Action hints — context-sensitive
+        hints = []
+        if status == "todo":
+            hints.append("[c] Cancel")
+        if status in ("failed", "cancelled"):
+            hints.append("[x] Retry")
+        hints.append("[b] Back to list")
+        hint_str = "  ".join(hints)
+
+        t.append("│  ", style="dim")
+        t.append(hint_str, style="bold dim")
+        padding = 56 - len(hint_str)
+        t.append(f"{'':<{max(0, padding)}}", style="dim")
+        t.append("│\n", style="dim")
+        t.append(f"╰{'─' * 58}╯\n")
+
+        self._show_text_result(t)
+
+    def action_cancel_job(self) -> None:
+        """Cancel the currently viewed job."""
+        if self._active_panel != "jobs" or self._jobs_selected_id is None:
+            return
+        self._do_cancel_job(self._jobs_selected_id)
+
+    @work(exclusive=True)
+    async def _do_cancel_job(self, job_id: int) -> None:
+        self._set_status(f"Cancelling job #{job_id}...")
+        try:
+            await self._jobs_client.cancel_job(job_id)
+            self._set_status(f"Job #{job_id} cancelled")
+            # Refresh detail view
+            self._do_show_job_detail(job_id)
+        except Exception as e:
+            if hasattr(e, "response") and getattr(e.response, "status_code", 0) == 409:
+                self._set_status(f"Cannot cancel job #{job_id} — already running or finished")
+            else:
+                self._set_status(f"Error cancelling: {type(e).__name__}: {e}")
+
+    def action_retry_job(self) -> None:
+        """Retry the currently viewed job."""
+        if self._active_panel != "jobs" or self._jobs_selected_id is None:
+            return
+        self._do_retry_job(self._jobs_selected_id)
+
+    @work(exclusive=True)
+    async def _do_retry_job(self, job_id: int) -> None:
+        self._set_status(f"Retrying job #{job_id}...")
+        try:
+            result = await self._jobs_client.retry_job(job_id)
+            new_id = result.get("new_job_id", "?")
+            self._set_status(f"New job #{new_id} created (retry of #{job_id})")
+            # Go back to list and refresh
+            self._jobs_selected_id = None
+            self._do_refresh_jobs()
+        except Exception as e:
+            self._set_status(f"Error retrying: {type(e).__name__}: {e}")
 
     # --- Remember ---
 
