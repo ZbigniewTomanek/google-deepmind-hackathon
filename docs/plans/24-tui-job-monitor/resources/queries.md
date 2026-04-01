@@ -8,6 +8,7 @@ SELECT
     count(*) FILTER (WHERE status = 'doing') AS doing,
     count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
     count(*) FILTER (WHERE status = 'failed') AS failed,
+    count(*) FILTER (WHERE status = 'cancelled') AS cancelled,
     count(*) AS total
 FROM procrastinate_jobs
 WHERE queue_name = 'extraction'
@@ -18,11 +19,14 @@ WHERE queue_name = 'extraction'
 
 ```sql
 SELECT j.id, j.task_name, j.status, j.queue_name, j.args, j.attempts,
-       j.scheduled_at, j.started_at,
+       j.scheduled_at,
+       (SELECT at FROM procrastinate_events e
+        WHERE e.job_id = j.id AND e.type = 'started'
+        ORDER BY at DESC LIMIT 1) AS started_at,
        (SELECT MIN(at) FROM procrastinate_events e
         WHERE e.job_id = j.id AND e.type = 'deferred') AS created_at,
        (SELECT MAX(at) FROM procrastinate_events e
-        WHERE e.job_id = j.id AND e.type IN ('succeeded', 'failed')) AS finished_at
+        WHERE e.job_id = j.id AND e.type IN ('succeeded', 'failed', 'cancelled')) AS finished_at
 FROM procrastinate_jobs j
 WHERE j.queue_name = 'extraction'
   AND ($1::text IS NULL OR j.args->>'agent_id' = $1)
@@ -36,7 +40,10 @@ LIMIT $4 OFFSET $5;
 
 ```sql
 SELECT j.id, j.task_name, j.status, j.queue_name, j.args, j.attempts,
-       j.scheduled_at, j.started_at
+       j.scheduled_at,
+       (SELECT at FROM procrastinate_events e
+        WHERE e.job_id = j.id AND e.type = 'started'
+        ORDER BY at DESC LIMIT 1) AS started_at
 FROM procrastinate_jobs j
 WHERE j.id = $1;
 ```
@@ -54,7 +61,7 @@ ORDER BY at ASC;
 
 ```sql
 UPDATE procrastinate_jobs
-SET status = 'failed'
+SET status = 'cancelled'
 WHERE id = $1 AND status = 'todo'
 RETURNING id;
 ```
@@ -70,12 +77,14 @@ VALUES ($1, 'cancelled', NOW());
 
 ### Jobs stuck in 'doing' for >10 minutes
 ```sql
-SELECT id, task_name, args, started_at,
-       NOW() - started_at AS running_for
-FROM procrastinate_jobs
-WHERE status = 'doing'
-  AND started_at < NOW() - INTERVAL '10 minutes'
-ORDER BY started_at;
+SELECT j.id, j.task_name, j.args,
+       e.at AS started_at,
+       NOW() - e.at AS running_for
+FROM procrastinate_jobs j
+JOIN procrastinate_events e ON e.job_id = j.id AND e.type = 'started'
+WHERE j.status = 'doing'
+  AND e.at < NOW() - INTERVAL '10 minutes'
+ORDER BY e.at;
 ```
 
 ### Recent failures with args

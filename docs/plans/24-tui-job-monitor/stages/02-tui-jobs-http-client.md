@@ -16,11 +16,20 @@
 import httpx
 
 class JobsClient:
-    """HTTP client for the NeoCortex admin job monitoring API."""
+    """HTTP client for the NeoCortex admin job monitoring API.
+
+    Uses a persistent AsyncClient for connection pooling (important since
+    the TUI polls every ~4s).
+    """
 
     def __init__(self, base_url: str = "http://localhost:8001", token: str | None = None):
         self._base_url = base_url.rstrip("/")
-        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self._client = httpx.AsyncClient(base_url=self._base_url, headers=headers, timeout=10.0)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client. Call on app shutdown."""
+        await self._client.aclose()
 
     async def summary(self, agent_id: str | None = None, all_agents: bool = False) -> dict:
         params = {}
@@ -28,10 +37,9 @@ class JobsClient:
             params["agent_id"] = agent_id
         if all_agents:
             params["all_agents"] = "true"
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{self._base_url}/admin/jobs/summary", headers=self._headers, params=params)
-            r.raise_for_status()
-            return r.json()
+        r = await self._client.get("/admin/jobs/summary", params=params)
+        r.raise_for_status()
+        return r.json()
 
     async def list_jobs(self, agent_id: str | None = None, status: str | None = None,
                         limit: int = 50, offset: int = 0, all_agents: bool = False) -> list[dict]:
@@ -42,28 +50,24 @@ class JobsClient:
             params["status"] = status
         if all_agents:
             params["all_agents"] = "true"
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{self._base_url}/admin/jobs", headers=self._headers, params=params)
-            r.raise_for_status()
-            return r.json()
+        r = await self._client.get("/admin/jobs", params=params)
+        r.raise_for_status()
+        return r.json()
 
     async def get_job(self, job_id: int) -> dict:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{self._base_url}/admin/jobs/{job_id}", headers=self._headers)
-            r.raise_for_status()
-            return r.json()
+        r = await self._client.get(f"/admin/jobs/{job_id}")
+        r.raise_for_status()
+        return r.json()
 
     async def cancel_job(self, job_id: int) -> dict:
-        async with httpx.AsyncClient() as client:
-            r = await client.delete(f"{self._base_url}/admin/jobs/{job_id}", headers=self._headers)
-            r.raise_for_status()
-            return r.json()
+        r = await self._client.delete(f"/admin/jobs/{job_id}")
+        r.raise_for_status()
+        return r.json()
 
     async def retry_job(self, job_id: int) -> dict:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(f"{self._base_url}/admin/jobs/{job_id}/retry", headers=self._headers)
-            r.raise_for_status()
-            return r.json()
+        r = await self._client.post(f"/admin/jobs/{job_id}/retry")
+        r.raise_for_status()
+        return r.json()
 ```
 
 ### 2. Add `--ingestion-url` CLI flag

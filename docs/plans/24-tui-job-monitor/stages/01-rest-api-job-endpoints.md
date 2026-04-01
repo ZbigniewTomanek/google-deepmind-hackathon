@@ -12,9 +12,9 @@
 - File: `src/neocortex/ingestion/app.py`
 - In the `lifespan` function (line ~62), after `app.state.services_ctx = ctx`, add:
   ```python
-  app.state.pool = ctx.get("pool")  # asyncpg pool for direct queries
+  app.state.pool = ctx["pg"].pool if ctx.get("pg") else None  # asyncpg pool for direct queries
   ```
-- The pool is already in `ServiceContext` — check `services.py` for the key name (likely `"pool"` from `create_services`).
+- The pool lives at `ctx["pg"].pool` (where `pg` is a `PostgresService` instance). It is `None` when `NEOCORTEX_MOCK_DB=true`.
 
 ### 2. Add job query endpoints to admin routes
 
@@ -31,6 +31,7 @@ class JobSummary(BaseModel):
     doing: int = 0
     succeeded: int = 0
     failed: int = 0
+    cancelled: int = 0
     total: int = 0
 
 class JobInfo(BaseModel):
@@ -42,8 +43,8 @@ class JobInfo(BaseModel):
     args: dict
     attempts: int
     scheduled_at: datetime | None = None
+    # Derived from procrastinate_events (no started_at column on procrastinate_jobs)
     started_at: datetime | None = None
-    # from procrastinate_events
     created_at: datetime | None = None
     finished_at: datetime | None = None
 ```
@@ -52,13 +53,32 @@ class JobInfo(BaseModel):
 
 - Query params: `agent_id: str | None`, `status: str | None`, `task_name: str | None`, `limit: int = 50`, `offset: int = 0`, `all_agents: bool = False`
 - Non-admin callers: filter by their own `agent_id` (from `args->>'agent_id'`). Admin callers with `all_agents=True`: no agent filter.
-- Auth: use `get_agent_id` (not `require_admin`) so non-admins can see their own jobs. Check `permissions.is_admin()` for the `all_agents` flag.
+- Auth: use `get_agent_id` from `neocortex.ingestion.auth` (not `require_admin`) so non-admins can see their own jobs. For the `all_agents` flag, check admin status via `request.app.state.permissions.is_admin(agent_id)`.
+  ```python
+  from neocortex.ingestion.auth import get_agent_id
+
+  @router.get("/admin/jobs")
+  async def list_jobs(
+      request: Request,
+      agent_id: Annotated[str, Depends(get_agent_id)],
+      status: str | None = None, ..., all_agents: bool = False,
+  ):
+      if all_agents:
+          permissions = request.app.state.permissions
+          if not await permissions.is_admin(agent_id):
+              raise HTTPException(403, "Admin required for all_agents view")
+          effective_agent_id = None
+      else:
+          effective_agent_id = agent_id
+      ...
+  ```
 - SQL query against `procrastinate_jobs` table:
   ```sql
   SELECT j.id, j.task_name, j.status, j.queue_name, j.args, j.attempts,
-         j.scheduled_at, j.started_at,
+         j.scheduled_at,
+         (SELECT at FROM procrastinate_events e WHERE e.job_id = j.id AND e.type = 'started' ORDER BY at DESC LIMIT 1) AS started_at,
          (SELECT MIN(at) FROM procrastinate_events e WHERE e.job_id = j.id AND e.type = 'deferred') AS created_at,
-         (SELECT MAX(at) FROM procrastinate_events e WHERE e.job_id = j.id AND e.type IN ('succeeded', 'failed')) AS finished_at
+         (SELECT MAX(at) FROM procrastinate_events e WHERE e.job_id = j.id AND e.type IN ('succeeded', 'failed', 'cancelled')) AS finished_at
   FROM procrastinate_jobs j
   WHERE j.queue_name = 'extraction'
     AND ($1::text IS NULL OR j.args->>'agent_id' = $1)
@@ -67,6 +87,7 @@ class JobInfo(BaseModel):
   ORDER BY j.id DESC
   LIMIT $4 OFFSET $5
   ```
+  **Note:** `procrastinate_jobs` has no `started_at` column — derive it from `procrastinate_events` where `type='started'`.
 - Execute via `request.app.state.pool.fetch(...)`.
 - Return `list[JobInfo]`.
 
@@ -80,6 +101,7 @@ class JobInfo(BaseModel):
       count(*) FILTER (WHERE status = 'doing') AS doing,
       count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
       count(*) FILTER (WHERE status = 'failed') AS failed,
+      count(*) FILTER (WHERE status = 'cancelled') AS cancelled,
       count(*) AS total
   FROM procrastinate_jobs
   WHERE queue_name = 'extraction'
@@ -104,23 +126,39 @@ class JobInfo(BaseModel):
 ### 6. `DELETE /admin/jobs/{job_id}` — cancel a job
 
 - Only cancels jobs with `status = 'todo'` (queued but not started).
-- SQL: `UPDATE procrastinate_jobs SET status = 'failed' WHERE id = $1 AND status = 'todo' RETURNING id`
+- SQL: `UPDATE procrastinate_jobs SET status = 'cancelled' WHERE id = $1 AND status = 'todo' RETURNING id`
+  (Procrastinate's status enum includes `'cancelled'` natively — use it instead of `'failed'` to distinguish user cancellations from actual failures.)
 - If no row returned, return 409 (job already running/finished).
 - Also insert a `'cancelled'` event into `procrastinate_events`.
 - Require admin OR job belongs to the calling agent.
 
 ### 7. `POST /admin/jobs/{job_id}/retry` — retry a failed job
 
-- Only retries `status = 'failed'` jobs.
+- Only retries `status = 'failed'` or `status = 'cancelled'` jobs.
 - Read the original job's `task_name` and `args`, then defer a new job with the same parameters.
-- Use `request.app.state.services_ctx["job_app"].configure_task(task_name).defer_async(**args)`.
+- Guard: `job_app = request.app.state.services_ctx.get("job_app"); if not job_app: raise HTTPException(501, "Job retry requires extraction to be enabled")`
+- The `args` column in `procrastinate_jobs` is the original kwargs dict, so unpack directly:
+  ```python
+  job_app = request.app.state.services_ctx.get("job_app")
+  if not job_app:
+      raise HTTPException(501, "Job retry requires extraction to be enabled")
+  new_job_id = await job_app.configure_task(task_name).defer_async(**original_args)
+  ```
 - Return the new job ID.
-- Require admin OR job belongs to the calling agent.
+- Require admin OR job belongs to the calling agent (check `args->>'agent_id'`).
 
 ### 8. Handle mock DB mode
 
 - When `NEOCORTEX_MOCK_DB=true`, there's no asyncpg pool. All job endpoints should return 501 with `"Job monitoring requires a real database"`, similar to graph management endpoints.
-- Guard: `pool = getattr(request.app.state, "pool", None); if pool is None: raise HTTPException(501, ...)`
+- Use a reusable helper at the top of the job section (inline, not a dependency):
+  ```python
+  def _require_pool(request: Request):
+      pool = getattr(request.app.state, "pool", None)
+      if pool is None:
+          raise HTTPException(501, "Job monitoring requires a real database")
+      return pool
+  ```
+- Call `pool = _require_pool(request)` at the start of each job endpoint.
 
 ---
 

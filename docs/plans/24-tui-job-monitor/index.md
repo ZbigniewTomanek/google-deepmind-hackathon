@@ -11,7 +11,7 @@
 
 The NeoCortex extraction pipeline enqueues async jobs via Procrastinate (`extract_episode`, `route_episode`) into the `procrastinate_jobs` PostgreSQL table. There is currently **no way to observe job status** except by querying the database directly. The TUI has three modes (remember, recall, discover) but no job visibility.
 
-**Procrastinate job statuses**: `todo` (queued), `doing` (processing), `succeeded`, `failed`.
+**Procrastinate job statuses**: `todo` (queued), `doing` (processing), `succeeded`, `failed`, `cancelled`.
 
 **Key decisions from planning:**
 
@@ -39,7 +39,7 @@ The NeoCortex extraction pipeline enqueues async jobs via Procrastinate (`extrac
 
 | Metric | Baseline | Target | Rationale |
 |--------|----------|--------|-----------|
-| Job visibility | 0 (no UI) | All 4 statuses visible with counts | Core requirement |
+| Job visibility | 0 (no UI) | All 5 statuses visible with counts (todo, doing, succeeded, failed, cancelled) | Core requirement |
 | Refresh latency | N/A | <5s poll interval | Jobs mode should feel live |
 | Job actions | None | Cancel + retry from TUI | Interactive control |
 | Detail view | None | Task name, args, timestamps, attempts, error | Debugging support |
@@ -114,5 +114,5 @@ revise affected stages, and get user confirmation before continuing.
 
 - REST endpoints go on admin router (require admin for "all agents" view, but allow non-admin for own-agent jobs)
 - TUI uses `httpx` for REST calls (already a transitive dependency via fastmcp)
-- Procrastinate cancel uses `UPDATE SET status='failed'` — there's no graceful in-flight cancel, but `todo` jobs can be prevented from running
+- Procrastinate cancel uses `UPDATE SET status='cancelled'` (native enum value) — there's no graceful in-flight cancel, but `todo` jobs can be prevented from running
 - Retry = re-defer the same task with same args as a new job

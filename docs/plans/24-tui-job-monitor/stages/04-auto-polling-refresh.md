@@ -56,11 +56,12 @@
 
 ### 6. Ensure cleanup on app exit
 
-- Override `on_unmount()` or use the existing cleanup path to stop the timer:
+- Override `on_unmount()` or use the existing cleanup path to stop the timer and close the HTTP client:
   ```python
-  def on_unmount(self) -> None:
+  async def on_unmount(self) -> None:
       if self._jobs_poll_timer is not None:
           self._jobs_poll_timer.stop()
+      await self._jobs_client.close()  # close persistent httpx.AsyncClient
   ```
 
 ---

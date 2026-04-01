@@ -68,19 +68,29 @@
 
 ### 7. Add "Back to list" navigation from detail view
 
-- When in job detail view, pressing `b` (already bound to `discover_back`) should return to job list
-- Update `action_discover_back()` to also handle jobs mode:
+- Add a dedicated `action_jobs_back()` method instead of overloading `action_discover_back()`:
   ```python
-  if self._active_panel == "jobs" and self._jobs_selected_id is not None:
+  def action_jobs_back(self) -> None:
+      """Return from job detail to job list."""
+      if self._active_panel != "jobs" or self._jobs_selected_id is None:
+          return
       self._jobs_selected_id = None
       self._do_refresh_jobs()  # re-show the table
-      return
   ```
+- Add a key binding that dispatches `b` to the correct action based on mode. Update the existing `action_discover_back()` to remain discover-only. Route the `b` key in a `key_b` handler:
+  ```python
+  def key_b(self) -> None:
+      if self._active_panel == "jobs":
+          self.action_jobs_back()
+      elif self._active_panel == "discover":
+          self.action_discover_back()
+  ```
+- Remove `Binding("b", "discover_back", ...)` from BINDINGS since `key_b` handles dispatch.
 
 ### 8. Visual cues for actionable jobs
 
 - In the job detail view, only show "[c] Cancel" if status is `todo`
-- Only show "[x] Retry" if status is `failed`
+- Only show "[x] Retry" if status is `failed` or `cancelled`
 - Grey out or hide irrelevant actions
 
 ---
