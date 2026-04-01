@@ -22,6 +22,7 @@ from neocortex.extraction.agents import (
     build_ontology_agent,
 )
 from neocortex.extraction.schemas import CurationSummary, LibrarianPayload
+from neocortex.schemas.memory import TypeInfo
 
 if TYPE_CHECKING:
     from neocortex.db.protocol import MemoryRepository
@@ -114,23 +115,26 @@ async def run_extraction(
             model_settings=ont_cfg.model_settings,
         )
 
-        # 3. Persist new types (skip invalid names)
+        # 3. Persist new types and merge into existing lists
+        existing_node_names = {t.name for t in node_types}
         for nt in ontology_result.output.new_node_types:
-            if (
-                await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
-                is None
-            ):
+            created = await repo.get_or_create_node_type(agent_id, nt.name, nt.description, target_schema=target_schema)
+            if created is None:
                 logger.warning("skipping_invalid_node_type", name=nt.name)
-        for et in ontology_result.output.new_edge_types:
-            if (
-                await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
-                is None
-            ):
-                logger.warning("skipping_invalid_edge_type", name=et.name)
+            elif created.name not in existing_node_names:
+                node_types.append(TypeInfo(id=created.id, name=created.name, description=created.description))
+                existing_node_names.add(created.name)
 
-        # Reload types (now includes newly created)
-        node_types = await repo.get_node_types(agent_id, target_schema=target_schema)
-        edge_types = await repo.get_edge_types(agent_id, target_schema=target_schema)
+        existing_edge_names = {t.name for t in edge_types}
+        for et in ontology_result.output.new_edge_types:
+            created = await repo.get_or_create_edge_type(agent_id, et.name, et.description, target_schema=target_schema)
+            if created is None:
+                logger.warning("skipping_invalid_edge_type", name=et.name)
+            elif created.name not in existing_edge_names:
+                edge_types.append(TypeInfo(id=created.id, name=created.name, description=created.description))
+                existing_edge_names.add(created.name)
+
+        # Rebuild description dicts with merged types (no reload needed)
         node_type_descs = {t.name: (t.description or "") for t in node_types}
         edge_type_descs = {t.name: (t.description or "") for t in edge_types}
 
