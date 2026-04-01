@@ -69,7 +69,7 @@ The knowledge extraction pipeline takes **~1 minute per episode** through a 3-ag
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Worker concurrency & polling](stages/01-.md) | PENDING | | |
+| 1 | [Worker concurrency & polling](stages/01-.md) | DONE | Added worker_concurrency (default 4) and worker_polling_interval (default 1.0s) to MCPSettings; wired into run_worker_async in server.py. Ingestion app confirmed no worker. | `perf(worker): add configurable concurrency and polling interval` |
 | 2 | [Parallel metadata fetches](stages/02-.md) | PENDING | | |
 | 3 | [Type cache+merge after ontology](stages/03-.md) | PENDING | | |
 | 4 | [Pre-computed entity embeddings](stages/04-.md) | PENDING | | |

@@ -23,7 +23,12 @@ def create_server(settings: MCPSettings | None = None) -> FastMCP:
         worker_task = None
         if job_app is not None:
             worker_task = asyncio.create_task(
-                job_app.run_worker_async(queues=["extraction"], install_signal_handlers=False)
+                job_app.run_worker_async(
+                    queues=["extraction"],
+                    concurrency=settings.worker_concurrency,
+                    fetch_job_polling_interval=settings.worker_polling_interval,
+                    install_signal_handlers=False,
+                )
             )
 
         try:

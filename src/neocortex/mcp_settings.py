@@ -116,6 +116,10 @@ class MCPSettings(BaseSettings):
     librarian_thinking_effort: ThinkingLevel = "low"
     extraction_tool_calls_limit: int = 150
 
+    # Worker concurrency & polling
+    worker_concurrency: int = 4  # Max parallel extraction jobs
+    worker_polling_interval: float = 1.0  # Seconds between job fetch polls
+
     # Domain routing (upper ontology — automatic knowledge routing to shared graphs)
     # Note: requires extraction_enabled=True (domain routing uses the job queue)
     domain_routing_enabled: bool = True
