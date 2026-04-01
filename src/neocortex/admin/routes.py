@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from loguru import logger
 from pydantic import BaseModel
 
 from neocortex.admin.auth import require_admin
@@ -265,7 +266,7 @@ SELECT j.id, j.task_name, j.status::text, j.queue_name,
           AND e.type IN ('succeeded', 'failed', 'cancelled')
        ) AS finished_at
 FROM procrastinate_jobs j
-WHERE j.id = $1
+WHERE j.id = $1 AND j.queue_name = 'extraction'
 """
 
 _EVENTS_SQL = """\
@@ -295,14 +296,17 @@ async def _resolve_effective_agent_id(
     return agent_id
 
 
+_JobStatus = Literal["todo", "doing", "succeeded", "failed", "cancelled"]
+
+
 @router.get("/jobs", response_model=list[JobInfo])
 async def list_jobs(
     request: Request,
     agent_id: Annotated[str, Depends(get_agent_id)],
-    status: str | None = None,
+    status: _JobStatus | None = None,
     task_name: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
     all_agents: bool = False,
 ):
     pool = _require_pool(request)
@@ -340,6 +344,15 @@ async def job_detail(
     row = await pool.fetchrow(_DETAIL_SQL, job_id)
     if row is None:
         raise HTTPException(404, "Job not found")
+    # Verify ownership or admin
+    args = row["args"]
+    if isinstance(args, str):
+        args = json.loads(args)
+    owner = args.get("agent_id") if isinstance(args, dict) else None
+    if owner != agent_id:
+        permissions = request.app.state.permissions
+        if not await permissions.is_admin(agent_id):
+            raise HTTPException(403, "Not authorized to view this job")
     events = await pool.fetch(_EVENTS_SQL, job_id)
     return JobDetail(
         **dict(row),
@@ -366,10 +379,12 @@ async def cancel_job(
         permissions = request.app.state.permissions
         if not await permissions.is_admin(agent_id):
             raise HTTPException(403, "Not authorized to cancel this job")
-    result = await pool.fetchrow(_CANCEL_SQL, job_id)
-    if result is None:
-        raise HTTPException(409, "Job cannot be cancelled (not in 'todo' status)")
-    await pool.execute(_INSERT_CANCEL_EVENT_SQL, job_id)
+    async with pool.acquire() as conn, conn.transaction():
+        result = await conn.fetchrow(_CANCEL_SQL, job_id)
+        if result is None:
+            raise HTTPException(409, "Job cannot be cancelled (not in 'todo' status)")
+        await conn.execute(_INSERT_CANCEL_EVENT_SQL, job_id)
+    logger.bind(action_log=True).info("job_cancel", job_id=job_id, agent_id=agent_id)
     return {"status": "cancelled", "job_id": job_id}
 
 
@@ -399,4 +414,5 @@ async def retry_job(
     if not job_app:
         raise HTTPException(501, "Job retry requires extraction to be enabled")
     new_job_id = await job_app.configure_task(row["task_name"]).defer_async(**original_args)
+    logger.bind(action_log=True).info("job_retry", job_id=job_id, new_job_id=new_job_id, agent_id=agent_id)
     return {"status": "retried", "original_job_id": job_id, "new_job_id": new_job_id}

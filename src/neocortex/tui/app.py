@@ -38,6 +38,15 @@ def _color_for_type(type_name: str) -> str:
     return _TYPE_COLORS[hash(type_name) % len(_TYPE_COLORS)]
 
 
+_JOB_STATUS_COLORS = {
+    "todo": "cyan",
+    "doing": "yellow",
+    "succeeded": "green",
+    "failed": "red",
+    "cancelled": "magenta",
+}
+
+
 def _importance_bar(value: float, width: int = 10) -> str:
     """Render a mini bar for importance/activation values (0.0-1.0)."""
     filled = round(value * width)
@@ -134,8 +143,6 @@ class NeoCortexApp(App):
         Binding("q", "switch_mode('recall')", "Recall", show=True),
         Binding("d", "switch_mode('discover')", "Discover", show=True),
         Binding("j", "switch_mode('jobs')", "Jobs", show=True),
-        Binding("c", "cancel_job", "Cancel", show=False),
-        Binding("x", "retry_job", "Retry", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
 
@@ -252,7 +259,8 @@ class NeoCortexApp(App):
             # Leaving jobs mode — clear jobs state so stale data doesn't linger
             self._jobs_data = []
             self._jobs_selected_id = None
-        self._set_status("Ready")
+        if mode != "jobs":
+            self._set_status("Ready")
 
     def _set_status(self, text: str) -> None:
         self.query_one("#status-label", Static).update(text)
@@ -298,6 +306,16 @@ class NeoCortexApp(App):
             self.action_jobs_back()
         elif self._active_panel == "discover":
             self.action_discover_back()
+
+    def key_c(self) -> None:
+        """Dispatch 'c' key — cancel job only in jobs detail view."""
+        if self._active_panel == "jobs" and self._jobs_selected_id is not None:
+            self.action_cancel_job()
+
+    def key_x(self) -> None:
+        """Dispatch 'x' key — retry job only in jobs detail view."""
+        if self._active_panel == "jobs" and self._jobs_selected_id is not None:
+            self.action_retry_job()
 
     def action_jobs_back(self) -> None:
         """Return from job detail to job list."""
@@ -430,7 +448,7 @@ class NeoCortexApp(App):
 
     def _poll_jobs(self) -> None:
         """Timer callback — trigger an async job refresh."""
-        if self._active_panel == "jobs":
+        if self._active_panel == "jobs" and self._jobs_selected_id is None:
             self._do_refresh_jobs()
 
     # --- Jobs ---
@@ -450,14 +468,13 @@ class NeoCortexApp(App):
             self.query_one("#jobs-summary", Static).update(f"Connection error: {e}")
             return
 
-        # Update summary bar
-        counts = summary.get("counts", {})
+        # Update summary bar — API returns flat fields (todo, doing, etc.)
+        queued = summary.get("todo", 0)
+        running = summary.get("doing", 0)
+        done = summary.get("succeeded", 0)
+        failed = summary.get("failed", 0)
+        cancelled = summary.get("cancelled", 0)
         total = summary.get("total", 0)
-        queued = counts.get("todo", 0)
-        running = counts.get("doing", 0)
-        done = counts.get("succeeded", 0)
-        failed = counts.get("failed", 0)
-        cancelled = counts.get("cancelled", 0)
         summary_text = (
             f"\u23f3 Queued: {queued}  |  \u25b6 Running: {running}  |  "
             f"\u2713 Done: {done}  |  \u2717 Failed: {failed}  |  "
@@ -478,14 +495,6 @@ class NeoCortexApp(App):
         table.add_columns("ID", "Task", "Status", "Agent", "Episodes", "Target", "Attempts", "Created", "Started")
         table.display = True
         self.query_one("#results-text").display = False
-
-        status_colors = {
-            "todo": "cyan",
-            "doing": "yellow",
-            "succeeded": "green",
-            "failed": "red",
-            "cancelled": "magenta",
-        }
 
         for job in jobs:
             job_id = str(job.get("id", "?"))
@@ -508,7 +517,7 @@ class NeoCortexApp(App):
                 started = started[:19]
 
             # Color-code status
-            color = status_colors.get(status, "white")
+            color = _JOB_STATUS_COLORS.get(status, "white")
             status_text = Text(status, style=color)
 
             table.add_row(job_id, task, status_text, agent_id, episodes, target, attempts, created, started)
@@ -534,14 +543,7 @@ class NeoCortexApp(App):
     def _show_job_detail_text(self, job: dict) -> None:
         """Render full job detail as Rich Text."""
         status = job.get("status", "?")
-        status_colors = {
-            "todo": "cyan",
-            "doing": "yellow",
-            "succeeded": "green",
-            "failed": "red",
-            "cancelled": "magenta",
-        }
-        color = status_colors.get(status, "white")
+        color = _JOB_STATUS_COLORS.get(status, "white")
 
         t = Text()
         # Header

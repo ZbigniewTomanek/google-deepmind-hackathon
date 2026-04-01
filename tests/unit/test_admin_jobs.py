@@ -77,12 +77,51 @@ def _record(d: dict) -> FakeRecord:
     return FakeRecord(d)
 
 
+class _FakeTransaction:
+    """Mimics asyncpg transaction context manager."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class _FakeConnection:
+    """Mimics an asyncpg connection with transaction support."""
+
+    def __init__(self):
+        self.fetchrow = AsyncMock(return_value=None)
+        self.execute = AsyncMock()
+
+    def transaction(self):
+        return _FakeTransaction()
+
+
+class _FakeAcquire:
+    """Mimics pool.acquire() async context manager."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *args):
+        return False
+
+
 @pytest.fixture
 def mock_pool():
     pool = AsyncMock()
     pool.fetch = AsyncMock(return_value=[])
     pool.fetchrow = AsyncMock(return_value=None)
     pool.execute = AsyncMock()
+    # Support pool.acquire() for transactional cancel — use MagicMock
+    # so it returns the context manager directly (not wrapped in a coroutine)
+    conn = _FakeConnection()
+    pool.acquire = MagicMock(return_value=_FakeAcquire(conn))
+    pool._mock_conn = conn  # expose for test assertions
     return pool
 
 
@@ -202,7 +241,7 @@ async def test_job_summary(client: AsyncClient, mock_pool) -> None:
 
 @pytest.mark.asyncio
 async def test_job_detail_found(client: AsyncClient, mock_pool) -> None:
-    mock_pool.fetchrow.return_value = _record(_make_job_row(job_id=42))
+    mock_pool.fetchrow.return_value = _record(_make_job_row(job_id=42, agent_id="alice"))
     mock_pool.fetch.return_value = [
         _record({"type": "deferred", "at": datetime.now(UTC)}),
         _record({"type": "started", "at": datetime.now(UTC)}),
@@ -213,6 +252,25 @@ async def test_job_detail_found(client: AsyncClient, mock_pool) -> None:
     assert data["id"] == 42
     assert len(data["events"]) == 2
     assert data["events"][0]["type"] == "deferred"
+
+
+@pytest.mark.asyncio
+async def test_job_detail_other_agents_job_requires_admin(client: AsyncClient, mock_pool) -> None:
+    mock_pool.fetchrow.return_value = _record(_make_job_row(job_id=42, agent_id="bob"))
+    resp = await client.get("/admin/jobs/42", headers=ALICE_HEADERS)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_job_detail_admin_can_view_any(
+    client: AsyncClient, permissions: InMemoryPermissionService, mock_pool
+) -> None:
+    await permissions.ensure_admin(BOOTSTRAP_ADMIN)
+    mock_pool.fetchrow.return_value = _record(_make_job_row(job_id=42, agent_id="alice"))
+    mock_pool.fetch.return_value = []
+    resp = await client.get("/admin/jobs/42", headers=ADMIN_HEADERS)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == 42
 
 
 @pytest.mark.asyncio
@@ -229,11 +287,9 @@ async def test_job_detail_not_found(client: AsyncClient, mock_pool) -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_own_job(client: AsyncClient, mock_pool) -> None:
-    # First call: ownership check; second call: cancel
-    mock_pool.fetchrow.side_effect = [
-        _record({"owner": "alice"}),
-        _record({"id": 10}),
-    ]
+    # Ownership check via pool.fetchrow, cancel via conn.fetchrow (transactional)
+    mock_pool.fetchrow.return_value = _record({"owner": "alice"})
+    mock_pool._mock_conn.fetchrow.return_value = _record({"id": 10})
     resp = await client.delete("/admin/jobs/10", headers=ALICE_HEADERS)
     assert resp.status_code == 200
     assert resp.json()["status"] == "cancelled"
@@ -241,10 +297,8 @@ async def test_cancel_own_job(client: AsyncClient, mock_pool) -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_fails_if_not_todo(client: AsyncClient, mock_pool) -> None:
-    mock_pool.fetchrow.side_effect = [
-        _record({"owner": "alice"}),
-        None,  # cancel returns nothing — job not in 'todo' status
-    ]
+    mock_pool.fetchrow.return_value = _record({"owner": "alice"})
+    mock_pool._mock_conn.fetchrow.return_value = None  # cancel returns nothing
     resp = await client.delete("/admin/jobs/10", headers=ALICE_HEADERS)
     assert resp.status_code == 409
 
@@ -261,10 +315,8 @@ async def test_cancel_other_agents_job_as_admin(
     client: AsyncClient, permissions: InMemoryPermissionService, mock_pool
 ) -> None:
     await permissions.ensure_admin(BOOTSTRAP_ADMIN)
-    mock_pool.fetchrow.side_effect = [
-        _record({"owner": "alice"}),
-        _record({"id": 10}),
-    ]
+    mock_pool.fetchrow.return_value = _record({"owner": "alice"})
+    mock_pool._mock_conn.fetchrow.return_value = _record({"id": 10})
     resp = await client.delete("/admin/jobs/10", headers=ADMIN_HEADERS)
     assert resp.status_code == 200
 
