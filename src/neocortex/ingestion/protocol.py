@@ -13,6 +13,7 @@ class IngestionProcessor(Protocol):
         text: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> IngestionResult: ...
 
     async def process_document(
@@ -23,6 +24,7 @@ class IngestionProcessor(Protocol):
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> IngestionResult: ...
 
     async def process_events(
@@ -31,6 +33,7 @@ class IngestionProcessor(Protocol):
         events: list[dict],
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> IngestionResult: ...
 
     async def process_audio(
@@ -41,6 +44,7 @@ class IngestionProcessor(Protocol):
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> MediaIngestionResult: ...
 
     async def process_video(
@@ -51,4 +55,5 @@ class IngestionProcessor(Protocol):
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> MediaIngestionResult: ...

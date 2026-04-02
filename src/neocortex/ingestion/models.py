@@ -10,6 +10,10 @@ class TextIngestionRequest(BaseModel):
         default=None,
         description="Target shared graph schema. If omitted, stores to agent's personal graph.",
     )
+    force: bool = Field(
+        default=False,
+        description="If true, skip dedup check and ingest even if content was already processed.",
+    )
 
 
 class EventsIngestionRequest(BaseModel):
@@ -19,12 +23,18 @@ class EventsIngestionRequest(BaseModel):
         default=None,
         description="Target shared graph schema. If omitted, stores to agent's personal graph.",
     )
+    force: bool = Field(
+        default=False,
+        description="If true, skip dedup check and ingest even if content was already processed.",
+    )
 
 
 class IngestionResult(BaseModel):
-    status: Literal["stored", "failed", "partial"]
+    status: Literal["stored", "failed", "partial", "skipped"]
     episodes_created: int
     message: str
+    content_hash: str | None = None
+    existing_episode_id: int | None = None
 
 
 class HashCheckRequest(BaseModel):

@@ -90,7 +90,7 @@ endpoint, force override, and multi-schema behavior (Stage 5).
 | 1 | [DB Migration](stages/01-db-migration.md) | DONE | Migration 011, template updated, ensure_content_hash() added | `feat(db): add content_hash column to episode table for ingestion dedup` |
 | 2 | [Protocol & Repository](stages/02-protocol-and-repository.md) | DONE | Protocol, adapter, mock, Episode model, GraphService updated with content_hash support | `feat(db): add content hash storage and lookup to MemoryRepository` |
 | 3 | [Check Endpoint](stages/03-check-endpoint.md) | DONE | HashCheckRequest/Result models, POST /ingest/check route with audit logging | `feat(ingestion): add POST /ingest/check endpoint for batch hash lookup` |
-| 4 | [Auto-Dedup in Ingestion](stages/04-auto-dedup-ingestion.md) | PENDING | | |
+| 4 | [Auto-Dedup in Ingestion](stages/04-auto-dedup-ingestion.md) | DONE | Hash computation, dedup check, force flag, skipped status across all endpoints | `feat(ingestion): auto-dedup ingestion with force override flag` |
 | 5 | [Tests](stages/05-tests.md) | PENDING | | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
