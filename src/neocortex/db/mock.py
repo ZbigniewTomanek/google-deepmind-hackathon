@@ -28,6 +28,7 @@ class EpisodeRecord(TypedDict, total=False):
     last_accessed_at: datetime
     importance: float
     consolidated: bool
+    content_hash: str | None
 
 
 class InMemoryRepository:
@@ -54,6 +55,7 @@ class InMemoryRepository:
         source_type: str = "mcp",
         metadata: dict | None = None,
         importance: float = 0.5,
+        content_hash: str | None = None,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1
@@ -74,6 +76,7 @@ class InMemoryRepository:
                 "last_accessed_at": now,
                 "importance": importance,
                 "consolidated": False,
+                "content_hash": content_hash,
             }
         )
         return episode_id
@@ -87,6 +90,7 @@ class InMemoryRepository:
         source_type: str = "mcp",
         metadata: dict | None = None,
         importance: float = 0.5,
+        content_hash: str | None = None,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1
@@ -97,10 +101,28 @@ class InMemoryRepository:
             "context": context,
             "source_type": source_type,
             "created_at": datetime.now(UTC),
+            "content_hash": content_hash,
         }
         self._episodes.append(record)
         self._schema_episodes.setdefault(target_schema, []).append(record)
         return episode_id
+
+    async def check_episode_hashes(
+        self,
+        agent_id: str,
+        hashes: list[str],
+        target_schema: str | None = None,
+    ) -> dict[str, int]:
+        if not hashes:
+            return {}
+        hash_set = set(hashes)
+        result: dict[str, int] = {}
+        episodes = self._schema_episodes.get(target_schema, []) if target_schema is not None else self._episodes
+        for ep in episodes:
+            h = ep.get("content_hash")
+            if h is not None and ep["agent_id"] == agent_id and h in hash_set:
+                result[h] = ep["id"]
+        return result
 
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None

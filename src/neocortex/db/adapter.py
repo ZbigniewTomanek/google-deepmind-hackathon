@@ -153,6 +153,7 @@ class GraphServiceAdapter:
         source_type: str = "mcp",
         metadata: dict | None = None,
         importance: float = 0.5,
+        content_hash: str | None = None,
     ) -> int:
         episode_metadata = metadata or {}
         if context:
@@ -163,20 +164,22 @@ class GraphServiceAdapter:
                 content=content,
                 source_type=source_type,
                 metadata=episode_metadata,
+                content_hash=content_hash,
             )
             return episode.id
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance)
-                   VALUES ($1, $2, $3, $4::jsonb, $5)
+                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, content_hash)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6)
                    RETURNING id""",
                 agent_id,
                 content,
                 source_type,
                 json.dumps(episode_metadata),
                 importance,
+                content_hash,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -191,6 +194,7 @@ class GraphServiceAdapter:
         source_type: str = "mcp",
         metadata: dict | None = None,
         importance: float = 0.5,
+        content_hash: str | None = None,
     ) -> int:
         episode_metadata = metadata or {}
         if context:
@@ -200,8 +204,8 @@ class GraphServiceAdapter:
 
         async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, owner_role)
-                   VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, owner_role, content_hash)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
                    RETURNING id""",
                 agent_id,
                 content,
@@ -209,10 +213,41 @@ class GraphServiceAdapter:
                 json.dumps(episode_metadata),
                 importance,
                 agent_id,
+                content_hash,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
         return int(row["id"])
+
+    async def check_episode_hashes(
+        self,
+        agent_id: str,
+        hashes: list[str],
+        target_schema: str | None = None,
+    ) -> dict[str, int]:
+        if not hashes:
+            return {}
+        if self._pool is None or self._router is None:
+            return {}
+
+        if target_schema is not None:
+            async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+                rows = await conn.fetch(
+                    """SELECT content_hash, id FROM episode
+                       WHERE agent_id = $1 AND content_hash = ANY($2)""",
+                    agent_id,
+                    hashes,
+                )
+        else:
+            schema_name = await self._router.route_store(agent_id)
+            async with schema_scoped_connection(self._pool, schema_name) as conn:
+                rows = await conn.fetch(
+                    """SELECT content_hash, id FROM episode
+                       WHERE agent_id = $1 AND content_hash = ANY($2)""",
+                    agent_id,
+                    hashes,
+                )
+        return {row["content_hash"]: int(row["id"]) for row in rows}
 
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
