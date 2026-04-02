@@ -31,7 +31,11 @@
    - Details:
      - `store_episode()`: Add `content_hash` param, include in INSERT SQL (`INSERT INTO episode (..., content_hash) VALUES (..., $N)`)
      - `store_episode_to()`: Same treatment
-     - `check_episode_hashes()`: Query episode table filtered by `agent_id` and `content_hash = ANY($2)`, return `{hash: id}` dict. Route via `_router.route_store(agent_id)` for personal, or use `target_schema` for shared.
+     - `check_episode_hashes()`: Dual connection path depending on `target_schema`:
+       - **Without `target_schema`** (personal graph): route via `schema = await self._router.route_store(agent_id)`, then use `schema_scoped_connection(self._pool, schema)` — same pattern as `store_episode()`.
+       - **With `target_schema`** (shared graph): use `graph_scoped_connection(self._pool, target_schema, agent_id)` — same pattern as `store_episode_to()`.
+       - If routing returns `None` (no personal graph exists yet), return an empty dict (no episodes to match against).
+     - Note: `store_episode_to()` INSERT includes an `owner_role` column that `store_episode()` does not. Ensure `content_hash` is added to each INSERT's column list independently.
 
    Example SQL for check:
    ```sql
@@ -42,7 +46,7 @@
 4. **Implement in `InMemoryRepository`**
    - File: `src/neocortex/db/mock.py`
    - Details:
-     - Add `content_hash` field to the in-memory `EpisodeRecord` (or store in metadata)
+     - Add `content_hash: str | None` directly to the `EpisodeRecord` TypedDict (do NOT store in metadata — the lookup needs direct field access)
      - `store_episode()`: Accept and store `content_hash`
      - `store_episode_to()`: Same
      - `check_episode_hashes()`: Iterate stored episodes, match by `agent_id` and hash
@@ -51,9 +55,9 @@
    - File: `src/neocortex/models.py`
    - Details: Add `content_hash: str | None = None` to the `Episode` dataclass/model (search for `class Episode`).
 
-6. **Update GraphService.create_episode() if used**
+6. **Update GraphService.create_episode() — used by adapter fallback**
    - File: `src/neocortex/graph_service.py`
-   - Details: Search for `create_episode` method. If it's used by the adapter fallback path, add `content_hash` param and include in its INSERT SQL.
+   - Details: The adapter falls back to `GraphService.create_episode()` when `self._pool is None` (mock/testing mode). This path **is used** — add `content_hash: str | None = None` param and include it in the INSERT SQL (`INSERT INTO episode (..., content_hash) VALUES (..., $N)`).
 
 ---
 

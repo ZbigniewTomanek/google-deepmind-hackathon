@@ -37,7 +37,7 @@
      - Check `{schema_name}._migration` for `'011_episode_content_hash'`
      - If not applied: `ALTER TABLE {schema_name}.episode ADD COLUMN IF NOT EXISTS content_hash TEXT` + create index
      - Insert migration record
-   - Call this method from wherever `ensure_alias_tables()` is called (likely `ensure_schema_up_to_date()` or similar).
+   - Call site: add `await schema_mgr.ensure_content_hash()` in `src/neocortex/services.py` immediately after the existing `await schema_mgr.ensure_alias_tables()` call (~line 93).
 
 ---
 

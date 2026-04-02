@@ -29,13 +29,17 @@
    - Do the same for `MediaIngestionResult` (it extends `IngestionResult`, so it
      inherits these fields — verify this is the case).
 
-3. **Add hash computation helper to EpisodeProcessor**
+3. **Add hash computation helpers to EpisodeProcessor**
    - File: `src/neocortex/ingestion/episode_processor.py`
-   - Details: Add a static method:
+   - Details: Add two static methods — one for text, one for raw bytes:
      ```python
      @staticmethod
      def _compute_hash(content: str) -> str:
          return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+     @staticmethod
+     def _compute_hash_bytes(data: bytes) -> str:
+         return hashlib.sha256(data).hexdigest()
      ```
    - Add `import hashlib` at the top.
 
@@ -60,22 +64,28 @@
      Then pass `content_hash` to `_store_episode()`.
 
 5. **Wire dedup into `process_document()`**
-   - Same pattern as process_text. Hash the decoded text content.
    - Add `force: bool = False` param.
+   - Hash the raw `content: bytes` using `_compute_hash_bytes(content)` — this is the
+     original uploaded file, before any decoding. This ensures identical files always
+     produce the same hash regardless of how text is later extracted.
 
 6. **Wire dedup into `process_events()`**
    - Add `force: bool = False` param.
    - For batch events: compute hash per event, batch-check all hashes upfront,
      skip events whose hash already exists (unless force). Track skipped count.
+   - Also track hashes seen within this batch to catch intra-batch duplicates
+     (two identical events in the same request). Maintain a `seen_hashes: set[str]`
+     alongside the DB lookup results.
    - Return `"partial"` if some were skipped and some stored, `"skipped"` if all skipped.
 
 7. **Wire dedup into `process_audio()` and `process_video()`**
    - Add `force: bool = False` param.
-   - Hash is computed on the built episode text (after description), not the raw binary.
-   - This means dedup check happens after the compress+describe steps. That's OK — the
-     expensive part is extraction, not description. But consider: for media, you could
-     alternatively hash the raw file bytes before compression. Choose: hash the episode
-     text for consistency (same approach as text/document).
+   - Hash the raw uploaded file bytes using `_compute_hash_bytes()` **before** the
+     compress+describe pipeline. Media descriptions from Gemini are non-deterministic,
+     so hashing the episode text would never match on re-ingestion of the same file.
+   - This means the dedup check happens early — if the hash already exists, skip the
+     entire compress+describe+store pipeline (significant cost saving).
+   - The `raw_path` parameter points to a temp file; read its bytes for hashing.
    - Note: media routes use `Form()` params, not JSON body. The `force` flag needs to
      be added as a Form parameter in the route handler, not the processor.
 

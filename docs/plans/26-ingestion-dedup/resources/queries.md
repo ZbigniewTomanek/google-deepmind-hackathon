@@ -46,5 +46,10 @@ ORDER BY copies DESC;
 import hashlib
 
 def compute_content_hash(content: str) -> str:
+    """Hash text content (text ingestion, events)."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+def compute_content_hash_bytes(data: bytes) -> str:
+    """Hash raw bytes (documents, audio, video uploads)."""
+    return hashlib.sha256(data).hexdigest()
 ```

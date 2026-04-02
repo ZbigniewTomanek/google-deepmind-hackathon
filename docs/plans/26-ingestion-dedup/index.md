@@ -67,6 +67,7 @@ endpoint, force override, and multi-schema behavior (Stage 5).
 - `src/neocortex/db/adapter.py` -- Implement hash storage, dedup check, hash lookup
 - `src/neocortex/db/mock.py` -- In-memory implementation of hash tracking
 - `src/neocortex/schema_manager.py` -- Add `ensure_content_hash()` for existing schemas
+- `src/neocortex/services.py` -- Call `ensure_content_hash()` during service initialization
 - `src/neocortex/models.py` -- Add `content_hash` field to Episode model
 - `src/neocortex/graph_service.py` -- Update `create_episode()` to accept/store hash
 
@@ -138,8 +139,10 @@ revise affected stages, and get user confirmation before continuing.
    (filtered by `agent_id`). Agents don't see each other's ingestion history.
 3. **`force` flag** -- default `false`. When `true`, skips dedup check and creates
    a new episode even if hash exists. Allows re-processing updated content.
-4. **Hash computed on raw content** -- for text/document, hash the text string.
-   For media, hash the episode text (which includes description + metadata),
-   not the raw binary file.
+4. **Hash computed on raw content** -- for text, hash the text string. For document
+   and media, hash the raw uploaded bytes. Media descriptions from Gemini are
+   non-deterministic, so hashing post-description text would never match on
+   re-ingestion of the same file. Hashing raw bytes also lets media dedup skip
+   the expensive compress+describe pipeline entirely.
 5. **`"skipped"` status** -- new `IngestionResult.status` variant alongside
    `"stored"`, `"failed"`, `"partial"`.
