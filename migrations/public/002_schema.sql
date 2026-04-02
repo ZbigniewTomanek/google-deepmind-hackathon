@@ -68,7 +68,7 @@ CREATE TABLE episode (
 );
 
 -- Migration tracking (for application-level migrations beyond init)
-CREATE TABLE _migration (
+CREATE TABLE IF NOT EXISTS _migration (
     id          SERIAL PRIMARY KEY,
     name        TEXT UNIQUE NOT NULL,
     applied_at  TIMESTAMPTZ DEFAULT now()
