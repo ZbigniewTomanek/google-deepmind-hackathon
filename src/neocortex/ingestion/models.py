@@ -25,3 +25,16 @@ class IngestionResult(BaseModel):
     status: Literal["stored", "failed", "partial"]
     episodes_created: int
     message: str
+
+
+class HashCheckRequest(BaseModel):
+    hashes: list[str] = Field(min_length=1, max_length=500)
+    target_graph: str | None = Field(
+        default=None,
+        description="Check against a specific graph schema. If omitted, checks personal graph.",
+    )
+
+
+class HashCheckResult(BaseModel):
+    existing: dict[str, int]  # {hash: episode_id} for hashes that exist
+    missing: list[str]  # hashes not found
