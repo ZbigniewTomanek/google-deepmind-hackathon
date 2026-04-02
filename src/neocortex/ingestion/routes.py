@@ -10,7 +10,13 @@ from loguru import logger
 
 from neocortex.ingestion.auth import get_agent_id
 from neocortex.ingestion.media_models import MediaIngestionResult
-from neocortex.ingestion.models import EventsIngestionRequest, IngestionResult, TextIngestionRequest
+from neocortex.ingestion.models import (
+    EventsIngestionRequest,
+    HashCheckRequest,
+    HashCheckResult,
+    IngestionResult,
+    TextIngestionRequest,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
 
@@ -63,7 +69,9 @@ async def ingest_text(
     if body.target_graph:
         await _check_write_permission(request, agent_id, body.target_graph)
     processor = request.app.state.processor
-    return await processor.process_text(agent_id, body.text, body.metadata, target_schema=body.target_graph)
+    return await processor.process_text(
+        agent_id, body.text, body.metadata, target_schema=body.target_graph, force=body.force
+    )
 
 
 @router.post("/document", response_model=IngestionResult)
@@ -73,6 +81,7 @@ async def ingest_document(
     agent_id: Annotated[str, Depends(get_agent_id)],
     metadata: str | None = Form(default=None),
     target_graph: str | None = Form(default=None),
+    force: bool = Form(default=False),
 ) -> IngestionResult:
     if target_graph:
         await _check_write_permission(request, agent_id, target_graph)
@@ -109,6 +118,7 @@ async def ingest_document(
         content_type,
         parsed_metadata,
         target_schema=target_graph,
+        force=force,
     )
 
 
@@ -121,7 +131,9 @@ async def ingest_events(
     if body.target_graph:
         await _check_write_permission(request, agent_id, body.target_graph)
     processor = request.app.state.processor
-    return await processor.process_events(agent_id, body.events, body.metadata, target_schema=body.target_graph)
+    return await processor.process_events(
+        agent_id, body.events, body.metadata, target_schema=body.target_graph, force=body.force
+    )
 
 
 async def _stream_upload_to_temp(
@@ -168,6 +180,7 @@ async def ingest_audio(
     agent_id: Annotated[str, Depends(get_agent_id)],
     metadata: str | None = Form(default=None),
     target_graph: str | None = Form(default=None),
+    force: bool = Form(default=False),
 ) -> MediaIngestionResult:
     if target_graph:
         await _check_write_permission(request, agent_id, target_graph)
@@ -202,6 +215,7 @@ async def ingest_audio(
         content_type,
         parsed_metadata,
         target_schema=target_graph,
+        force=force,
     )
 
     logger.bind(action_log=True).info(
@@ -222,6 +236,7 @@ async def ingest_video(
     agent_id: Annotated[str, Depends(get_agent_id)],
     metadata: str | None = Form(default=None),
     target_graph: str | None = Form(default=None),
+    force: bool = Form(default=False),
 ) -> MediaIngestionResult:
     if target_graph:
         await _check_write_permission(request, agent_id, target_graph)
@@ -256,6 +271,7 @@ async def ingest_video(
         content_type,
         parsed_metadata,
         target_schema=target_graph,
+        force=force,
     )
 
     logger.bind(action_log=True).info(
@@ -267,3 +283,23 @@ async def ingest_video(
     )
 
     return result
+
+
+@router.post("/check", response_model=HashCheckResult)
+async def check_hashes(
+    body: HashCheckRequest,
+    request: Request,
+    agent_id: Annotated[str, Depends(get_agent_id)],
+) -> HashCheckResult:
+    repo = request.app.state.services_ctx["repo"]
+    existing = await repo.check_episode_hashes(agent_id, body.hashes, target_schema=body.target_graph)
+    missing = [h for h in body.hashes if h not in existing]
+
+    logger.bind(action_log=True).info(
+        "hash_check",
+        agent_id=agent_id,
+        hashes_checked=len(body.hashes),
+        hashes_found=len(existing),
+    )
+
+    return HashCheckResult(existing=existing, missing=missing)

@@ -247,18 +247,20 @@ class GraphService:
         embedding: list[float] | None = None,
         source_type: str | None = None,
         metadata: dict | None = None,
+        content_hash: str | None = None,
     ) -> Episode:
         meta_json = json.dumps(metadata or {})
         emb_str = str(embedding) if embedding else None
         row = await self._pg.fetchrow(
-            """INSERT INTO episode (agent_id, content, embedding, source_type, metadata)
-               VALUES ($1, $2, $3::vector, $4, $5::jsonb)
-               RETURNING id, agent_id, content, source_type, metadata, created_at""",
+            """INSERT INTO episode (agent_id, content, embedding, source_type, metadata, content_hash)
+               VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6)
+               RETURNING id, agent_id, content, source_type, metadata, content_hash, created_at""",
             agent_id,
             content,
             emb_str,
             source_type,
             meta_json,
+            content_hash,
         )
         return self._row_to_episode(row)
 

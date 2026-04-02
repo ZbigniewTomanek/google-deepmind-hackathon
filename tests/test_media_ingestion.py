@@ -227,6 +227,49 @@ async def test_process_video_episode_text_contains_metadata(
 
 
 @pytest.mark.asyncio
+async def test_process_audio_dedup_skips_duplicate(processor: EpisodeProcessor, repo: InMemoryRepository, tmp_path):
+    """Same audio file ingested twice: second returns 'skipped'."""
+    wav1 = _write_wav_file(str(tmp_path / "first.wav"))
+    wav2 = _write_wav_file(str(tmp_path / "second.wav"))  # identical content
+
+    r1 = await processor.process_audio(
+        agent_id="test_agent", filename="first.wav", raw_path=wav1, content_type="audio/wav", metadata={}
+    )
+    assert r1.status == "stored"
+
+    r2 = await processor.process_audio(
+        agent_id="test_agent", filename="second.wav", raw_path=wav2, content_type="audio/wav", metadata={}
+    )
+    assert r2.status == "skipped"
+    assert r2.episodes_created == 0
+    assert r2.existing_episode_id is not None
+    assert r2.content_hash == r1.content_hash
+
+
+@pytest.mark.asyncio
+async def test_process_audio_force_bypasses_dedup(processor: EpisodeProcessor, repo: InMemoryRepository, tmp_path):
+    """force=True on audio stores even if content was already ingested."""
+    wav1 = _write_wav_file(str(tmp_path / "first.wav"))
+    wav2 = _write_wav_file(str(tmp_path / "second.wav"))
+
+    r1 = await processor.process_audio(
+        agent_id="test_agent", filename="first.wav", raw_path=wav1, content_type="audio/wav", metadata={}
+    )
+    assert r1.status == "stored"
+
+    r2 = await processor.process_audio(
+        agent_id="test_agent",
+        filename="second.wav",
+        raw_path=wav2,
+        content_type="audio/wav",
+        metadata={},
+        force=True,
+    )
+    assert r2.status == "stored"
+    assert r2.episodes_created == 1
+
+
+@pytest.mark.asyncio
 async def test_process_audio_without_compressor_returns_failed(
     repo: InMemoryRepository, media_store: MediaFileStore, mock_describer: MockMediaDescriptionService, wav_file: str
 ):

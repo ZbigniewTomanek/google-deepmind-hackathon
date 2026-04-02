@@ -56,4 +56,5 @@ class Episode(BaseModel):
     last_accessed_at: datetime | None = None
     importance: float = 0.5
     consolidated: bool = False
+    content_hash: str | None = None
     created_at: datetime

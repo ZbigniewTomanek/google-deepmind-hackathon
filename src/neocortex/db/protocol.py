@@ -15,6 +15,7 @@ class MemoryRepository(Protocol):
         source_type: str = "mcp",
         metadata: dict | None = None,
         importance: float = 0.5,
+        content_hash: str | None = None,
     ) -> int:
         """Store a raw episode and return the episode ID."""
 
@@ -27,8 +28,21 @@ class MemoryRepository(Protocol):
         source_type: str = "mcp",
         metadata: dict | None = None,
         importance: float = 0.5,
+        content_hash: str | None = None,
     ) -> int:
         """Store an episode in an explicit target schema (for shared graph writes)."""
+
+    async def check_episode_hashes(
+        self,
+        agent_id: str,
+        hashes: list[str],
+        target_schema: str | None = None,
+    ) -> dict[str, int]:
+        """Check which content hashes already exist for this agent.
+
+        Returns a dict of {hash: episode_id} for hashes that exist.
+        """
+        ...
 
     async def recall(
         self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None

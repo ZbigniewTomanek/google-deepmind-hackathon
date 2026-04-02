@@ -111,25 +111,8 @@ wait_for_postgres() {
 
 apply_migrations() {
     log "Applying migrations..."
-    local migration_dir="$PROJECT_DIR/migrations/init"
-    for f in "$migration_dir"/*.sql; do
-        local name
-        name="$(basename "$f")"
-        local already
-        already=$(docker compose -f "$COMPOSE_FILE" exec -T postgres \
-            psql -U neocortex -d neocortex -tAc \
-            "SELECT 1 FROM _migration WHERE name = '$name' LIMIT 1;" 2>/dev/null || echo "")
-        if [[ "$already" == "1" ]]; then
-            continue
-        fi
-        log "  Applying $name..."
-        docker compose -f "$COMPOSE_FILE" exec -T -e PGPASSWORD=neocortex postgres \
-            psql -U neocortex -d neocortex < "$f" >/dev/null 2>&1
-        docker compose -f "$COMPOSE_FILE" exec -T postgres \
-            psql -U neocortex -d neocortex -c \
-            "INSERT INTO _migration (name) VALUES ('$name') ON CONFLICT DO NOTHING;" >/dev/null 2>&1 || true
-        ok "  Applied $name"
-    done
+    uv run python -m neocortex.migrations
+    ok "Migrations applied"
 }
 
 require_pg_running() {

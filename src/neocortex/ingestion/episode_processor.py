@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import tempfile
@@ -102,15 +103,53 @@ class EpisodeProcessor:
             source="ingestion",
         )
 
-    async def _store_episode(self, agent_id: str, text: str, source_type: str, target_schema: str | None = None) -> int:
+    @staticmethod
+    def _compute_hash(content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _compute_hash_bytes(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    async def _store_episode(
+        self,
+        agent_id: str,
+        text: str,
+        source_type: str,
+        target_schema: str | None = None,
+        content_hash: str | None = None,
+    ) -> int:
         if target_schema:
-            return await self._repo.store_episode_to(agent_id, target_schema, text, source_type=source_type)
-        return await self._repo.store_episode(agent_id, text, source_type=source_type)
+            return await self._repo.store_episode_to(
+                agent_id, target_schema, text, source_type=source_type, content_hash=content_hash
+            )
+        return await self._repo.store_episode(agent_id, text, source_type=source_type, content_hash=content_hash)
 
     async def process_text(
-        self, agent_id: str, text: str, metadata: dict, target_schema: str | None = None
+        self,
+        agent_id: str,
+        text: str,
+        metadata: dict,
+        target_schema: str | None = None,
+        force: bool = False,
     ) -> IngestionResult:
-        episode_id = await self._store_episode(agent_id, text, "ingestion_text", target_schema)
+        content_hash = self._compute_hash(text)
+        if not force:
+            # Note: concurrent requests with identical content may both pass this
+            # check before either stores. This is acceptable for the primary use case
+            # (sequential re-ingestion of daily notes by a single agent).
+            existing = await self._repo.check_episode_hashes(agent_id, [content_hash], target_schema=target_schema)
+            if existing:
+                return IngestionResult(
+                    status="skipped",
+                    episodes_created=0,
+                    message="Content already ingested",
+                    content_hash=content_hash,
+                    existing_episode_id=next(iter(existing.values())),
+                )
+        episode_id = await self._store_episode(
+            agent_id, text, "ingestion_text", target_schema, content_hash=content_hash
+        )
         await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
         await self._enqueue_routing(agent_id, episode_id, text, target_schema)
@@ -118,6 +157,7 @@ class EpisodeProcessor:
             status="stored",
             episodes_created=1,
             message="Text stored as episode",
+            content_hash=content_hash,
         )
 
     async def process_document(
@@ -128,9 +168,23 @@ class EpisodeProcessor:
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> IngestionResult:
+        content_hash = self._compute_hash_bytes(content)
+        if not force:
+            existing = await self._repo.check_episode_hashes(agent_id, [content_hash], target_schema=target_schema)
+            if existing:
+                return IngestionResult(
+                    status="skipped",
+                    episodes_created=0,
+                    message=f"Document '{filename}' already ingested",
+                    content_hash=content_hash,
+                    existing_episode_id=next(iter(existing.values())),
+                )
         text = content.decode("utf-8", errors="replace")
-        episode_id = await self._store_episode(agent_id, text, "ingestion_document", target_schema)
+        episode_id = await self._store_episode(
+            agent_id, text, "ingestion_document", target_schema, content_hash=content_hash
+        )
         await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
         await self._enqueue_routing(agent_id, episode_id, text, target_schema)
@@ -138,6 +192,7 @@ class EpisodeProcessor:
             status="stored",
             episodes_created=1,
             message=f"Document '{filename}' stored as episode",
+            content_hash=content_hash,
         )
 
     async def process_events(
@@ -146,12 +201,31 @@ class EpisodeProcessor:
         events: list[dict],
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> IngestionResult:
+        # Pre-compute hashes for all events
+        event_texts = [json.dumps(event, sort_keys=True) for event in events]
+        event_hashes = [self._compute_hash(text) for text in event_texts]
+
+        # Batch check existing hashes (unless force)
+        existing_hashes: dict[str, int] = {}
+        if not force:
+            existing_hashes = await self._repo.check_episode_hashes(agent_id, event_hashes, target_schema=target_schema)
+
         stored = 0
-        for event in events:
+        skipped = 0
+        seen_hashes: set[str] = set()
+        for event_text, content_hash in zip(event_texts, event_hashes, strict=True):
+            # Skip duplicates: already in DB or seen earlier in this batch
+            if not force and (content_hash in existing_hashes or content_hash in seen_hashes):
+                skipped += 1
+                seen_hashes.add(content_hash)
+                continue
+            seen_hashes.add(content_hash)
             try:
-                event_text = json.dumps(event)
-                episode_id = await self._store_episode(agent_id, event_text, "ingestion_event", target_schema)
+                episode_id = await self._store_episode(
+                    agent_id, event_text, "ingestion_event", target_schema, content_hash=content_hash
+                )
                 await self._embed_episode(episode_id, event_text, agent_id, target_schema)
                 await self._enqueue_extraction(agent_id, episode_id, target_schema)
                 await self._enqueue_routing(agent_id, episode_id, event_text, target_schema)
@@ -161,8 +235,21 @@ class EpisodeProcessor:
                 return IngestionResult(
                     status="partial",
                     episodes_created=stored,
-                    message=f"Failed after {stored}/{len(events)} events",
+                    message=f"Failed after {stored}/{len(events)} events ({skipped} skipped as duplicates)",
                 )
+
+        if skipped == len(events):
+            return IngestionResult(
+                status="skipped",
+                episodes_created=0,
+                message=f"All {skipped} events already ingested",
+            )
+        if skipped > 0:
+            return IngestionResult(
+                status="partial",
+                episodes_created=stored,
+                message=f"{stored} events stored, {skipped} skipped as duplicates",
+            )
         return IngestionResult(
             status="stored",
             episodes_created=stored,
@@ -177,6 +264,7 @@ class EpisodeProcessor:
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> MediaIngestionResult:
         """Compress audio -> describe via Gemini -> store file -> store episode."""
         return await self._process_media(
@@ -188,6 +276,7 @@ class EpisodeProcessor:
             metadata=metadata,
             target_schema=target_schema,
             compressed_ext="ogg",
+            force=force,
         )
 
     async def process_video(
@@ -198,6 +287,7 @@ class EpisodeProcessor:
         content_type: str,
         metadata: dict,
         target_schema: str | None = None,
+        force: bool = False,
     ) -> MediaIngestionResult:
         """Compress video -> describe via Gemini -> store file -> store episode."""
         return await self._process_media(
@@ -209,6 +299,7 @@ class EpisodeProcessor:
             metadata=metadata,
             target_schema=target_schema,
             compressed_ext="mp4",
+            force=force,
         )
 
     async def _process_media(
@@ -221,12 +312,33 @@ class EpisodeProcessor:
         metadata: dict,
         target_schema: str | None,
         compressed_ext: str,
+        force: bool = False,
     ) -> MediaIngestionResult:
         """Shared pipeline: compress -> describe -> store file -> store episode.
 
         Caller is responsible for writing the upload to raw_path; this method
         cleans up raw_path after processing.
         """
+        # Early dedup check on raw file bytes — before the expensive pipeline
+        with open(raw_path, "rb") as f:
+            raw_bytes = f.read()
+        content_hash = self._compute_hash_bytes(raw_bytes)
+        del raw_bytes  # free memory
+
+        if not force:
+            existing = await self._repo.check_episode_hashes(agent_id, [content_hash], target_schema=target_schema)
+            if existing:
+                # Clean up the raw file since we're skipping
+                with contextlib.suppress(OSError):
+                    os.unlink(raw_path)
+                return MediaIngestionResult(
+                    status="skipped",
+                    episodes_created=0,
+                    message=f"{media_type.capitalize()} '{filename}' already ingested",
+                    content_hash=content_hash,
+                    existing_episode_id=next(iter(existing.values())),
+                )
+
         if self._media_compressor is None:
             return MediaIngestionResult(status="failed", episodes_created=0, message="ffmpeg not available")
 
@@ -276,7 +388,9 @@ class EpisodeProcessor:
 
             # 6-8. Store, embed, enqueue
             source_type = f"ingestion_{media_type}"
-            episode_id = await self._store_episode(agent_id, episode_text, source_type, target_schema)
+            episode_id = await self._store_episode(
+                agent_id, episode_text, source_type, target_schema, content_hash=content_hash
+            )
             await self._embed_episode(episode_id, episode_text, agent_id, target_schema)
             await self._enqueue_extraction(agent_id, episode_id, target_schema)
             await self._enqueue_routing(agent_id, episode_id, episode_text, target_schema)
@@ -296,6 +410,7 @@ class EpisodeProcessor:
                 episodes_created=1,
                 message=f"{label} '{filename}' processed and stored as episode",
                 media_ref=media_ref,
+                content_hash=content_hash,
             )
         except Exception:
             label = media_type.capitalize()

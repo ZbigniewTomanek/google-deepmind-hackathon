@@ -1,4 +1,6 @@
 import io
+import json
+import tempfile
 from collections.abc import Generator
 
 import pytest
@@ -165,3 +167,135 @@ def test_events_ingestion_with_metadata(anon_client):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "stored"
+
+
+# --- Dedup: text ingestion ---
+
+
+def test_text_ingestion_returns_content_hash(anon_client):
+    resp = anon_client.post("/ingest/text", json={"text": "hash me"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "stored"
+    assert data["content_hash"] is not None
+    assert len(data["content_hash"]) == 64
+
+
+def test_text_ingestion_duplicate_returns_skipped(anon_client):
+    text = "dedup test content"
+    r1 = anon_client.post("/ingest/text", json={"text": text})
+    assert r1.status_code == 200
+    assert r1.json()["status"] == "stored"
+
+    r2 = anon_client.post("/ingest/text", json={"text": text})
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["status"] == "skipped"
+    assert data["episodes_created"] == 0
+    assert data["existing_episode_id"] is not None
+    assert data["content_hash"] == r1.json()["content_hash"]
+
+
+def test_text_ingestion_force_always_stores(anon_client):
+    text = "force test content"
+    r1 = anon_client.post("/ingest/text", json={"text": text})
+    assert r1.json()["status"] == "stored"
+
+    r2 = anon_client.post("/ingest/text", json={"text": text, "force": True})
+    assert r2.status_code == 200
+    assert r2.json()["status"] == "stored"
+    assert r2.json()["episodes_created"] == 1
+
+
+# --- Check endpoint ---
+
+
+def test_check_unknown_hashes_returns_missing(anon_client):
+    resp = anon_client.post("/ingest/check", json={"hashes": ["abc123", "def456"]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["existing"] == {}
+    assert set(data["missing"]) == {"abc123", "def456"}
+
+
+def test_check_after_ingestion_hash_exists(anon_client):
+    # Ingest some text
+    r1 = anon_client.post("/ingest/text", json={"text": "check me"})
+    content_hash = r1.json()["content_hash"]
+
+    # Check: the hash should now exist
+    r2 = anon_client.post("/ingest/check", json={"hashes": [content_hash, "unknown"]})
+    assert r2.status_code == 200
+    data = r2.json()
+    assert content_hash in data["existing"]
+    assert data["missing"] == ["unknown"]
+
+
+def test_check_batch_mixed(anon_client):
+    # Ingest two texts
+    r1 = anon_client.post("/ingest/text", json={"text": "first"})
+    r2 = anon_client.post("/ingest/text", json={"text": "second"})
+    h1 = r1.json()["content_hash"]
+    h2 = r2.json()["content_hash"]
+
+    # Check: both should exist, plus one unknown
+    resp = anon_client.post("/ingest/check", json={"hashes": [h1, h2, "nope"]})
+    data = resp.json()
+    assert h1 in data["existing"]
+    assert h2 in data["existing"]
+    assert data["missing"] == ["nope"]
+
+
+def test_check_agent_isolation(auth_client):
+    # Ingest as test-agent (mapped from test-token)
+    r1 = auth_client.post(
+        "/ingest/text",
+        json={"text": "agent-specific"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    content_hash = r1.json()["content_hash"]
+
+    # Check with same token — should find it
+    r2 = auth_client.post(
+        "/ingest/check",
+        json={"hashes": [content_hash]},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert content_hash in r2.json()["existing"]
+
+
+def test_check_agent_isolation_negative():
+    """Agent B cannot see hashes ingested by agent A."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump({"token-a": "agent-a", "token-b": "agent-b"}, f)
+        tokens_path = f.name
+
+    settings = MCPSettings(auth_mode="dev_token", mock_db=True, dev_tokens_file=tokens_path)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        # Ingest as agent-a
+        r1 = client.post(
+            "/ingest/text",
+            json={"text": "private to agent-a"},
+            headers={"Authorization": "Bearer token-a"},
+        )
+        content_hash = r1.json()["content_hash"]
+
+        # Agent B should NOT see agent A's hash
+        r2 = client.post(
+            "/ingest/check",
+            json={"hashes": [content_hash]},
+            headers={"Authorization": "Bearer token-b"},
+        )
+        assert r2.json()["existing"] == {}
+        assert content_hash in r2.json()["missing"]
+
+
+def test_check_missing_token_returns_401(auth_client):
+    resp = auth_client.post("/ingest/check", json={"hashes": ["abc"]})
+    assert resp.status_code == 401
+
+
+def test_check_empty_hashes_returns_422(anon_client):
+    resp = anon_client.post("/ingest/check", json={"hashes": []})
+    assert resp.status_code == 422
