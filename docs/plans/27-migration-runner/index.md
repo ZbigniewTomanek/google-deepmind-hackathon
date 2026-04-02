@@ -108,7 +108,7 @@ the old template and ensure_* methods.
 | 3 | [Wire into services](stages/03-wire-services.md) | DONE | Replaced ensure_alias_tables/ensure_content_hash with MigrationRunner.run_public() + run_graph_schemas() in correct order; mock DB path untouched | `refactor(services): replace ensure_* methods with MigrationRunner at startup` |
 | 4 | [Update SchemaManager](stages/04-update-schema-manager.md) | DONE | Replaced _render_template with MigrationRunner.run_for_schema in create_graph; deleted ensure_alias_tables, ensure_content_hash, _render_template; removed apply_migration from postgres_service; fixed runner path resolution (parents[2]→[3]) and added CREATE SCHEMA before tracking table | `refactor(schema): replace template rendering with MigrationRunner in SchemaManager` |
 | 5 | [Shell script & Docker cleanup](stages/05-shell-docker-cleanup.md) | DONE | Replaced shell migration loops in manage.sh and run_e2e_auth0.sh with `uv run python -m neocortex.migrations`; removed Docker initdb mount; updated migrations/init refs in CLAUDE.md and docs/development.md | `refactor(ops): replace shell migration loop with Python runner, remove Docker initdb mount` |
-| 6 | [Tests & verification](stages/06-tests-verification.md) | PENDING | | |
+| 6 | [Tests & verification](stages/06-tests-verification.md) | DONE | Created test_migration_runner.py (10 tests: list/sort, idempotent tracking, apply/skip/idempotent public, schema placeholder, legacy mapping, checksum warning, invalid name); all 770+10 tests pass; no stale refs; mock DB starts clean | `test(migrations): add MigrationRunner tests and verify end-to-end` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
