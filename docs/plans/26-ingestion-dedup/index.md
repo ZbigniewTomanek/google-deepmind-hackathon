@@ -91,7 +91,7 @@ endpoint, force override, and multi-schema behavior (Stage 5).
 | 2 | [Protocol & Repository](stages/02-protocol-and-repository.md) | DONE | Protocol, adapter, mock, Episode model, GraphService updated with content_hash support | `feat(db): add content hash storage and lookup to MemoryRepository` |
 | 3 | [Check Endpoint](stages/03-check-endpoint.md) | DONE | HashCheckRequest/Result models, POST /ingest/check route with audit logging | `feat(ingestion): add POST /ingest/check endpoint for batch hash lookup` |
 | 4 | [Auto-Dedup in Ingestion](stages/04-auto-dedup-ingestion.md) | DONE | Hash computation, dedup check, force flag, skipped status across all endpoints | `feat(ingestion): auto-dedup ingestion with force override flag` |
-| 5 | [Tests](stages/05-tests.md) | PENDING | | |
+| 5 | [Tests](stages/05-tests.md) | DONE | 20 unit tests + 9 API tests; full suite green (756 passed) | `test(ingestion): add dedup and hash check endpoint tests` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
