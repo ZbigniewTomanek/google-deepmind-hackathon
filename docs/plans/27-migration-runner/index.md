@@ -104,7 +104,7 @@ the old template and ensure_* methods.
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
 | 1 | [Split graph template](stages/01-graph-migrations.md) | DONE | Renamed init→public, created graph/001-005, deleted template, updated SchemaManager._render_template to read graph/ files | `refactor(migrations): split graph template into individual migration files` |
-| 2 | [MigrationRunner class](stages/02-migration-runner.md) | PENDING | | |
+| 2 | [MigrationRunner class](stages/02-migration-runner.md) | DONE | Created migrations package: __init__.py, runner.py (MigrationRunner with public/graph/per-schema support, advisory locks, checksums, legacy name mapping), __main__.py (CLI) | `feat(migrations): add MigrationRunner with public and per-schema support` |
 | 3 | [Wire into services](stages/03-wire-services.md) | PENDING | | |
 | 4 | [Update SchemaManager](stages/04-update-schema-manager.md) | PENDING | | |
 | 5 | [Shell script & Docker cleanup](stages/05-shell-docker-cleanup.md) | PENDING | | |
