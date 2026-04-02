@@ -23,7 +23,7 @@ class MigrationRunner:
 
     def __init__(self, pg: PostgresService) -> None:
         self._pg = pg
-        migrations_root = Path(__file__).resolve().parents[2] / "migrations"
+        migrations_root = Path(__file__).resolve().parents[3] / "migrations"
         self._public_dir = migrations_root / "public"
         self._graph_dir = migrations_root / "graph"
 
@@ -83,6 +83,7 @@ class MigrationRunner:
             raise ValueError(f"Invalid graph schema name: {schema_name}")
 
         async with self._pg.pool.acquire() as conn:
+            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
             await self._ensure_tracking_table(conn, schema_name)
             migrations = self._list_migrations(self._graph_dir)
             applied = await self._get_applied(conn, schema_name)

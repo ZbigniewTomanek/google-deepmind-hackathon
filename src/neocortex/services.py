@@ -92,7 +92,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     await migration_runner.run_public()
 
     graph = GraphService(pg)
-    schema_mgr = SchemaManager(pg)
+    schema_mgr = SchemaManager(pg, migration_runner)
     await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
     pg_permissions: PermissionChecker = PostgresPermissionService(pg, settings.bootstrap_admin_id)
     await pg_permissions.ensure_admin(settings.bootstrap_admin_id)

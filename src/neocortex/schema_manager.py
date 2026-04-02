@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import asyncpg.exceptions
-from loguru import logger
 
 from neocortex.postgres_service import PostgresService
 from neocortex.schemas.graph import GraphInfo
+
+if TYPE_CHECKING:
+    from neocortex.migrations import MigrationRunner
 
 _SCHEMA_NAME_PATTERN = re.compile(r"^ncx_[a-z0-9]+__[a-z0-9_]+$")
 _NON_ALNUM_PATTERN = re.compile(r"[^a-z0-9]+")
@@ -16,9 +20,13 @@ _REPEATED_UNDERSCORES_PATTERN = re.compile(r"_+")
 class SchemaManager:
     """Manage lifecycle for isolated graph schemas registered in `public.graph_registry`."""
 
-    def __init__(self, pg: PostgresService):
+    def __init__(self, pg: PostgresService, migration_runner: MigrationRunner | None = None):
         self._pg = pg
-        self._graph_migrations_dir = Path(__file__).resolve().parents[2] / "migrations" / "graph"
+        if migration_runner is None:
+            from neocortex.migrations import MigrationRunner
+
+            migration_runner = MigrationRunner(pg)
+        self._migration_runner = migration_runner
 
     async def create_graph(self, agent_id: str, purpose: str, is_shared: bool = False) -> str:
         """Create or return a registered graph schema name for the agent/purpose pair."""
@@ -27,9 +35,10 @@ class SchemaManager:
             return existing.schema_name
 
         schema_name = self.make_schema_name(agent_id=agent_id, purpose=purpose)
-        sql = self._render_template(schema_name=schema_name, is_shared=is_shared)
 
         try:
+            await self._migration_runner.run_for_schema(schema_name)
+
             async with self._pg.pool.acquire() as conn, conn.transaction():
                 duplicate = await conn.fetchrow(
                     """
@@ -43,7 +52,10 @@ class SchemaManager:
                 if duplicate is not None:
                     return str(duplicate["schema_name"])
 
-                await conn.execute(sql)
+                if is_shared:
+                    provenance_sql = self._build_shared_provenance_block(schema_name)
+                    await conn.execute(provenance_sql)
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO graph_registry (agent_id, purpose, schema_name, is_shared)
@@ -138,93 +150,6 @@ class SchemaManager:
     def _validate_schema_name(schema_name: str) -> None:
         if not _SCHEMA_NAME_PATTERN.fullmatch(schema_name):
             raise ValueError(f"Invalid graph schema name: {schema_name}")
-
-    async def ensure_alias_tables(self) -> int:
-        """Ensure all registered graph schemas have the node_alias table.
-
-        Uses the per-schema _migration tracking table to apply this only once.
-        Returns the number of schemas migrated.
-        """
-        graphs = await self.list_graphs()
-        migrated = 0
-        for graph in graphs:
-            schema = graph.schema_name
-            try:
-                async with self._pg.pool.acquire() as conn:
-                    already = await conn.fetchval(
-                        f"SELECT 1 FROM {schema}._migration WHERE name = $1",
-                        "009_node_alias",
-                    )
-                    if already:
-                        continue
-                    await conn.execute(f"""
-                        CREATE TABLE IF NOT EXISTS {schema}.node_alias (
-                            id          SERIAL PRIMARY KEY,
-                            node_id     INT NOT NULL REFERENCES {schema}.node(id) ON DELETE CASCADE,
-                            alias       TEXT NOT NULL,
-                            source      TEXT DEFAULT 'extraction',
-                            created_at  TIMESTAMPTZ DEFAULT now(),
-                            UNIQUE (alias, node_id)
-                        )
-                    """)
-                    await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_{schema}_node_alias_lower
-                            ON {schema}.node_alias (lower(alias))
-                    """)
-                    await conn.execute(
-                        f"INSERT INTO {schema}._migration (name) VALUES ($1)",
-                        "009_node_alias",
-                    )
-                    migrated += 1
-                    logger.info("alias_table_migrated", schema=schema)
-            except Exception:
-                logger.warning("alias_table_migration_failed", schema=schema, exc_info=True)
-        return migrated
-
-    async def ensure_content_hash(self) -> int:
-        """Ensure all registered graph schemas have the content_hash column on episode.
-
-        Uses the per-schema _migration tracking table to apply this only once.
-        Returns the number of schemas migrated.
-        """
-        graphs = await self.list_graphs()
-        migrated = 0
-        for graph in graphs:
-            schema = graph.schema_name
-            try:
-                async with self._pg.pool.acquire() as conn:
-                    already = await conn.fetchval(
-                        f"SELECT 1 FROM {schema}._migration WHERE name = $1",
-                        "011_episode_content_hash",
-                    )
-                    if already:
-                        continue
-                    await conn.execute(f"ALTER TABLE {schema}.episode ADD COLUMN IF NOT EXISTS content_hash TEXT")
-                    await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_{schema}_episode_content_hash
-                            ON {schema}.episode (agent_id, content_hash)
-                            WHERE content_hash IS NOT NULL
-                    """)
-                    await conn.execute(
-                        f"INSERT INTO {schema}._migration (name) VALUES ($1)",
-                        "011_episode_content_hash",
-                    )
-                    migrated += 1
-                    logger.info("content_hash_migrated", schema=schema)
-            except Exception:
-                logger.warning("content_hash_migration_failed", schema=schema, exc_info=True)
-        return migrated
-
-    def _render_template(self, schema_name: str, is_shared: bool) -> str:
-        self._validate_schema_name(schema_name)
-        parts = []
-        for sql_file in sorted(self._graph_migrations_dir.glob("*.sql")):
-            parts.append(sql_file.read_text(encoding="utf-8"))
-        template = "\n".join(parts)
-        rendered = template.replace("{schema}", schema_name)
-        if is_shared:
-            rendered += "\n" + self._build_shared_provenance_block(schema_name)
-        return rendered
 
     @staticmethod
     def _build_shared_provenance_block(schema_name: str) -> str:
