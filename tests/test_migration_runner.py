@@ -30,20 +30,42 @@ class _FakeConnection:
     """
 
     def __init__(self):
-        self._applied: dict[str, str | None] = {}
+        # Schema-keyed tracking: "public" for public, schema name for per-schema
+        self._applied_by_schema: dict[str, dict[str, str | None]] = {}
         self.executed: list[str] = []
         self.execute = AsyncMock(side_effect=self._handle_execute)
         self.fetch = AsyncMock(side_effect=self._handle_fetch)
 
+    @property
+    def _applied(self) -> dict[str, str | None]:
+        """Shortcut for public-schema tracking (used by most tests)."""
+        return self._applied_by_schema.setdefault("public", {})
+
+    @_applied.setter
+    def _applied(self, value: dict[str, str | None]):
+        self._applied_by_schema["public"] = value
+
+    def _schema_from_sql(self, sql: str) -> str:
+        """Extract schema prefix from SQL like 'INSERT INTO ncx_foo__bar._migration'."""
+        import re
+
+        m = re.search(r"(ncx_[a-z0-9]+__[a-z0-9_]+)\._migration", sql)
+        if m:
+            return m.group(1)
+        return "public"
+
     async def _handle_execute(self, sql: str, *args):
         self.executed.append(sql)
         if "INSERT INTO" in sql and "_migration" in sql:
-            # Track migration: args = (name, checksum)
-            self._applied[args[0]] = args[1] if len(args) > 1 else None
+            schema = self._schema_from_sql(sql)
+            applied = self._applied_by_schema.setdefault(schema, {})
+            applied[args[0]] = args[1] if len(args) > 1 else None
 
     async def _handle_fetch(self, sql: str, *args):
         if "_migration" in sql and "SELECT" in sql:
-            return [{"name": n, "checksum": c} for n, c in self._applied.items()]
+            schema = self._schema_from_sql(sql)
+            applied = self._applied_by_schema.get(schema, {})
+            return [{"name": n, "checksum": c} for n, c in applied.items()]
         if "graph_registry" in sql:
             return []
         return []
@@ -96,8 +118,7 @@ def _make_runner(tmp_path, public_files=None, graph_files=None):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_list_migrations_sorted(tmp_path):
+def test_list_migrations_sorted(tmp_path):
     """_list_migrations returns .sql files sorted by name, skips non-SQL."""
     d = tmp_path / "mig"
     d.mkdir()
@@ -211,14 +232,15 @@ async def test_legacy_name_mapping(tmp_path):
             ("004_node_alias.sql", "CREATE TABLE {schema}.node_alias (id INT);"),
         ],
     )
-    # Simulate legacy tracking entry
-    conn._applied["009_node_alias"] = None
+    # Simulate legacy tracking entry in the target schema
+    schema_applied = conn._applied_by_schema.setdefault("ncx_agent1__personal", {})
+    schema_applied["009_node_alias"] = None
 
     count = await runner.run_for_schema("ncx_agent1__personal")
 
     assert count == 0
     # The legacy mapping should have inserted the new name into tracking
-    assert "004_node_alias.sql" in conn._applied
+    assert "004_node_alias.sql" in conn._applied_by_schema["ncx_agent1__personal"]
 
 
 @pytest.mark.asyncio
@@ -237,11 +259,7 @@ async def test_checksum_mismatch_warning(tmp_path, caplog):
         count = await runner.run_public()
 
     assert count == 0  # should not re-apply
-    assert (
-        any("checksum_mismatch" in str(call) for call in runner._pg.pool.acquire.call_args_list)
-        or any("checksum_mismatch" in str(c) for c in conn.executed)
-        or True
-    )  # loguru doesn't use stdlib logging; verify via logger mock below
+    # Actual warning assertion is in test_checksum_mismatch_warning_logged below
 
 
 @pytest.mark.asyncio
@@ -265,6 +283,38 @@ async def test_checksum_mismatch_warning_logged(tmp_path, monkeypatch):
     assert count == 0
     assert len(warnings) == 1
     assert "checksum_mismatch" in str(warnings[0])
+
+
+@pytest.mark.asyncio
+async def test_run_graph_schemas_iterates_registry(tmp_path):
+    """run_graph_schemas applies graph migrations to every schema in graph_registry."""
+    runner, conn = _make_runner(
+        tmp_path,
+        graph_files=[
+            ("001_base.sql", "CREATE TABLE {schema}.t (id INT);"),
+        ],
+    )
+
+    # Simulate graph_registry returning two schemas
+    original_fetch = conn._handle_fetch
+
+    async def patched_fetch(sql, *args):
+        if "graph_registry" in sql:
+            return [
+                {"schema_name": "ncx_a__personal"},
+                {"schema_name": "ncx_b__personal"},
+            ]
+        return await original_fetch(sql, *args)
+
+    conn.fetch = AsyncMock(side_effect=patched_fetch)
+
+    total = await runner.run_graph_schemas()
+
+    assert total == 2
+    # Both schemas should have had their migration applied
+    schema_creates = [s for s in conn.executed if "CREATE SCHEMA" in s]
+    assert any("ncx_a__personal" in s for s in schema_creates)
+    assert any("ncx_b__personal" in s for s in schema_creates)
 
 
 @pytest.mark.asyncio
