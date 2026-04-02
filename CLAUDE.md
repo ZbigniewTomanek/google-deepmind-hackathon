@@ -50,8 +50,8 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     __main__.py          # CLI entry point (python -m neocortex.tui)
 
 src/pydantic_agents_playground/  # Standalone POC: 3-agent extraction pipeline (SQLite)
-migrations/init/         # Auto-applied on first Docker start (001-008)
-migrations/templates/    # SQL template for dynamic per-graph schema provisioning
+migrations/public/       # Public schema migrations (applied by MigrationRunner)
+migrations/graph/        # Per-graph schema migrations (applied by MigrationRunner with {schema} placeholder)
 ```
 
 For full layout, configuration reference, and how-to guides, see `docs/development.md`.

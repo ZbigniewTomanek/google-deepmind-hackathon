@@ -79,24 +79,9 @@ wait_for_postgres() {
 }
 
 apply_migrations() {
-    log "Applying any missing migrations..."
-    local migration_dir="$PROJECT_DIR/migrations/init"
-    for f in "$migration_dir"/*.sql; do
-        local name
-        name="$(basename "$f")"
-        local already_applied
-        already_applied=$(docker compose exec -T postgres psql -U neocortex -d neocortex -tAc \
-            "SELECT 1 FROM _migration WHERE name = '$name' LIMIT 1;" 2>/dev/null || echo "")
-        if [[ "$already_applied" == "1" ]]; then
-            continue
-        fi
-        log "  Applying $name..."
-        docker compose exec -T postgres psql -U neocortex -d neocortex -f "/docker-entrypoint-initdb.d/$name" >/dev/null 2>&1 \
-            || docker compose exec -T -e PGPASSWORD=neocortex postgres psql -U neocortex -d neocortex < "$f" 2>&1
-        docker compose exec -T postgres psql -U neocortex -d neocortex -c \
-            "INSERT INTO _migration (name) VALUES ('$name') ON CONFLICT DO NOTHING;" >/dev/null 2>&1 || true
-        ok "  Applied $name"
-    done
+    log "Applying migrations..."
+    uv run python -m neocortex.migrations
+    ok "Migrations applied"
 }
 
 # --- main ------------------------------------------------------------------

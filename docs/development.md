@@ -16,7 +16,7 @@
 docker compose up -d postgres
 ```
 
-This starts PostgreSQL 16 with pgvector and applies all migrations from `migrations/init/` automatically on first run.
+This starts PostgreSQL 16 with pgvector. Migrations are applied automatically by the `MigrationRunner` when the application starts (or manually via `uv run python -m neocortex.migrations`).
 
 ### 2. Install Dependencies
 
@@ -330,9 +330,9 @@ uv run black --check src
 
 ## Adding a New Migration
 
-1. Add `migrations/init/NNN_description.sql` for one-time schema changes
-2. If the change affects per-graph schemas, also update `migrations/templates/graph_schema.sql`
-3. Recreate the database: `docker compose down -v && docker compose up -d`
+1. For public schema changes: add `migrations/public/NNN_description.sql`
+2. For per-graph schema changes: add `migrations/graph/NNN_description.sql` (use `{schema}` placeholder for schema name)
+3. The `MigrationRunner` applies migrations automatically at startup, or run manually: `uv run python -m neocortex.migrations`
 
 ## SQL Safety
 
