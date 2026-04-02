@@ -16,9 +16,10 @@
    - File: `src/neocortex/schema_manager.py`
    - Current flow: `_render_template()` renders the monolithic SQL, executes it.
    - New flow:
-     1. `CREATE SCHEMA IF NOT EXISTS {schema_name}` (single execute statement)
-     2. `await self._migration_runner.run_for_schema(schema_name)` — applies all
-        graph migrations in order
+     1. `await self._migration_runner.run_for_schema(schema_name)` — applies all
+        graph migrations in order (note: `001_base_tables.sql` includes
+        `CREATE SCHEMA IF NOT EXISTS {schema}`, so no separate CREATE SCHEMA
+        statement is needed)
      3. If `is_shared`: call `self._apply_shared_provenance(conn, schema_name)` —
         this is the existing `_build_shared_provenance_block()` logic, kept as-is
      4. Insert into `graph_registry` (existing logic, kept as-is)

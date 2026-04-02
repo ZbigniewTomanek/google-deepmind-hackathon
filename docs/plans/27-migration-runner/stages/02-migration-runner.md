@@ -15,6 +15,13 @@
    - File: `src/neocortex/migrations/runner.py`
    - Class: `MigrationRunner`
 
+   **All DB-touching methods are `async`** — the codebase uses asyncpg throughout.
+
+   **Connection pattern**: Acquire connections via `async with self._pg.pool.acquire() as conn:`.
+   Each individual migration file is executed within its own transaction:
+   `async with conn.transaction():`. Advisory locks are acquired on the outer
+   connection, outside the per-migration transaction.
+
    **Constructor** `__init__(self, pg: PostgresService)`:
    - Store reference to `PostgresService`
    - Resolve `migrations/public/` and `migrations/graph/` paths relative to
@@ -28,7 +35,7 @@
      }
      ```
 
-   **`_ensure_tracking_table(conn, schema: str | None = None)`** (private, static):
+   **`async _ensure_tracking_table(conn, schema: str | None = None)`** (private, static):
    - If schema is None, target `public._migration`; else `{schema}._migration`.
    - `CREATE TABLE IF NOT EXISTS` with columns: `id SERIAL PRIMARY KEY`,
      `name TEXT UNIQUE NOT NULL`, `checksum TEXT`,
@@ -39,11 +46,11 @@
    **`_list_migrations(directory: Path) -> list[tuple[str, Path]]`** (private):
    - Glob `*.sql`, sort by filename, return list of `(filename, path)` tuples.
 
-   **`_get_applied(conn, schema: str | None = None) -> dict[str, str | None]`** (private):
+   **`async _get_applied(conn, schema: str | None = None) -> dict[str, str | None]`** (private):
    - Query `SELECT name, checksum FROM {target}._migration`.
    - Return dict of `name -> checksum`.
 
-   **`run_public() -> int`** (public):
+   **`async def run_public(self) -> int`** (public):
    - Acquire advisory lock: `SELECT pg_advisory_lock(hashtext('neocortex_migration_public'))`.
    - Call `_ensure_tracking_table(conn)`.
    - Call `_list_migrations(self._public_dir)`.
@@ -55,14 +62,17 @@
    - Release advisory lock in `finally` block.
    - Return count of applied migrations.
 
-   **`run_graph_schemas() -> int`** (public):
+   **`async def run_graph_schemas(self) -> int`** (public):
    - Acquire advisory lock: `SELECT pg_advisory_lock(hashtext('neocortex_migration_graph'))`.
    - Query `SELECT schema_name FROM graph_registry`.
    - For each schema: call `run_for_schema(schema_name)`.
    - Release advisory lock in `finally` block.
    - Return total count.
 
-   **`run_for_schema(schema_name: str) -> int`** (public):
+   **`async def run_for_schema(self, schema_name: str) -> int`** (public):
+   - No advisory lock here — callers are either within `run_graph_schemas()`'s
+     lock (bulk startup) or protected by CREATE SCHEMA IF NOT EXISTS + registry
+     uniqueness constraint (`create_graph`). Individual schema runs are idempotent.
    - Validate schema name against `^ncx_[a-z0-9]+__[a-z0-9_]+$`.
    - Call `_ensure_tracking_table(conn, schema_name)`.
    - Call `_list_migrations(self._graph_dir)`.

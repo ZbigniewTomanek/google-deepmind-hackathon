@@ -5,6 +5,16 @@
 
 ---
 
+## Important: SQL Source
+
+Use `resources/graph-migration-sql.md` as the source for all SQL file content — it
+contains the exact, ready-to-use SQL for each file. Do **not** copy-paste directly
+from `migrations/templates/graph_schema.sql`, because the placeholder has been renamed
+from `{schema_name}` (old template) to `{schema}` (new files) for brevity and
+consistency with the runner API.
+
+---
+
 ## Steps
 
 1. **Rename `migrations/init/` to `migrations/public/`**

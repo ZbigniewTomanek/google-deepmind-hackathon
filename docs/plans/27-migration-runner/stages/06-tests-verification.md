@@ -37,12 +37,16 @@
    h. `test_checksum_mismatch_warning` — apply a migration, change the file content,
       run again, verify a warning is logged (not re-applied).
 
-2. **Update existing test fixtures if needed**
-   - File: `tests/conftest.py`
-   - If any fixtures reference `migrations/init/` or `migrations/templates/`,
-     update paths to `migrations/public/` and `migrations/graph/`.
-   - If `SchemaManager` is instantiated in tests, update to pass `MigrationRunner`
-     (or a mock runner for unit tests).
+2. **Update existing test files that instantiate SchemaManager**
+   - `tests/conftest.py` has no direct `SchemaManager` instantiation or migration
+     path references — no changes needed there.
+   - File: `tests/test_scoped_connections.py` — instantiates `SchemaManager(pg_service)`
+     at lines 21, 51, 73, 93. Update each to pass a `MigrationRunner` (or mock) as
+     the second argument.
+   - File: `tests/test_server_lifespan.py` — instantiates `SchemaManager(pg_service)`
+     at line 20. Update to pass a `MigrationRunner` (or mock).
+   - Search for any other `SchemaManager(` constructor calls across the test suite
+     to catch any missed instances.
 
 3. **Verify mock DB mode**
    - Run: `NEOCORTEX_MOCK_DB=true uv run python -m neocortex`

@@ -38,9 +38,14 @@
      schema setup via `MigrationRunner` at startup.
    - Keep the `pgdata` volume — this only removes the init script mount.
 
-3. **Update `scripts/run_e2e_auth0.sh` if it has similar migration logic**
-   - Search for `run_e2e` scripts that apply migrations.
-   - Replace any shell-based migration loops with the Python runner invocation.
+3. **Update `scripts/run_e2e_auth0.sh`**
+   - File: `scripts/run_e2e_auth0.sh`
+   - This script has its own `apply_migrations()` function (lines 81-100) with
+     a duplicate shell loop — it does NOT delegate to `manage.sh`.
+   - Replace the entire function body with the same `uv run python -m neocortex.migrations`
+     invocation used in `manage.sh`.
+   - `scripts/run_e2e.sh` delegates to `manage.sh` (line 122: `"$SCRIPT_DIR/manage.sh" start --fresh`)
+     so it needs no changes.
 
 4. **Update any references to `migrations/init/` in scripts or docs**
    - Grep for `migrations/init` across the project.
