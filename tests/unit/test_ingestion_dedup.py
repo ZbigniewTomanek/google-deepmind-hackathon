@@ -164,6 +164,15 @@ async def test_events_mixed_new_and_duplicate(processor: EpisodeProcessor):
 
 
 @pytest.mark.asyncio
+async def test_events_intra_batch_dedup(processor: EpisodeProcessor):
+    """Two identical events in the same batch: only one is stored."""
+    events = [{"type": "click", "id": 1}, {"type": "click", "id": 1}]
+    result = await processor.process_events(AGENT, events, {})
+    assert result.status == "partial"
+    assert result.episodes_created == 1
+
+
+@pytest.mark.asyncio
 async def test_events_all_duplicates_returns_skipped(processor: EpisodeProcessor):
     """All events already ingested returns 'skipped'."""
     events = [{"type": "click"}, {"type": "view"}]
@@ -252,5 +261,3 @@ async def test_check_episode_hashes_target_schema(repo: InMemoryRepository):
     ep_id = await repo.store_episode_to(AGENT, SHARED_SCHEMA, "hello", content_hash="hash1")
     result = await repo.check_episode_hashes(AGENT, ["hash1"], target_schema=SHARED_SCHEMA)
     assert result == {"hash1": ep_id}
-
-    # Verify target_schema scoping works — the important assertion is above.

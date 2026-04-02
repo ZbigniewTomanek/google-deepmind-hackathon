@@ -1,4 +1,6 @@
 import io
+import json
+import tempfile
 from collections.abc import Generator
 
 import pytest
@@ -260,6 +262,33 @@ def test_check_agent_isolation(auth_client):
         headers={"Authorization": "Bearer test-token"},
     )
     assert content_hash in r2.json()["existing"]
+
+
+def test_check_agent_isolation_negative():
+    """Agent B cannot see hashes ingested by agent A."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump({"token-a": "agent-a", "token-b": "agent-b"}, f)
+        tokens_path = f.name
+
+    settings = MCPSettings(auth_mode="dev_token", mock_db=True, dev_tokens_file=tokens_path)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        # Ingest as agent-a
+        r1 = client.post(
+            "/ingest/text",
+            json={"text": "private to agent-a"},
+            headers={"Authorization": "Bearer token-a"},
+        )
+        content_hash = r1.json()["content_hash"]
+
+        # Agent B should NOT see agent A's hash
+        r2 = client.post(
+            "/ingest/check",
+            json={"hashes": [content_hash]},
+            headers={"Authorization": "Bearer token-b"},
+        )
+        assert r2.json()["existing"] == {}
+        assert content_hash in r2.json()["missing"]
 
 
 def test_check_missing_token_returns_401(auth_client):

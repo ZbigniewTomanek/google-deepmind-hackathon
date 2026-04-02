@@ -135,6 +135,9 @@ class EpisodeProcessor:
     ) -> IngestionResult:
         content_hash = self._compute_hash(text)
         if not force:
+            # Note: concurrent requests with identical content may both pass this
+            # check before either stores. This is acceptable for the primary use case
+            # (sequential re-ingestion of daily notes by a single agent).
             existing = await self._repo.check_episode_hashes(agent_id, [content_hash], target_schema=target_schema)
             if existing:
                 return IngestionResult(
@@ -201,7 +204,7 @@ class EpisodeProcessor:
         force: bool = False,
     ) -> IngestionResult:
         # Pre-compute hashes for all events
-        event_texts = [json.dumps(event) for event in events]
+        event_texts = [json.dumps(event, sort_keys=True) for event in events]
         event_hashes = [self._compute_hash(text) for text in event_texts]
 
         # Batch check existing hashes (unless force)
