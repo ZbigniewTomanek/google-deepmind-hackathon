@@ -78,6 +78,12 @@ async def run_extraction(
     # Set to keep fire-and-forget task references alive (prevents GC + satisfies RUF006)
     _bg_tasks: set[asyncio.Task[None]] = set()
 
+    async def _cleanup_bg() -> None:
+        try:
+            await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
+        except Exception:
+            logger.opt(exception=True).warning("cleanup_empty_types_failed")
+
     for episode_id in episode_ids:
         episode = await repo.get_episode(agent_id, episode_id, target_schema=read_schema)
         if not episode:
@@ -92,12 +98,6 @@ async def run_extraction(
             target_schema=target_schema,
             text_len=len(text),
         )
-
-        async def _cleanup_bg() -> None:
-            try:
-                await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
-            except Exception:
-                logger.opt(exception=True).warning("cleanup_empty_types_failed")
 
         # 1. Load current ontology from the target graph (parallel)
         t0 = time.monotonic()
@@ -236,6 +236,7 @@ async def run_extraction(
         else:
             # Fallback: non-tool librarian → _persist_payload
             # Inject bounded name list for dedup context
+            t0 = time.monotonic()
             known_names = await repo.list_all_node_names(
                 agent_id,
                 target_schema=target_schema,
@@ -260,12 +261,14 @@ async def run_extraction(
                 model_settings=lib_cfg.model_settings,
                 usage_limits=UsageLimits(tool_calls_limit=tool_calls_limit),
             )
+            logger.debug("stage_timing", stage="librarian_agent", elapsed_s=round(time.monotonic() - t0, 2))
 
             # Build fallback map from extractor descriptions
             extractor_descriptions: dict[str, str] = {
                 e.name: e.description for e in extraction_result.output.entities if e.description
             }
 
+            t0 = time.monotonic()
             payload = librarian_result.output
             assert isinstance(payload, LibrarianPayload)
             await _persist_payload(
@@ -277,6 +280,7 @@ async def run_extraction(
                 target_schema=target_schema,
                 extractor_descriptions=extractor_descriptions,
             )
+            logger.debug("stage_timing", stage="persist_payload", elapsed_s=round(time.monotonic() - t0, 2))
 
             logger.info(
                 "extraction_complete",
@@ -291,6 +295,10 @@ async def run_extraction(
             task = asyncio.create_task(_cleanup_bg())
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
+
+    # Ensure all background cleanup tasks complete before returning
+    if _bg_tasks:
+        await asyncio.gather(*_bg_tasks, return_exceptions=True)
 
 
 async def _persist_payload(
