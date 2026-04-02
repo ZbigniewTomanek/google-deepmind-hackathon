@@ -16,6 +16,7 @@ from neocortex.embedding_service import EmbeddingService
 from neocortex.graph_router import GraphRouter
 from neocortex.graph_service import GraphService
 from neocortex.mcp_settings import MCPSettings
+from neocortex.migrations import MigrationRunner
 from neocortex.permissions import InMemoryPermissionService, PostgresPermissionService
 from neocortex.permissions.protocol import PermissionChecker
 from neocortex.postgres_service import PostgresService
@@ -87,11 +88,12 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
     pg = PostgresService(pg_config)
     await pg.connect()
 
+    migration_runner = MigrationRunner(pg)
+    await migration_runner.run_public()
+
     graph = GraphService(pg)
     schema_mgr = SchemaManager(pg)
     await schema_mgr.create_graph("shared", "knowledge", is_shared=True)
-    await schema_mgr.ensure_alias_tables()
-    await schema_mgr.ensure_content_hash()
     pg_permissions: PermissionChecker = PostgresPermissionService(pg, settings.bootstrap_admin_id)
     await pg_permissions.ensure_admin(settings.bootstrap_admin_id)
     router = GraphRouter(schema_mgr, pg.pool, permissions=pg_permissions)
@@ -118,6 +120,8 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             model_name=settings.domain_classifier_model,
             thinking_effort=settings.domain_classifier_thinking_effort,
         )
+
+    await migration_runner.run_graph_schemas()
 
     # Procrastinate job queue (only when extraction is enabled with real DB)
     job_app: procrastinate.App | None = None
