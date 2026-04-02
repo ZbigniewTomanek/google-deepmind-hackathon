@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS {schema_name}.episode (
     content         TEXT NOT NULL,
     embedding       vector(768),
     source_type     TEXT,
+    content_hash    TEXT,
     metadata        JSONB DEFAULT '{}',
     access_count    INTEGER DEFAULT 0,
     last_accessed_at TIMESTAMPTZ DEFAULT now(),
@@ -125,6 +126,11 @@ CREATE INDEX IF NOT EXISTS idx_{schema_name}_episode_embedding
     ON {schema_name}.episode
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
+
+-- Content hash for ingestion deduplication
+CREATE INDEX IF NOT EXISTS idx_{schema_name}_episode_content_hash
+    ON {schema_name}.episode (agent_id, content_hash)
+    WHERE content_hash IS NOT NULL;
 
 -- Node filtering by type
 CREATE INDEX IF NOT EXISTS idx_{schema_name}_node_type

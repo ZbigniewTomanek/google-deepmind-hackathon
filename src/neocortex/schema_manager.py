@@ -181,6 +181,40 @@ class SchemaManager:
                 logger.warning("alias_table_migration_failed", schema=schema, exc_info=True)
         return migrated
 
+    async def ensure_content_hash(self) -> int:
+        """Ensure all registered graph schemas have the content_hash column on episode.
+
+        Uses the per-schema _migration tracking table to apply this only once.
+        Returns the number of schemas migrated.
+        """
+        graphs = await self.list_graphs()
+        migrated = 0
+        for graph in graphs:
+            schema = graph.schema_name
+            try:
+                async with self._pg.pool.acquire() as conn:
+                    already = await conn.fetchval(
+                        f"SELECT 1 FROM {schema}._migration WHERE name = $1",
+                        "011_episode_content_hash",
+                    )
+                    if already:
+                        continue
+                    await conn.execute(f"ALTER TABLE {schema}.episode ADD COLUMN IF NOT EXISTS content_hash TEXT")
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{schema}_episode_content_hash
+                            ON {schema}.episode (agent_id, content_hash)
+                            WHERE content_hash IS NOT NULL
+                    """)
+                    await conn.execute(
+                        f"INSERT INTO {schema}._migration (name) VALUES ($1)",
+                        "011_episode_content_hash",
+                    )
+                    migrated += 1
+                    logger.info("content_hash_migrated", schema=schema)
+            except Exception:
+                logger.warning("content_hash_migration_failed", schema=schema, exc_info=True)
+        return migrated
+
     def _render_template(self, schema_name: str, is_shared: bool) -> str:
         self._validate_schema_name(schema_name)
         template = self._template_path.read_text(encoding="utf-8")
