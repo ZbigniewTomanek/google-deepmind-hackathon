@@ -18,7 +18,7 @@ class SchemaManager:
 
     def __init__(self, pg: PostgresService):
         self._pg = pg
-        self._template_path = Path(__file__).resolve().parents[2] / "migrations" / "templates" / "graph_schema.sql"
+        self._graph_migrations_dir = Path(__file__).resolve().parents[2] / "migrations" / "graph"
 
     async def create_graph(self, agent_id: str, purpose: str, is_shared: bool = False) -> str:
         """Create or return a registered graph schema name for the agent/purpose pair."""
@@ -217,9 +217,14 @@ class SchemaManager:
 
     def _render_template(self, schema_name: str, is_shared: bool) -> str:
         self._validate_schema_name(schema_name)
-        template = self._template_path.read_text(encoding="utf-8")
-        rls_block = self._build_shared_provenance_block(schema_name) if is_shared else ""
-        return template.replace("{schema_name}", schema_name).replace("{rls_block}", rls_block)
+        parts = []
+        for sql_file in sorted(self._graph_migrations_dir.glob("*.sql")):
+            parts.append(sql_file.read_text(encoding="utf-8"))
+        template = "\n".join(parts)
+        rendered = template.replace("{schema}", schema_name)
+        if is_shared:
+            rendered += "\n" + self._build_shared_provenance_block(schema_name)
+        return rendered
 
     @staticmethod
     def _build_shared_provenance_block(schema_name: str) -> str:
