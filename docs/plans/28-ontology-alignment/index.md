@@ -86,9 +86,9 @@ implementation simplicity:
 - Stage 1: Harden type name validation to catch garbage (tool artifacts, instance-level names)
 - Stage 2: Replace the 6-type seed with domain-specific ontology templates (25-35 types per domain)
 
-**Phase B (Stages 3-4): Intelligence** -- Make the ontology agent smarter
-- Stage 3: Overhaul ontology agent prompts with domain-specific guidance, negative examples, type budget
-- Stage 4: Use a stronger model for the ontology agent (Sonnet or configurable)
+**Phase B (Stages 3-4): Intelligence** -- Make the ontology agent agentic
+- Stage 3: Redesign ontology agent from 0-shot structured output to tool-using agent (explore → validate → propose)
+- Stage 4: Tune ontology agent settings (thinking effort, tool call limits, observability)
 
 **Phase C (Stages 5-6): Cleanup** -- Consolidate existing damage and prevent recurrence
 - Stage 5: Add a post-extraction type consolidation pass (merge near-duplicates, archive unused)
@@ -100,13 +100,16 @@ implementation simplicity:
 guided creativity, not a straitjacket. The seed ontology + validation layer provides
 enough guardrails while allowing organic growth.
 
-**Why not an agentic reviewer?** Cost/latency. Adding a 4th agent doubles extraction
-time. Instead, we use heuristic validation (cheap, fast) for the common cases and
-improve prompts for the nuanced cases. Can add later if insufficient.
+**Why agentic instead of better prompts?** The ontology agent's problem is structural:
+it sees a flat list of type names and must reason about the entire ontology in one shot.
+No prompt can fix this information deficit. Tools let a weaker model make grounded
+decisions by querying usage counts, searching for similar types, and validating proposals
+inline. See `resources/redesign_handoff.md` for the full analysis.
 
-**Why upgrade the model only for ontology?** Ontology design is the bottleneck --
-it requires semantic judgment that Flash with low thinking handles poorly. Extraction
-and curation work fine with Flash since they operate within the ontology's constraints.
+**Why not upgrade the model instead?** Tools provide the grounding that makes Flash
+sufficient. A stronger model with the old 0-shot architecture still can't search for
+near-duplicates or check usage counts. Model upgrade remains a knob to turn if needed,
+but the agentic design is the primary fix.
 
 ---
 
@@ -134,11 +137,16 @@ and curation work fine with Flash since they operate within the ontology's const
 - `src/neocortex/domains/ontology_seeds.py` -- Per-domain type templates
 - `src/neocortex/extraction/agents.py` -- OntologyAgentDeps extended with recommended_types
 
-### Prompts (Stage 3)
-- `src/neocortex/extraction/agents.py` -- Ontology agent prompt overhaul
+### Agentic Ontology Agent (Stage 3)
+- `src/neocortex/db/protocol.py` -- New: find_similar_types, get_ontology_summary methods
+- `src/neocortex/db/adapter.py` -- Implement new protocol methods (trigram search on types)
+- `src/neocortex/db/mock.py` -- Implement new protocol methods (in-memory)
+- `src/neocortex/extraction/agents.py` -- OntologyAgentDeps extended with repo; tool definitions; revised prompt
+- `src/neocortex/extraction/pipeline.py` -- Pass repo to ontology deps; tool call limit; type budget enforcement
 
-### Model Config (Stage 4)
-- `src/neocortex/mcp_settings.py` -- Upgrade ontology thinking effort default
+### Tuning & Observability (Stage 4)
+- `src/neocortex/mcp_settings.py` -- Upgrade ontology thinking effort; add ontology_tool_calls_limit
+- `src/neocortex/extraction/pipeline.py` -- Ontology agent cost/latency logging
 
 ### Consolidation (Stage 5)
 - `src/neocortex/db/protocol.py` -- New: reassign_node_type, delete_type methods
@@ -158,8 +166,8 @@ and curation work fine with Flash since they operate within the ontology's const
 |---|-------|--------|-------|--------|
 | 1 | [Type Validation Hardening](stages/01-.md) | PENDING | | |
 | 2 | [Domain-Specific Seed Ontologies](stages/02-.md) | PENDING | | |
-| 3 | [Ontology Agent Prompt Overhaul](stages/03-.md) | PENDING | | |
-| 4 | [Model Upgrade for Ontology Agent](stages/04-.md) | PENDING | | |
+| 3 | [Agentic Ontology Agent with Tool Access](stages/03-.md) | PENDING | | |
+| 4 | [Ontology Agent Tuning and Observability](stages/04-.md) | PENDING | | |
 | 5 | [Post-Extraction Type Consolidation](stages/05-.md) | PENDING | | |
 | 6 | [Graph Cleanup Migration](stages/06-.md) | PENDING | | |
 
