@@ -18,7 +18,10 @@ _PASCAL_WORD_BOUNDARY = re.compile(r"[A-Z][a-z]+|[A-Z]+(?=[A-Z]|$)|[0-9]+")
 
 # Gemini Flash artifacts: internal function-call syntax leaking into type names
 _TOOL_CALL_ARTIFACT = re.compile(
-    r"(functiondefault|calldefault|ApicreateOr|UpdateNode|UpdateEdge|" r"createOrUpdate|defaultApi|endcall)",
+    r"(functiondefault|calldefault|ApicreateOr|UpdateNode|UpdateEdge|"
+    r"createOrUpdate|defaultApi|endcall|"
+    r"functionName|"  # JS method name leakage (I5: BrandfunctionNameCreateOrUpdateNode)
+    r"Updating\w*Id\d)",  # DB ID + operation verb leakage (I4: ComponentUpdatingB47EngineId48)
     re.IGNORECASE,
 )
 

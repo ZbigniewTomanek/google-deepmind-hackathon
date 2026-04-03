@@ -251,6 +251,12 @@ def test_normalize_edge_type_rejects_too_long(bad_name: str) -> None:
         "defaultApiCreateNode",
         "TypeUpdateNodeContent",
         "SomethingEndcallResult",
+        # I4: DB ID + operation verb leakage (Plan 29)
+        "ComponentUpdatingB47EngineId48",
+        "ComponentUpdatingId46",
+        "MetricUpdating142000KmId47",
+        # I5: JS method name leakage (Plan 29)
+        "BrandfunctionNameCreateOrUpdateNode",
     ],
 )
 def test_normalize_node_type_rejects_tool_call_artifacts(bad_name: str) -> None:
