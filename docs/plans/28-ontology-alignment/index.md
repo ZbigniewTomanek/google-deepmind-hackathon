@@ -64,14 +64,14 @@ Node types like `Bot` for a supplement, `Account` for a person.
 
 ### Quantitative Baselines
 
-| Metric                        | Current Value | Target |
-|-------------------------------|---------------|--------|
-| Node types per graph (avg)    | ~90           | 25-35  |
-| Edge types per graph (avg)    | ~140          | 30-50  |
-| Edge types with 0 usage (%)   | ~70%          | <15%   |
-| Garbage types (tool artifacts)| ~8 across all | 0      |
-| Instance-level types          | ~30 across all| 0      |
-| Type reuse ratio (nodes/types)| ~7:1          | 20:1+  |
+| Metric                               | Current Value | Target |
+|--------------------------------------|---------------|--------|
+| Node types with usage > 0 (avg)      | ~90           | 25-35  |
+| Edge types with usage > 0 (avg)      | ~140          | 30-50  |
+| Edge types with 0 usage (%)          | ~70%          | <15%   |
+| Garbage types (tool artifacts)       | ~8 across all | 0      |
+| Instance-level types                 | ~30 across all| 0      |
+| Type reuse ratio (nodes/active types)| ~7:1          | 20:1+  |
 
 ---
 
@@ -117,12 +117,12 @@ but the agentic design is the primary fix.
 
 | Metric | Baseline | Target | Rationale |
 |--------|----------|--------|-----------|
-| Node types per graph (avg) | ~90 | 25-35 | A personal knowledge graph should be expressible in <35 types |
-| Edge types per graph (avg) | ~140 | 30-50 | Most relations cluster into 30-40 meaningful patterns |
+| Node types with usage > 0 (avg) | ~90 | 25-35 | A personal knowledge graph should be expressible in <35 active types |
+| Edge types with usage > 0 (avg) | ~140 | 30-50 | Most relations cluster into 30-40 meaningful patterns |
 | Edge types with 0 usage (%) | ~70% | <15% | Proposed-but-unused types indicate hallucination |
 | Garbage types (tool artifacts) | ~8 | 0 | Zero tolerance for leaked function call syntax |
 | Instance-level types | ~30 | 0 | Every type must be reusable across entities |
-| Type reuse ratio (nodes/types) | ~7:1 | 20:1+ | Higher reuse = more consistent ontology |
+| Type reuse ratio (nodes/active types) | ~7:1 | 20:1+ | Higher reuse = more consistent ontology (measured over types with usage > 0) |
 
 ---
 
@@ -136,6 +136,8 @@ but the agentic design is the primary fix.
 - `migrations/graph/006_expanded_seed.sql` -- Expanded base seed (new migration)
 - `src/neocortex/domains/ontology_seeds.py` -- Per-domain type templates
 - `src/neocortex/extraction/agents.py` -- OntologyAgentDeps extended with recommended_types
+- `src/neocortex/extraction/pipeline.py` -- Add `domain_slug` parameter
+- `src/neocortex/jobs/tasks.py` -- Pass `domain_slug` through job payload
 
 ### Agentic Ontology Agent (Stage 3)
 - `src/neocortex/db/protocol.py` -- New: find_similar_types, get_ontology_summary methods
@@ -144,9 +146,12 @@ but the agentic design is the primary fix.
 - `src/neocortex/extraction/agents.py` -- OntologyAgentDeps extended with repo; tool definitions; revised prompt
 - `src/neocortex/extraction/pipeline.py` -- Pass repo to ontology deps; tool call limit; type budget enforcement
 
-### Tuning & Observability (Stage 4)
+### Tuning, Observability & Docs (Stage 4)
 - `src/neocortex/mcp_settings.py` -- Upgrade ontology thinking effort; add ontology_tool_calls_limit
 - `src/neocortex/extraction/pipeline.py` -- Ontology agent cost/latency logging
+- `CLAUDE.md` -- Codebase map + architecture rules update
+- `docs/architecture.md` -- Extraction pipeline section update
+- `docs/development.md` -- New settings + ontology agent tools documentation
 
 ### Consolidation (Stage 5)
 - `src/neocortex/db/protocol.py` -- New: reassign_node_type, delete_type methods
