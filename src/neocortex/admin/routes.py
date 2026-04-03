@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from neocortex.admin.auth import require_admin
 from neocortex.ingestion.auth import get_agent_id
@@ -197,6 +197,14 @@ class JobInfo(BaseModel):
     queue_name: str
     args: dict
     attempts: int
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def _parse_args(cls, v: object) -> object:
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
+
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
     created_at: datetime | None = None
