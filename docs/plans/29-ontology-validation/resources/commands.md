@@ -79,15 +79,15 @@ curl -s -X POST http://localhost:8001/ingest/text \
 
 ```bash
 # Job summary (counts by status)
-curl -s http://localhost:8001/admin/jobs/summary \
+curl -s "http://localhost:8001/admin/jobs/summary?all_agents=true" \
   -H "Authorization: Bearer admin-token" | python3 -m json.tool
 
 # List all jobs
-curl -s http://localhost:8001/admin/jobs \
+curl -s "http://localhost:8001/admin/jobs?all_agents=true" \
   -H "Authorization: Bearer admin-token" | python3 -m json.tool
 
 # List failed jobs only
-curl -s "http://localhost:8001/admin/jobs?status=failed" \
+curl -s "http://localhost:8001/admin/jobs?status=failed&all_agents=true" \
   -H "Authorization: Bearer admin-token" | python3 -m json.tool
 
 # Single job detail
@@ -123,16 +123,12 @@ curl -s http://localhost:8001/admin/agents \
 
 ```bash
 # Preview what consolidation would do (dry run)
-curl -s -X POST http://localhost:8001/admin/consolidate/preview \
-  -H "Authorization: Bearer admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"schema_name": "ncx_shared__user_profile"}' | python3 -m json.tool
+curl -s -X POST "http://localhost:8001/admin/consolidate/preview?schema_name=ncx_shared__user_profile" \
+  -H "Authorization: Bearer admin-token" | python3 -m json.tool
 
 # Apply consolidation
-curl -s -X POST http://localhost:8001/admin/consolidate/apply \
-  -H "Authorization: Bearer admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"schema_name": "ncx_shared__user_profile"}' | python3 -m json.tool
+curl -s -X POST "http://localhost:8001/admin/consolidate/apply?schema_name=ncx_shared__user_profile" \
+  -H "Authorization: Bearer admin-token" | python3 -m json.tool
 ```
 
 ---
@@ -182,7 +178,7 @@ diagnostic queries:
 ```bash
 # Poll until no 'todo' or 'doing' jobs remain
 while true; do
-  summary=$(curl -s http://localhost:8001/admin/jobs/summary \
+  summary=$(curl -s "http://localhost:8001/admin/jobs/summary?all_agents=true" \
     -H "Authorization: Bearer admin-token")
   echo "$summary" | python3 -m json.tool
 
