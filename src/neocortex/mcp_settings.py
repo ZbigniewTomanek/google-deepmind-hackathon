@@ -16,7 +16,7 @@ class MCPSettings(BaseSettings):
 
     # Server
     server_name: str = "NeoCortex"
-    server_host: str = "127.0.0.1"
+    server_host: str = "0.0.0.0"
     server_port: int = 8000
     transport: Literal["stdio", "http", "sse", "streamable-http"] = "http"
 
