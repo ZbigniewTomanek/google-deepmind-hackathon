@@ -1,7 +1,7 @@
 """Post-extraction type consolidation: merge near-duplicates, archive unused types.
 
 Prevents ontology drift over time by:
-1. Merging known-equivalent types (hardcoded map + trigram similarity)
+1. Merging known-equivalent types (hardcoded merge map)
 2. Archiving unused types older than a configurable threshold
 """
 

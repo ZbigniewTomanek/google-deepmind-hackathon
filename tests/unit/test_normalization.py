@@ -324,6 +324,7 @@ def test_normalize_node_type_accepts_legitimate_compounds(good_name: str, expect
         "LocationService",
         "AssetManagement",
         "InsightGeneration",
+        "PreparationTechnique",
     ],
 )
 def test_normalize_node_type_accepts_whitelisted_compounds(good_name: str) -> None:

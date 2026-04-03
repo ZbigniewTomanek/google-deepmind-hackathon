@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import Iterable
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import asyncpg
 from loguru import logger
@@ -1500,7 +1500,7 @@ class GraphServiceAdapter:
         self,
         agent_id: str,
         query: str,
-        kind: str = "node",
+        kind: Literal["node", "edge"] = "node",
         limit: int = 5,
         target_schema: str | None = None,
     ) -> list[tuple[TypeInfo, int, list[str]]]:
@@ -1647,7 +1647,7 @@ class GraphServiceAdapter:
         self,
         agent_id: str,
         type_id: int,
-        kind: str = "node",
+        kind: Literal["node", "edge"] = "node",
         target_schema: str | None = None,
     ) -> None:
         if self._pool is None or self._router is None:
@@ -1668,7 +1668,7 @@ class GraphServiceAdapter:
     async def get_unused_types(
         self,
         agent_id: str,
-        kind: str = "node",
+        kind: Literal["node", "edge"] = "node",
         min_age_hours: float = 24.0,
         target_schema: str | None = None,
     ) -> list[tuple[int, str, datetime]]:

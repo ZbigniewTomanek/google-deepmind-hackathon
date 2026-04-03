@@ -37,6 +37,7 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     agents.py            # PydanticAI agent definitions + deps + tool functions
     pipeline.py          # Pipeline orchestration (run_extraction)
     schemas.py           # Extraction I/O models (OntologyProposal, ExtractionResult, etc.)
+    type_consolidation.py # Post-extraction type merge/archive (hardcoded merge map + unused cleanup)
   ingestion/             # FastAPI bulk-ingestion REST API (:8001)
     app.py               # App factory with lifespan (reuses create_services)
     routes.py            # POST /ingest/text, /ingest/document, /ingest/events, /ingest/audio, /ingest/video

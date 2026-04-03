@@ -22,7 +22,7 @@ _TOOL_CALL_ARTIFACT = re.compile(
     re.IGNORECASE,
 )
 
-# Common base types that, when followed by 2+ PascalCase segments, indicate
+# Common base types that, when followed by 1+ PascalCase segments, indicate
 # instance-level type names (e.g., DishGreg, LocationSalCapeVerde)
 _COMMON_BASE_TYPES = {
     "Asset",
@@ -48,6 +48,7 @@ _COMPOUND_TYPE_WHITELIST = {
     "LocationService",
     "AssetManagement",
     "InsightGeneration",
+    "PreparationTechnique",
 }
 
 _KNOWN_ACRONYMS: list[str] = [
