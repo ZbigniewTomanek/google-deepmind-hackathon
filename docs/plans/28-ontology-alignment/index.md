@@ -127,20 +127,23 @@ and curation work fine with Flash since they operate within the ontology's const
 
 ### Validation (Stage 1)
 - `src/neocortex/normalization.py` -- Enhanced type name validation heuristics
-- `tests/test_normalization.py` -- New test cases for garbage detection
+- `tests/unit/test_normalization.py` -- New test cases for garbage detection
 
 ### Seed Ontology (Stage 2)
-- `migrations/graph/003_seed_ontology.sql` -- Expanded base seed
-- `src/neocortex/domains/models.py` -- Per-domain type templates (added to SEED_DOMAINS)
+- `migrations/graph/006_expanded_seed.sql` -- Expanded base seed (new migration)
+- `src/neocortex/domains/ontology_seeds.py` -- Per-domain type templates
+- `src/neocortex/extraction/agents.py` -- OntologyAgentDeps extended with recommended_types
 
 ### Prompts (Stage 3)
 - `src/neocortex/extraction/agents.py` -- Ontology agent prompt overhaul
 
 ### Model Config (Stage 4)
-- `src/neocortex/mcp_settings.py` -- Separate ontology model setting
-- `src/neocortex/extraction/pipeline.py` -- Model routing for ontology agent
+- `src/neocortex/mcp_settings.py` -- Upgrade ontology thinking effort default
 
 ### Consolidation (Stage 5)
+- `src/neocortex/db/protocol.py` -- New: reassign_node_type, delete_type methods
+- `src/neocortex/db/adapter.py` -- Implement consolidation protocol methods
+- `src/neocortex/db/mock.py` -- Implement consolidation protocol methods
 - `src/neocortex/extraction/type_consolidation.py` -- New: type merge/archive logic
 - `src/neocortex/extraction/pipeline.py` -- Hook consolidation after extraction
 
