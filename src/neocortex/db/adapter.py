@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Iterable
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import asyncpg
@@ -1621,6 +1622,81 @@ class GraphServiceAdapter:
             "total_nodes": int(total_nodes or 0),
             "total_edges": int(total_edges or 0),
         }
+
+    # ── Type Consolidation ──
+
+    async def reassign_node_type(
+        self,
+        agent_id: str,
+        source_type_id: int,
+        target_type_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        if self._pool is None or self._router is None:
+            return 0
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            result = await conn.execute(
+                "UPDATE node SET type_id = $2 WHERE type_id = $1",
+                source_type_id,
+                target_type_id,
+            )
+            return int(result.split()[-1]) if result else 0
+
+    async def delete_type(
+        self,
+        agent_id: str,
+        type_id: int,
+        kind: str = "node",
+        target_schema: str | None = None,
+    ) -> None:
+        if self._pool is None or self._router is None:
+            return
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            if kind == "edge":
+                count = await conn.fetchval("SELECT COUNT(*) FROM edge WHERE type_id = $1", type_id)
+                if count and count > 0:
+                    raise ValueError(f"Cannot delete edge type {type_id}: still has {count} edges")
+                await conn.execute("DELETE FROM edge_type WHERE id = $1", type_id)
+            else:
+                count = await conn.fetchval("SELECT COUNT(*) FROM node WHERE type_id = $1", type_id)
+                if count and count > 0:
+                    raise ValueError(f"Cannot delete node type {type_id}: still has {count} nodes")
+                await conn.execute("DELETE FROM node_type WHERE id = $1", type_id)
+
+    async def get_unused_types(
+        self,
+        agent_id: str,
+        kind: str = "node",
+        min_age_hours: float = 24.0,
+        target_schema: str | None = None,
+    ) -> list[tuple[int, str, datetime]]:
+        if self._pool is None or self._router is None:
+            return []
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            if kind == "edge":
+                rows = await conn.fetch(
+                    "SELECT t.id, t.name, t.created_at "
+                    "FROM edge_type t "
+                    "LEFT JOIN edge e ON e.type_id = t.id "
+                    "WHERE e.id IS NULL "
+                    "AND t.created_at < now() - make_interval(hours => $1) "
+                    "ORDER BY t.created_at",
+                    min_age_hours,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT t.id, t.name, t.created_at "
+                    "FROM node_type t "
+                    "LEFT JOIN node n ON n.type_id = t.id "
+                    "WHERE n.id IS NULL "
+                    "AND t.created_at < now() - make_interval(hours => $1) "
+                    "ORDER BY t.created_at",
+                    min_age_hours,
+                )
+            return [(r["id"], r["name"], r["created_at"]) for r in rows]
 
     # ── Partial Curation Cleanup ──
 

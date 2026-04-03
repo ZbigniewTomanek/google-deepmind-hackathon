@@ -173,7 +173,7 @@ but the agentic design is the primary fix.
 | 2 | [Domain-Specific Seed Ontologies](stages/02-.md) | DONE | 006_expanded_seed.sql (14 node + 11 edge types), ontology_seeds.py (4 domains), domain_slug wired through router→tasks→pipeline→OntologyAgentDeps | |
 | 3 | [Agentic Ontology Agent with Tool Access](stages/03-.md) | DONE | Agentic ontology agent with 3 tools (find_similar_types, get_ontology_overview, propose_type). Protocol + adapter + mock implementations. Type budget enforcement (default 3). Pipeline wired with repo/agent_id/target_schema. | |
 | 4 | [Ontology Agent Tuning and Observability](stages/04-.md) | DONE | Medium thinking default, ontology_agent_complete action log with tool call counts + usage, extraction pipeline config docs in development.md, architecture.md updated with agentic design + 3-layer defense, CLAUDE.md codebase map updated with extraction/ and ontology_seeds.py | |
-| 5 | [Post-Extraction Type Consolidation](stages/05-.md) | PENDING | | |
+| 5 | [Post-Extraction Type Consolidation](stages/05-.md) | DONE | Protocol methods (reassign_node_type, delete_type, get_unused_types) + adapter/mock impls. type_consolidation.py with merge_similar_types (hardcoded merge map) and archive_unused_types (seed-protected). Pipeline archives every 10 episodes. Admin endpoints /consolidate/preview and /consolidate/apply. 18 tests. | |
 | 6 | [Graph Cleanup Migration](stages/06-.md) | PENDING | | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`

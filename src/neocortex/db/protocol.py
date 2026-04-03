@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from datetime import datetime
 from typing import Literal, Protocol
 
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
@@ -368,5 +371,40 @@ class MemoryRepository(Protocol):
                 "total_edges": int,
             }
         Sorted by usage_count descending within each list.
+        """
+        ...
+
+    # ── Type Consolidation ──
+
+    async def reassign_node_type(
+        self,
+        agent_id: str,
+        source_type_id: int,
+        target_type_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        """Reassign all nodes from source type to target type. Returns count of nodes moved."""
+        ...
+
+    async def delete_type(
+        self,
+        agent_id: str,
+        type_id: int,
+        kind: Literal["node", "edge"],
+        target_schema: str | None = None,
+    ) -> None:
+        """Delete a node or edge type by ID. Fails if type still has nodes/edges."""
+        ...
+
+    async def get_unused_types(
+        self,
+        agent_id: str,
+        kind: Literal["node", "edge"],
+        min_age_hours: float = 24.0,
+        target_schema: str | None = None,
+    ) -> list[tuple[int, str, datetime]]:
+        """Return types with 0 usage that were created more than min_age_hours ago.
+
+        Returns list of (type_id, type_name, created_at) tuples.
         """
         ...

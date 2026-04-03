@@ -25,6 +25,7 @@ from neocortex.extraction.agents import (
     build_ontology_agent,
 )
 from neocortex.extraction.schemas import CurationSummary, LibrarianPayload
+from neocortex.extraction.type_consolidation import archive_unused_types
 from neocortex.schemas.memory import TypeInfo
 
 if TYPE_CHECKING:
@@ -50,6 +51,7 @@ async def run_extraction(
     tool_calls_limit: int = 150,
     ontology_tool_calls_limit: int = 30,
     ontology_max_new_types: int = 3,
+    archive_interval: int = 10,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -71,6 +73,8 @@ async def run_extraction(
                      domain-specific seed ontology recommendations for the ontology agent.
         librarian_use_tools: When True (default), the librarian curates the graph
                              via tools. When False, falls back to _persist_payload.
+        archive_interval: Run archive_unused_types every N episodes (default 10).
+                          Set to 0 to disable.
     """
     ont_cfg = ontology_config or AgentInferenceConfig()
     ext_cfg = extractor_config or AgentInferenceConfig()
@@ -90,6 +94,18 @@ async def run_extraction(
             await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
         except Exception:
             logger.opt(exception=True).warning("cleanup_empty_types_failed")
+
+    async def _archive_bg() -> None:
+        try:
+            archived = await archive_unused_types(
+                repo, agent_id, schema=target_schema, min_age_hours=24.0, dry_run=False
+            )
+            if archived:
+                logger.info("archive_unused_types_complete", count=len(archived))
+        except Exception:
+            logger.opt(exception=True).warning("archive_unused_types_failed")
+
+    episode_counter = 0
 
     for episode_id in episode_ids:
         episode = await repo.get_episode(agent_id, episode_id, target_schema=read_schema)
@@ -285,6 +301,13 @@ async def run_extraction(
             task = asyncio.create_task(_cleanup_bg())
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
+
+            # Periodic archive of unused types
+            episode_counter += 1
+            if archive_interval > 0 and episode_counter % archive_interval == 0:
+                task = asyncio.create_task(_archive_bg())
+                _bg_tasks.add(task)
+                task.add_done_callback(_bg_tasks.discard)
         else:
             # Fallback: non-tool librarian → _persist_payload
             # Inject bounded name list for dedup context
@@ -347,6 +370,13 @@ async def run_extraction(
             task = asyncio.create_task(_cleanup_bg())
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
+
+            # Periodic archive of unused types
+            episode_counter += 1
+            if archive_interval > 0 and episode_counter % archive_interval == 0:
+                task = asyncio.create_task(_archive_bg())
+                _bg_tasks.add(task)
+                task.add_done_callback(_bg_tasks.discard)
 
     # Ensure all background cleanup tasks complete before returning
     if _bg_tasks:

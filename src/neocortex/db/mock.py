@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from loguru import logger
 
@@ -1058,3 +1058,80 @@ class InMemoryRepository:
             if src and tgt and et:
                 sigs.append(f"{src.name}→{et.name}→{tgt.name}")
         return sorted(sigs)
+
+    # ── Type Consolidation ──
+
+    async def reassign_node_type(
+        self,
+        agent_id: str,
+        source_type_id: int,
+        target_type_id: int,
+        target_schema: str | None = None,
+    ) -> int:
+        del agent_id, target_schema
+        count = 0
+        for node in self._nodes.values():
+            if node.type_id == source_type_id:
+                # Create a new node with the updated type_id
+                self._nodes[node.id] = Node(
+                    id=node.id,
+                    name=node.name,
+                    type_id=target_type_id,
+                    content=node.content,
+                    properties=node.properties,
+                    embedding=node.embedding,
+                    importance=node.importance,
+                    forgotten=node.forgotten,
+                    created_at=node.created_at,
+                    updated_at=node.updated_at,
+                    access_count=node.access_count,
+                    last_accessed_at=node.last_accessed_at,
+                )
+                count += 1
+        return count
+
+    async def delete_type(
+        self,
+        agent_id: str,
+        type_id: int,
+        kind: Literal["node", "edge"] = "node",
+        target_schema: str | None = None,
+    ) -> None:
+        del agent_id, target_schema
+        if kind == "edge":
+            has_edges = any(e.type_id == type_id for e in self._edges.values())
+            if has_edges:
+                raise ValueError(f"Cannot delete edge type {type_id}: still has edges")
+            to_del = [name for name, et in self._edge_types.items() if et.id == type_id]
+            for name in to_del:
+                del self._edge_types[name]
+        else:
+            has_nodes = any(n.type_id == type_id for n in self._nodes.values())
+            if has_nodes:
+                raise ValueError(f"Cannot delete node type {type_id}: still has nodes")
+            to_del = [name for name, nt in self._node_types.items() if nt.id == type_id]
+            for name in to_del:
+                del self._node_types[name]
+
+    async def get_unused_types(
+        self,
+        agent_id: str,
+        kind: Literal["node", "edge"] = "node",
+        min_age_hours: float = 24.0,
+        target_schema: str | None = None,
+    ) -> list[tuple[int, str, datetime]]:
+        del agent_id, target_schema
+        cutoff = datetime.now(UTC) - timedelta(hours=min_age_hours)
+        results: list[tuple[int, str, datetime]] = []
+        if kind == "edge":
+            for et in self._edge_types.values():
+                has_edges = any(e.type_id == et.id for e in self._edges.values())
+                if not has_edges and et.created_at < cutoff:
+                    results.append((et.id, et.name, et.created_at))
+        else:
+            for nt in self._node_types.values():
+                has_nodes = any(n.type_id == nt.id for n in self._nodes.values())
+                if not has_nodes and nt.created_at < cutoff:
+                    results.append((nt.id, nt.name, nt.created_at))
+        results.sort(key=lambda x: x[2])
+        return results
