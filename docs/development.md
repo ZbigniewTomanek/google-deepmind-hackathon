@@ -213,6 +213,27 @@ All configuration via environment variables (Pydantic BaseSettings):
 | `NEOCORTEX_MEDIA_DESCRIPTION_MAX_TOKENS` | `8192` | Max output tokens for media descriptions |
 | `GOOGLE_API_KEY` | _(unset)_ | Required for Gemini media descriptions in production mode |
 
+### Extraction Pipeline (`mcp_settings.py`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEOCORTEX_EXTRACTION_ENABLED` | `true` | Enable the extraction pipeline (ontology → extractor → librarian) |
+| `NEOCORTEX_ONTOLOGY_MODEL` | `google-gla:gemini-3-flash-preview` | Model for the ontology agent |
+| `NEOCORTEX_ONTOLOGY_THINKING_EFFORT` | `medium` | Thinking effort for ontology agent (medium helps tool-use sequencing) |
+| `NEOCORTEX_ONTOLOGY_TOOL_CALLS_LIMIT` | `30` | Max tool calls per ontology agent run (typical: 3-8) |
+| `NEOCORTEX_ONTOLOGY_MAX_NEW_TYPES` | `3` | Max new types (node or edge) the ontology agent may propose per episode |
+| `NEOCORTEX_EXTRACTOR_MODEL` | `google-gla:gemini-3-flash-preview` | Model for the extraction agent |
+| `NEOCORTEX_EXTRACTOR_THINKING_EFFORT` | `low` | Thinking effort for extraction agent |
+| `NEOCORTEX_LIBRARIAN_MODEL` | `google-gla:gemini-3-flash-preview` | Model for the librarian agent |
+| `NEOCORTEX_LIBRARIAN_THINKING_EFFORT` | `low` | Thinking effort for librarian agent |
+| `NEOCORTEX_EXTRACTION_TOOL_CALLS_LIMIT` | `150` | Max tool calls per librarian agent run |
+| `NEOCORTEX_LIBRARIAN_USE_TOOLS` | `true` | When true, librarian persists via tools; when false, falls back to batch persist |
+
+The ontology agent is an agentic tool-using agent with three tools:
+- `get_ontology_overview` — returns usage counts and top types for the target graph
+- `find_similar_types` — trigram similarity search for near-duplicate type names
+- `propose_type` — validates and registers a new node or edge type (inline format/duplicate checks)
+
 ### Domain Routing (`mcp_settings.py`)
 
 | Variable | Default | Description |

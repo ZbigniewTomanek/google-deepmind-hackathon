@@ -109,7 +109,7 @@ class MCPSettings(BaseSettings):
     # Per-agent inference config (env: NEOCORTEX_<AGENT>_MODEL / _THINKING_EFFORT)
     # Thinking effort: minimal|low|medium|high|xhigh (maps to token budgets)
     ontology_model: str = "google-gla:gemini-3-flash-preview"
-    ontology_thinking_effort: ThinkingLevel = "low"
+    ontology_thinking_effort: ThinkingLevel = "medium"
     extractor_model: str = "google-gla:gemini-3-flash-preview"
     extractor_thinking_effort: ThinkingLevel = "low"
     librarian_model: str = "google-gla:gemini-3-flash-preview"

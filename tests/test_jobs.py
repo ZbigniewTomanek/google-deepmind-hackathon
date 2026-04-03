@@ -238,7 +238,10 @@ def test_extraction_settings_defaults():
     assert s.extraction_enabled is True
     for prefix in ("ontology", "extractor", "librarian"):
         assert getattr(s, f"{prefix}_model") == "google-gla:gemini-3-flash-preview"
-        assert getattr(s, f"{prefix}_thinking_effort") == "low"
+    # Ontology agent uses medium thinking for better tool-use sequencing
+    assert s.ontology_thinking_effort == "medium"
+    assert s.extractor_thinking_effort == "low"
+    assert s.librarian_thinking_effort == "low"
     assert s.domain_classifier_model == "google-gla:gemini-3-flash-preview"
 
 

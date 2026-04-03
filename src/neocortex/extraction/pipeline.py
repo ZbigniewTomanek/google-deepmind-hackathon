@@ -11,6 +11,7 @@ import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.usage import UsageLimits
 
 from neocortex.domains.ontology_seeds import DOMAIN_SEEDS
@@ -140,7 +141,27 @@ async def run_extraction(
             model_settings=ont_cfg.model_settings,
             usage_limits=UsageLimits(tool_calls_limit=ontology_tool_calls_limit),
         )
-        logger.debug("stage_timing", stage="ontology_agent", elapsed_s=round(time.monotonic() - t0, 2))
+        ontology_elapsed = round(time.monotonic() - t0, 2)
+        logger.debug("stage_timing", stage="ontology_agent", elapsed_s=ontology_elapsed)
+
+        # Ontology agent observability: log model info, token usage, tool call count
+        ontology_tool_calls = sum(
+            len([p for p in msg.parts if isinstance(p, ToolCallPart)])
+            for msg in ontology_result.all_messages()
+            if hasattr(msg, "parts")
+        )
+        logger.bind(action_log=True).info(
+            "ontology_agent_complete",
+            episode_id=episode_id,
+            agent_id=agent_id,
+            model=ont_cfg.model_name,
+            thinking=ont_cfg.thinking_effort,
+            proposed_node_types=len(ontology_result.output.new_node_types),
+            proposed_edge_types=len(ontology_result.output.new_edge_types),
+            tool_calls=ontology_tool_calls,
+            elapsed_s=ontology_elapsed,
+            usage=str(ontology_result.usage()),
+        )
 
         # 2.5. Type budget enforcement (defense-in-depth safety valve)
         if len(ontology_result.output.new_node_types) > ontology_max_new_types:

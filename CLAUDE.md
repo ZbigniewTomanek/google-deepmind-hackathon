@@ -32,6 +32,11 @@ src/neocortex/           # MCP server (FastMCP + asyncpg + Pydantic Settings)
     memory_service.py    # In-memory implementation (tests/mock)
     classifier.py        # PydanticAI classification agent + mock
     router.py            # DomainRouter — classify → route → extract
+    ontology_seeds.py    # Per-domain seed ontology templates (node/edge type recommendations)
+  extraction/            # 3-agent extraction pipeline (ontology → extractor → librarian)
+    agents.py            # PydanticAI agent definitions + deps + tool functions
+    pipeline.py          # Pipeline orchestration (run_extraction)
+    schemas.py           # Extraction I/O models (OntologyProposal, ExtractionResult, etc.)
   ingestion/             # FastAPI bulk-ingestion REST API (:8001)
     app.py               # App factory with lifespan (reuses create_services)
     routes.py            # POST /ingest/text, /ingest/document, /ingest/events, /ingest/audio, /ingest/video
@@ -75,7 +80,7 @@ uv run python -m neocortex                         # Run MCP server with real DB
 These are non-obvious patterns. Violating them breaks the system.
 
 **1. Tools use `MemoryRepository` protocol, never `GraphService` directly.**
-Tools get their repo from `ctx.lifespan_context["repo"]`. The protocol (`db/protocol.py`) has two implementations: `InMemoryRepository` (tests) and `GraphServiceAdapter` (production). Read `tools/remember.py` for the canonical pattern.
+Tools get their repo from `ctx.lifespan_context["repo"]`. The protocol (`db/protocol.py`) has two implementations: `InMemoryRepository` (tests) and `GraphServiceAdapter` (production). Read `tools/remember.py` for the canonical pattern. The extraction pipeline's ontology agent and librarian agent also receive `repo` via their deps (same protocol, same pattern).
 
 **2. Dependencies come from lifespan context, not globals.**
 ```python
