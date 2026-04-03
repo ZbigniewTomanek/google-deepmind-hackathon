@@ -132,6 +132,8 @@ async def test_extract_episode_calls_run_extraction():
     mock_settings.librarian_thinking_effort = "low"
     mock_settings.librarian_use_tools = True
     mock_settings.extraction_tool_calls_limit = 150
+    mock_settings.ontology_tool_calls_limit = 30
+    mock_settings.ontology_max_new_types = 3
 
     fake_ctx = {
         "repo": mock_repo,
@@ -185,6 +187,8 @@ async def test_extract_episode_calls_run_extraction():
             ),
             librarian_use_tools=True,
             tool_calls_limit=150,
+            ontology_tool_calls_limit=30,
+            ontology_max_new_types=3,
             domain_hint=None,
             domain_slug=None,
         )

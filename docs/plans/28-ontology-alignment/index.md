@@ -171,7 +171,7 @@ but the agentic design is the primary fix.
 |---|-------|--------|-------|--------|
 | 1 | [Type Validation Hardening](stages/01-.md) | DONE | Tool-call artifact regex, instance-level detection (≥2 segments + base type), min length 2. Adjusted segment threshold from 3→2 to catch DishGreg/AssetSnowboardguards. | |
 | 2 | [Domain-Specific Seed Ontologies](stages/02-.md) | DONE | 006_expanded_seed.sql (14 node + 11 edge types), ontology_seeds.py (4 domains), domain_slug wired through router→tasks→pipeline→OntologyAgentDeps | |
-| 3 | [Agentic Ontology Agent with Tool Access](stages/03-.md) | PENDING | | |
+| 3 | [Agentic Ontology Agent with Tool Access](stages/03-.md) | DONE | Agentic ontology agent with 3 tools (find_similar_types, get_ontology_overview, propose_type). Protocol + adapter + mock implementations. Type budget enforcement (default 3). Pipeline wired with repo/agent_id/target_schema. | |
 | 4 | [Ontology Agent Tuning and Observability](stages/04-.md) | PENDING | | |
 | 5 | [Post-Extraction Type Consolidation](stages/05-.md) | PENDING | | |
 | 6 | [Graph Cleanup Migration](stages/06-.md) | PENDING | | |

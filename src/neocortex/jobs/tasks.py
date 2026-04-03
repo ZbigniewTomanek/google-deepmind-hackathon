@@ -87,6 +87,8 @@ async def extract_episode(
         ),
         librarian_use_tools=settings.librarian_use_tools,
         tool_calls_limit=settings.extraction_tool_calls_limit,
+        ontology_tool_calls_limit=settings.ontology_tool_calls_limit,
+        ontology_max_new_types=settings.ontology_max_new_types,
         domain_hint=domain_hint,
         domain_slug=domain_slug,
     )

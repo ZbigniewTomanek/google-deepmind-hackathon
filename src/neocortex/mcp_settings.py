@@ -115,6 +115,8 @@ class MCPSettings(BaseSettings):
     librarian_model: str = "google-gla:gemini-3-flash-preview"
     librarian_thinking_effort: ThinkingLevel = "low"
     extraction_tool_calls_limit: int = 150
+    ontology_tool_calls_limit: int = 30
+    ontology_max_new_types: int = 3
 
     # Worker concurrency & polling
     worker_concurrency: int = 4  # Max parallel extraction jobs

@@ -9,12 +9,13 @@ from __future__ import annotations
 import pytest
 
 from neocortex.db.mock import InMemoryRepository
-from neocortex.extraction.agents import AgentInferenceConfig
+from neocortex.extraction.agents import AgentInferenceConfig, OntologyAgentDeps, build_ontology_agent
 from neocortex.extraction.pipeline import _persist_payload, run_extraction
 from neocortex.extraction.schemas import (
     LibrarianPayload,
     NormalizedEntity,
     NormalizedRelation,
+    OntologyProposal,
     ProposedEdgeType,
     ProposedNodeType,
 )
@@ -280,3 +281,175 @@ async def test_run_extraction_multiple_episodes(repo: InMemoryRepository) -> Non
 
     stats = await repo.get_stats(AGENT)
     assert stats.total_episodes == 2
+
+
+# ── Ontology agent tool tests ──
+
+
+@pytest.mark.asyncio
+async def test_ontology_agent_runs_with_test_model_and_repo(repo: InMemoryRepository) -> None:
+    """Ontology agent with tools works under TestModel with InMemoryRepository."""
+    # Pre-populate some types
+    await repo.get_or_create_node_type(AGENT, "Person", "A human being")
+    await repo.get_or_create_node_type(AGENT, "Drug", "A pharmaceutical substance")
+    await repo.get_or_create_edge_type(AGENT, "TREATS", "Therapeutic relationship")
+
+    agent = build_ontology_agent(AgentInferenceConfig(use_test_model=True))
+    result = await agent.run(
+        "Analyze this text and propose ontology extensions:\n\nAspirin treats headaches.",
+        deps=OntologyAgentDeps(
+            episode_text="Aspirin treats headaches.",
+            existing_node_types=["Person", "Drug"],
+            existing_edge_types=["TREATS"],
+            repo=repo,
+            agent_id=AGENT,
+        ),
+    )
+    # TestModel produces structurally valid output
+    assert isinstance(result.output, OntologyProposal)
+
+
+@pytest.mark.asyncio
+async def test_ontology_agent_backward_compat_without_repo() -> None:
+    """Ontology agent works without repo (tools return empty results gracefully)."""
+    agent = build_ontology_agent(AgentInferenceConfig(use_test_model=True))
+    result = await agent.run(
+        "Analyze this text and propose ontology extensions:\n\nAspirin treats headaches.",
+        deps=OntologyAgentDeps(
+            episode_text="Aspirin treats headaches.",
+            existing_node_types=["Person"],
+            existing_edge_types=["TREATS"],
+            # repo=None (default) — tools return empty results
+        ),
+    )
+    assert isinstance(result.output, OntologyProposal)
+
+
+def _get_tool_fn(agent, tool_name: str):
+    """Extract a tool's underlying function from a pydantic-ai agent."""
+    tool = agent._function_toolset.tools.get(tool_name)
+    assert tool is not None, f"Tool {tool_name} not found"
+    return tool.function
+
+
+@pytest.mark.asyncio
+async def test_propose_type_rejects_tool_call_artifact(repo: InMemoryRepository) -> None:
+    """propose_type tool rejects names with tool-call artifacts via Stage 1 validation."""
+    from types import SimpleNamespace
+
+    agent = build_ontology_agent(AgentInferenceConfig(use_test_model=True))
+    deps = OntologyAgentDeps(
+        episode_text="test",
+        existing_node_types=[],
+        existing_edge_types=[],
+        repo=repo,
+        agent_id=AGENT,
+    )
+    ctx = SimpleNamespace(deps=deps)
+    propose_fn = _get_tool_fn(agent, "propose_type")
+    result = await propose_fn(
+        ctx, name="ActivityfunctiondefaultApicreateOrUpdateNodecontent", description="test", kind="node"
+    )
+    assert result["accepted"] is False
+
+
+@pytest.mark.asyncio
+async def test_propose_type_rejects_duplicate(repo: InMemoryRepository) -> None:
+    """propose_type rejects types that already exist in the ontology."""
+    from types import SimpleNamespace
+
+    agent = build_ontology_agent(AgentInferenceConfig(use_test_model=True))
+    deps = OntologyAgentDeps(
+        episode_text="test",
+        existing_node_types=["Person", "Drug"],
+        existing_edge_types=[],
+        repo=repo,
+        agent_id=AGENT,
+    )
+    ctx = SimpleNamespace(deps=deps)
+    propose_fn = _get_tool_fn(agent, "propose_type")
+    result = await propose_fn(ctx, name="Person", description="A human being", kind="node")
+    assert result["accepted"] is False
+    assert "already exists" in result["reason"]
+
+
+@pytest.mark.asyncio
+async def test_propose_type_accepts_valid_new_type(repo: InMemoryRepository) -> None:
+    """propose_type accepts valid new types."""
+    from types import SimpleNamespace
+
+    agent = build_ontology_agent(AgentInferenceConfig(use_test_model=True))
+    deps = OntologyAgentDeps(
+        episode_text="test",
+        existing_node_types=["Person"],
+        existing_edge_types=[],
+        repo=repo,
+        agent_id=AGENT,
+    )
+    ctx = SimpleNamespace(deps=deps)
+    propose_fn = _get_tool_fn(agent, "propose_type")
+    result = await propose_fn(ctx, name="Neurotransmitter", description="A chemical messenger", kind="node")
+    assert result["accepted"] is True
+    assert result["normalized_name"] == "Neurotransmitter"
+
+
+@pytest.mark.asyncio
+async def test_type_budget_enforcement(repo: InMemoryRepository) -> None:
+    """Pipeline enforces type budget by truncating excess proposed types."""
+    eid = await repo.store_episode(AGENT, "Some text about many topics.")
+
+    await run_extraction(
+        repo=repo,
+        embeddings=None,
+        agent_id=AGENT,
+        episode_ids=[eid],
+        ontology_config=_TEST_CONFIG,
+        extractor_config=_TEST_CONFIG,
+        librarian_config=_TEST_CONFIG,
+        ontology_max_new_types=2,
+    )
+    # TestModel may produce any number of types, but the pipeline
+    # should have enforced the budget. This test verifies the flow
+    # completes without error when budget enforcement is active.
+    stats = await repo.get_stats(AGENT)
+    assert stats.total_episodes == 1
+
+
+@pytest.mark.asyncio
+async def test_find_similar_types_mock(repo: InMemoryRepository) -> None:
+    """InMemoryRepository.find_similar_types returns matching types."""
+    await repo.get_or_create_node_type(AGENT, "Person", "A human being")
+    await repo.get_or_create_node_type(AGENT, "PersonRole", "A role held by a person")
+    # Create a node so we can test usage counts
+    nt = await repo.get_or_create_node_type(AGENT, "Drug", "A pharmaceutical")
+    await repo.upsert_node(AGENT, "Aspirin", nt.id, content="Pain reliever")
+
+    results = await repo.find_similar_types(AGENT, "Person", kind="node")
+    names = [t.name for t, _count, _examples in results]
+    assert "Person" in names
+
+    results = await repo.find_similar_types(AGENT, "Drug", kind="node")
+    assert len(results) >= 1
+    # Drug should have usage_count=1 (the Aspirin node)
+    drug_result = [(t, count, ex) for t, count, ex in results if t.name == "Drug"]
+    assert len(drug_result) == 1
+    assert drug_result[0][1] == 1
+    assert "Aspirin" in drug_result[0][2]
+
+
+@pytest.mark.asyncio
+async def test_get_ontology_summary_mock(repo: InMemoryRepository) -> None:
+    """InMemoryRepository.get_ontology_summary returns usage statistics."""
+    nt = await repo.get_or_create_node_type(AGENT, "Person", "A human being")
+    await repo.upsert_node(AGENT, "Alice", nt.id, content="A person named Alice")
+    await repo.upsert_node(AGENT, "Bob", nt.id, content="A person named Bob")
+    await repo.get_or_create_edge_type(AGENT, "KNOWS", "Social connection")
+
+    summary = await repo.get_ontology_summary(AGENT)
+    assert summary["total_nodes"] == 2
+    assert summary["total_edges"] == 0
+    assert len(summary["node_types"]) == 1
+    assert summary["node_types"][0]["name"] == "Person"
+    assert summary["node_types"][0]["usage_count"] == 2
+    assert len(summary["edge_types"]) == 1
+    assert summary["edge_types"][0]["usage_count"] == 0

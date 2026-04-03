@@ -1493,6 +1493,135 @@ class GraphServiceAdapter:
                     names=[r["name"] for r in deleted],
                 )
 
+    # ── Ontology Exploration ──
+
+    async def find_similar_types(
+        self,
+        agent_id: str,
+        query: str,
+        kind: str = "node",
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[TypeInfo, int, list[str]]]:
+        if self._pool is None or self._router is None:
+            return []
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            if kind == "edge":
+                rows = await conn.fetch(
+                    "SELECT t.id, t.name, t.description, "
+                    "similarity(t.name, $1) AS sim, "
+                    "COUNT(e.id) AS usage_count "
+                    "FROM edge_type t "
+                    "LEFT JOIN edge e ON e.type_id = t.id "
+                    "WHERE similarity(t.name, $1) > 0.2 "
+                    "   OR t.name ILIKE '%' || $1 || '%' "
+                    "   OR t.description ILIKE '%' || $1 || '%' "
+                    "GROUP BY t.id "
+                    "ORDER BY sim DESC "
+                    "LIMIT $2",
+                    query,
+                    limit,
+                )
+                # Fetch example edge signatures per matched type
+                results: list[tuple[TypeInfo, int, list[str]]] = []
+                for row in rows:
+                    example_rows = await conn.fetch(
+                        "SELECT src.name || '→' || tgt.name AS sig "
+                        "FROM edge e "
+                        "JOIN node src ON src.id = e.source_id "
+                        "JOIN node tgt ON tgt.id = e.target_id "
+                        "WHERE e.type_id = $1 "
+                        "ORDER BY e.created_at DESC LIMIT 3",
+                        row["id"],
+                    )
+                    examples = [r["sig"] for r in example_rows]
+                    results.append(
+                        (
+                            TypeInfo(
+                                id=row["id"],
+                                name=row["name"],
+                                description=row["description"],
+                            ),
+                            int(row["usage_count"]),
+                            examples,
+                        )
+                    )
+                return results
+            else:
+                rows = await conn.fetch(
+                    "SELECT t.id, t.name, t.description, "
+                    "similarity(t.name, $1) AS sim, "
+                    "COUNT(n.id) AS usage_count "
+                    "FROM node_type t "
+                    "LEFT JOIN node n ON n.type_id = t.id AND NOT n.forgotten "
+                    "WHERE similarity(t.name, $1) > 0.2 "
+                    "   OR t.name ILIKE '%' || $1 || '%' "
+                    "   OR t.description ILIKE '%' || $1 || '%' "
+                    "GROUP BY t.id "
+                    "ORDER BY sim DESC "
+                    "LIMIT $2",
+                    query,
+                    limit,
+                )
+                results = []
+                for row in rows:
+                    example_rows = await conn.fetch(
+                        "SELECT n.name FROM node n "
+                        "WHERE n.type_id = $1 AND NOT n.forgotten "
+                        "ORDER BY n.importance DESC LIMIT 3",
+                        row["id"],
+                    )
+                    examples = [r["name"] for r in example_rows]
+                    results.append(
+                        (
+                            TypeInfo(
+                                id=row["id"],
+                                name=row["name"],
+                                description=row["description"],
+                            ),
+                            int(row["usage_count"]),
+                            examples,
+                        )
+                    )
+                return results
+
+    async def get_ontology_summary(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+    ) -> dict:
+        if self._pool is None or self._router is None:
+            return {"node_types": [], "edge_types": [], "total_nodes": 0, "total_edges": 0}
+        schema_name = await self._resolve_schema(agent_id, target_schema)
+        async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
+            node_type_rows = await conn.fetch(
+                "SELECT t.name, t.description, COUNT(n.id) AS usage_count "
+                "FROM node_type t "
+                "LEFT JOIN node n ON n.type_id = t.id AND NOT n.forgotten "
+                "GROUP BY t.id ORDER BY usage_count DESC"
+            )
+            edge_type_rows = await conn.fetch(
+                "SELECT t.name, t.description, COUNT(e.id) AS usage_count "
+                "FROM edge_type t "
+                "LEFT JOIN edge e ON e.type_id = t.id "
+                "GROUP BY t.id ORDER BY usage_count DESC"
+            )
+            total_nodes = await conn.fetchval("SELECT COUNT(*) FROM node WHERE NOT forgotten")
+            total_edges = await conn.fetchval("SELECT COUNT(*) FROM edge")
+        return {
+            "node_types": [
+                {"name": r["name"], "description": r["description"] or "", "usage_count": int(r["usage_count"])}
+                for r in node_type_rows
+            ],
+            "edge_types": [
+                {"name": r["name"], "description": r["description"] or "", "usage_count": int(r["usage_count"])}
+                for r in edge_type_rows
+            ],
+            "total_nodes": int(total_nodes or 0),
+            "total_edges": int(total_edges or 0),
+        }
+
     # ── Partial Curation Cleanup ──
 
     async def cleanup_partial_curation(

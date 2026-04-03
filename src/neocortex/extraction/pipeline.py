@@ -47,6 +47,8 @@ async def run_extraction(
     domain_slug: str | None = None,
     librarian_use_tools: bool = True,
     tool_calls_limit: int = 150,
+    ontology_tool_calls_limit: int = 30,
+    ontology_max_new_types: int = 3,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -131,10 +133,32 @@ async def run_extraction(
                 type_examples=type_examples,
                 recommended_node_types=seed.node_types if seed else {},
                 recommended_edge_types=seed.edge_types if seed else {},
+                repo=repo,
+                agent_id=agent_id,
+                target_schema=target_schema,
             ),
             model_settings=ont_cfg.model_settings,
+            usage_limits=UsageLimits(tool_calls_limit=ontology_tool_calls_limit),
         )
         logger.debug("stage_timing", stage="ontology_agent", elapsed_s=round(time.monotonic() - t0, 2))
+
+        # 2.5. Type budget enforcement (defense-in-depth safety valve)
+        if len(ontology_result.output.new_node_types) > ontology_max_new_types:
+            logger.warning(
+                "ontology_type_budget_exceeded",
+                kind="node",
+                proposed=len(ontology_result.output.new_node_types),
+                limit=ontology_max_new_types,
+            )
+            ontology_result.output.new_node_types = ontology_result.output.new_node_types[:ontology_max_new_types]
+        if len(ontology_result.output.new_edge_types) > ontology_max_new_types:
+            logger.warning(
+                "ontology_type_budget_exceeded",
+                kind="edge",
+                proposed=len(ontology_result.output.new_edge_types),
+                limit=ontology_max_new_types,
+            )
+            ontology_result.output.new_edge_types = ontology_result.output.new_edge_types[:ontology_max_new_types]
 
         # 3. Persist new types and merge into existing lists
         t0 = time.monotonic()

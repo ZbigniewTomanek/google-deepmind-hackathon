@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Literal, Protocol
 
 from neocortex.models import Edge, EdgeType, Episode, Node, NodeType
 from neocortex.schemas.memory import GraphStats, RecallItem, TypeDetail, TypeInfo
@@ -333,3 +333,40 @@ class MemoryRepository(Protocol):
         Only deletes types created within ``max_age_minutes`` to avoid
         removing types created by concurrent extractions.
         """
+
+    # ── Ontology Exploration ──
+
+    async def find_similar_types(
+        self,
+        agent_id: str,
+        query: str,
+        kind: Literal["node", "edge"] = "node",
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[TypeInfo, int, list[str]]]:
+        """Find types with names similar to a query string.
+
+        Returns list of (TypeInfo, usage_count, example_entity_names) tuples,
+        sorted by similarity score descending.
+        - usage_count: number of nodes/edges using this type
+        - example_entity_names: up to 3 entity names of this type
+        """
+        ...
+
+    async def get_ontology_summary(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+    ) -> dict:
+        """Return full ontology snapshot with usage counts.
+
+        Returns:
+            {
+                "node_types": [{"name": str, "description": str, "usage_count": int}],
+                "edge_types": [{"name": str, "description": str, "usage_count": int}],
+                "total_nodes": int,
+                "total_edges": int,
+            }
+        Sorted by usage_count descending within each list.
+        """
+        ...

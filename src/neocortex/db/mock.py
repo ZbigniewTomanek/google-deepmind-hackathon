@@ -969,6 +969,82 @@ class InMemoryRepository:
             del self._node_types[name]
             logger.info("cleaned_empty_types", count=1, names=[name])
 
+    # ── Ontology Exploration ──
+
+    async def find_similar_types(
+        self,
+        agent_id: str,
+        query: str,
+        kind: str = "node",
+        limit: int = 5,
+        target_schema: str | None = None,
+    ) -> list[tuple[TypeInfo, int, list[str]]]:
+        del agent_id, target_schema
+        results: list[tuple[TypeInfo, int, list[str]]] = []
+        if kind == "edge":
+            for et in self._edge_types.values():
+                if names_are_similar(query, et.name) or (et.description and query.lower() in et.description.lower()):
+                    usage_count = sum(1 for e in self._edges.values() if e.type_id == et.id)
+                    examples: list[str] = []
+                    for e in self._edges.values():
+                        if e.type_id == et.id:
+                            src = self._nodes.get(e.source_id)
+                            tgt = self._nodes.get(e.target_id)
+                            if src and tgt:
+                                examples.append(f"{src.name}→{tgt.name}")
+                            if len(examples) >= 3:
+                                break
+                    results.append(
+                        (
+                            TypeInfo(id=et.id, name=et.name, description=et.description),
+                            usage_count,
+                            examples,
+                        )
+                    )
+        else:
+            for nt in self._node_types.values():
+                if names_are_similar(query, nt.name) or (nt.description and query.lower() in nt.description.lower()):
+                    usage_count = sum(1 for n in self._nodes.values() if n.type_id == nt.id and not n.forgotten)
+                    examples = sorted(
+                        (n.name for n in self._nodes.values() if n.type_id == nt.id and not n.forgotten),
+                    )[:3]
+                    results.append(
+                        (
+                            TypeInfo(id=nt.id, name=nt.name, description=nt.description),
+                            usage_count,
+                            examples,
+                        )
+                    )
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:limit]
+
+    async def get_ontology_summary(
+        self,
+        agent_id: str,
+        target_schema: str | None = None,
+    ) -> dict:
+        del agent_id, target_schema
+        node_types_list = []
+        for nt in sorted(self._node_types.values(), key=lambda t: t.name):
+            usage = sum(1 for n in self._nodes.values() if n.type_id == nt.id and not n.forgotten)
+            node_types_list.append({"name": nt.name, "description": nt.description or "", "usage_count": usage})
+        node_types_list.sort(key=lambda x: x["usage_count"], reverse=True)
+
+        edge_types_list = []
+        for et in sorted(self._edge_types.values(), key=lambda t: t.name):
+            usage = sum(1 for e in self._edges.values() if e.type_id == et.id)
+            edge_types_list.append({"name": et.name, "description": et.description or "", "usage_count": usage})
+        edge_types_list.sort(key=lambda x: x["usage_count"], reverse=True)
+
+        total_nodes = sum(1 for n in self._nodes.values() if not n.forgotten)
+        total_edges = len(self._edges)
+        return {
+            "node_types": node_types_list,
+            "edge_types": edge_types_list,
+            "total_nodes": total_nodes,
+            "total_edges": total_edges,
+        }
+
     async def list_all_edge_signatures(self, agent_id: str) -> list[str]:
         sigs = []
         for edge in self._edges.values():
