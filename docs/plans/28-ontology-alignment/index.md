@@ -174,7 +174,7 @@ but the agentic design is the primary fix.
 | 3 | [Agentic Ontology Agent with Tool Access](stages/03-.md) | DONE | Agentic ontology agent with 3 tools (find_similar_types, get_ontology_overview, propose_type). Protocol + adapter + mock implementations. Type budget enforcement (default 3). Pipeline wired with repo/agent_id/target_schema. | |
 | 4 | [Ontology Agent Tuning and Observability](stages/04-.md) | DONE | Medium thinking default, ontology_agent_complete action log with tool call counts + usage, extraction pipeline config docs in development.md, architecture.md updated with agentic design + 3-layer defense, CLAUDE.md codebase map updated with extraction/ and ontology_seeds.py | |
 | 5 | [Post-Extraction Type Consolidation](stages/05-.md) | DONE | Protocol methods (reassign_node_type, delete_type, get_unused_types) + adapter/mock impls. type_consolidation.py with merge_similar_types (hardcoded merge map) and archive_unused_types (seed-protected). Pipeline archives every 10 episodes. Admin endpoints /consolidate/preview and /consolidate/apply. 18 tests. | |
-| 6 | [Graph Cleanup Migration](stages/06-.md) | PENDING | | |
+| 6 | [Graph Cleanup Migration](stages/06-.md) | DONE | cleanup_ontology.py script with --dry-run/--apply/--schema flags. Removes tool-call artifacts, merges instance-level + redundant types, deletes unused edge types. Re-ingestion recommendation documented. | |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
@@ -210,7 +210,13 @@ revise affected stages, and get user confirmation before continuing.
 
 ## Issues
 
-*(To be filled during execution)*
+**Re-ingestion recommendation (Stage 6):** After running `cleanup_ontology.py --apply`,
+existing nodes will have corrected type assignments, but the graph structure may not be
+ideal — edges created under the old ontology may reference types that no longer exist
+or may connect nodes in ways that made sense only under the broken type system.
+For best results, consider re-ingesting the vault data after all stages are deployed.
+The improved pipeline (hardened validation, domain-specific seeds, agentic ontology agent,
+and post-extraction consolidation) will produce a significantly cleaner graph from scratch.
 
 ---
 
