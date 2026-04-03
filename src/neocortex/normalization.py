@@ -13,7 +13,46 @@ _VALID_EDGE_TYPE = re.compile(r"^[A-Z]([A-Z0-9_]*[A-Z0-9])?$")
 _INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_\- ]")
 _MAX_TYPE_NAME_LENGTH = 60
 _MAX_TYPE_WORD_COUNT = 5
+_MIN_TYPE_NAME_LENGTH = 2
 _PASCAL_WORD_BOUNDARY = re.compile(r"[A-Z][a-z]+|[A-Z]+(?=[A-Z]|$)|[0-9]+")
+
+# Gemini Flash artifacts: internal function-call syntax leaking into type names
+_TOOL_CALL_ARTIFACT = re.compile(
+    r"(functiondefault|calldefault|ApicreateOr|UpdateNode|UpdateEdge|"
+    r"createOrUpdate|defaultApi|endcall|"
+    r"functionName|"  # JS method name leakage (I5: BrandfunctionNameCreateOrUpdateNode)
+    r"Updating\w*Id\d)",  # DB ID + operation verb leakage (I4: ComponentUpdatingB47EngineId48)
+    re.IGNORECASE,
+)
+
+# Common base types that, when followed by 1+ PascalCase segments, indicate
+# instance-level type names (e.g., DishGreg, LocationSalCapeVerde)
+_COMMON_BASE_TYPES = {
+    "Asset",
+    "Dish",
+    "Dream",
+    "Event",
+    "Insight",
+    "Location",
+    "Device",
+    "Activity",
+    "Condition",
+    "Mentalstate",
+    "Utensil",
+    "Preparation",
+    "Specification",
+}
+
+# Legitimate compound types starting with a base type word — bypass instance check
+_COMPOUND_TYPE_WHITELIST = {
+    "EventDrivenArchitecture",
+    "ActivityLevel",
+    "ConditionMonitoring",
+    "LocationService",
+    "AssetManagement",
+    "InsightGeneration",
+    "PreparationTechnique",
+}
 
 _KNOWN_ACRONYMS: list[str] = [
     "API",
@@ -70,6 +109,14 @@ def normalize_edge_type(name: str) -> str:
     if not name:
         raise ValueError("Edge type name is empty after stripping invalid characters")
 
+    # Reject names shorter than minimum length
+    if len(name) < _MIN_TYPE_NAME_LENGTH:
+        raise ValueError(f"Edge type name too short ({len(name)} chars, min {_MIN_TYPE_NAME_LENGTH})")
+
+    # Reject tool-call artifacts (Gemini Flash internal function-call leakage)
+    if _TOOL_CALL_ARTIFACT.search(name):
+        raise ValueError(f"Edge type name contains tool-call artifact: '{name[:50]}'")
+
     # Reject excessive length (LLM reasoning leaks)
     if len(name) > _MAX_TYPE_NAME_LENGTH:
         raise ValueError(
@@ -102,12 +149,36 @@ def normalize_edge_type(name: str) -> str:
     return name
 
 
+def _is_instance_level_node_type(name: str) -> bool:
+    """Check if a node type looks like a base type + instance name concatenation."""
+    if name in _COMPOUND_TYPE_WHITELIST:
+        return False
+    segments = _PASCAL_WORD_BOUNDARY.findall(name)
+    if len(segments) < 2:
+        return False
+    # Check if the first segment is a known base type
+    first_segment = segments[0]
+    return first_segment in _COMMON_BASE_TYPES
+
+
 def normalize_node_type(name: str) -> str:
     """Ensure PascalCase for node type names."""
     # Strip invalid characters before any other processing
     name = _INVALID_CHARS.sub("", name).strip()
     if not name:
         raise ValueError("Node type name is empty after stripping invalid characters")
+
+    # Reject names shorter than minimum length
+    if len(name) < _MIN_TYPE_NAME_LENGTH:
+        raise ValueError(f"Node type name too short ({len(name)} chars, min {_MIN_TYPE_NAME_LENGTH})")
+
+    # Reject tool-call artifacts (Gemini Flash internal function-call leakage)
+    if _TOOL_CALL_ARTIFACT.search(name):
+        raise ValueError(f"Node type name contains tool-call artifact: '{name[:50]}'")
+
+    # Reject instance-level type names (e.g., DishGreg, LocationSalCapeVerde)
+    if _is_instance_level_node_type(name):
+        raise ValueError(f"Node type name looks like instance-level (base type + instance name): '{name[:50]}'")
 
     # Reject excessive length (LLM reasoning leaks)
     if len(name) > _MAX_TYPE_NAME_LENGTH:

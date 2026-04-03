@@ -64,6 +64,7 @@ def create_app(settings: MCPSettings | None = None) -> FastAPI:
         app.state.pool = pg.pool if pg is not None else None
         app.state.processor = processor
         app.state.settings = settings
+        app.state.repo = ctx["repo"]
         app.state.permissions = ctx["permissions"]
         app.state.schema_mgr = ctx.get("schema_mgr")
 

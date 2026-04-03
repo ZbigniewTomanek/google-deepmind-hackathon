@@ -7,7 +7,7 @@ Agents are domain-agnostic — they work with any text, not just medical content
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext
@@ -68,6 +68,12 @@ class OntologyAgentDeps:
     edge_type_descriptions: dict[str, str] | None = None
     domain_hint: str | None = None  # e.g. "Technical Knowledge: Programming languages, ..."
     type_examples: dict[str, list[str]] | None = None  # {type_name: [entity_names]}
+    recommended_node_types: dict[str, str] = field(default_factory=dict)  # {name: description}
+    recommended_edge_types: dict[str, str] = field(default_factory=dict)  # {name: description}
+    # Graph access for ontology exploration tools
+    repo: MemoryRepository | None = None
+    agent_id: str = ""
+    target_schema: str | None = None
 
 
 def build_ontology_agent(
@@ -80,16 +86,164 @@ def build_ontology_agent(
         output_type=OntologyProposal,
         deps_type=OntologyAgentDeps,
         system_prompt=(
-            "You are an ontology engineer. Given a text passage, propose new node types "
-            "and edge types that would be needed to represent the knowledge in the text.",
-            "Propose only reusable, general concepts — not instance-level names.",
-            "REUSE existing types aggressively. Only propose a new type if NO existing type "
-            "covers the concept. When in doubt, reuse the closest existing type rather than "
-            "creating a new one. Proposing unnecessary new types fragments the graph.",
-            "Node type names: PascalCase (e.g. Drug, Neurotransmitter, Disease).",
-            "Edge type names: SCREAMING_SNAKE (e.g. TREATS, INHIBITS, CAUSES).",
+            "You are an ontology engineer for a personal knowledge graph. Your job is to "
+            "decide whether the existing ontology covers the concepts in a text, and propose "
+            "new types ONLY for genuine gaps.",
+            "",
+            "## Workflow",
+            "1. Call get_ontology_overview to see the full type landscape with usage stats.",
+            "2. Read the episode text and identify the key concepts.",
+            "3. For each concept, check if an existing type covers it:",
+            "   - Use find_similar_types to search by name similarity.",
+            "   - If a match with usage_count > 0 exists, REUSE it. Done.",
+            "   - If a match exists but has 0 usage, still prefer reusing it.",
+            "4. Only if NO existing type covers a concept:",
+            "   - Call propose_type with your candidate name and description.",
+            "   - If rejected: read the reason, adjust the name, and retry.",
+            "   - If accepted but similar types are listed: reconsider whether to reuse one.",
+            "   - Only include in your final output types that passed propose_type.",
+            "",
+            "## Rules",
+            "- MOST episodes need ZERO new types. The existing ontology should cover them.",
+            "- Budget: at most 2 new node types and 2 new edge types per episode.",
+            "- A type must be reusable across many entities — never instance-level.",
+            "  BAD: 'DishGreg', 'DreamAiPresentation', 'LocationSalCapeVerde'",
+            "  GOOD: 'Dish', 'Dream', 'Location'",
+            "- Node types: PascalCase (e.g. Neurotransmitter, HealthState).",
+            "- Edge types: SCREAMING_SNAKE (e.g. TREATS, HAS_STATUS).",
+            "- Prefer extending with new edge types before creating new node types.",
+            "- If an existing type is 80% suitable, USE IT — minor imprecision beats fragmentation.",
+            "",
+            "## Final Output",
+            "After exploration, return an OntologyProposal with only the types that passed",
+            "propose_type validation AND for which no suitable existing type was found.",
+            "Include a rationale explaining your decisions — especially why you chose to",
+            "reuse existing types or why a new type was genuinely needed.",
         ),
     )
+
+    # ── Ontology exploration tools ──
+
+    @agent.tool
+    async def find_similar_types(
+        ctx: RunContext[OntologyAgentDeps],
+        query: str,
+        kind: Literal["node", "edge"] = "node",
+    ) -> list[dict]:
+        """Search existing types by name similarity.
+        Use this to check if a type like the one you're considering already exists.
+
+        Args:
+            query: Type name to search for (e.g. "HealthCondition", "CAUSES")
+            kind: "node" for node types, "edge" for edge types
+
+        Returns:
+            List of {name, description, usage_count, example_entities} dicts,
+            sorted by similarity. Empty list if no repo is available.
+        """
+        if not ctx.deps.repo:
+            return []
+        results = await ctx.deps.repo.find_similar_types(
+            ctx.deps.agent_id,
+            query,
+            kind=kind,
+            target_schema=ctx.deps.target_schema,
+        )
+        return [
+            {
+                "name": t.name,
+                "description": t.description or "",
+                "usage_count": count,
+                "example_entities": examples,
+            }
+            for t, count, examples in results
+        ]
+
+    @agent.tool
+    async def get_ontology_overview(
+        ctx: RunContext[OntologyAgentDeps],
+        include_unused: bool = False,
+    ) -> dict:
+        """Get a snapshot of the current ontology with usage statistics.
+        Call this once at the start to understand the type landscape before
+        making any proposals.
+
+        Args:
+            include_unused: If False (default), only return types with usage_count > 0.
+                Set to True to see all types including unused ones.
+
+        Returns:
+            Dict with node_types, edge_types (each with name, description,
+            usage_count), total_nodes, total_edges.
+        """
+        if not ctx.deps.repo:
+            return {"node_types": [], "edge_types": [], "total_nodes": 0, "total_edges": 0}
+        summary = await ctx.deps.repo.get_ontology_summary(
+            ctx.deps.agent_id,
+            target_schema=ctx.deps.target_schema,
+        )
+        if not include_unused:
+            summary["node_types"] = [t for t in summary["node_types"] if t["usage_count"] > 0]
+            summary["edge_types"] = [t for t in summary["edge_types"] if t["usage_count"] > 0]
+        return summary
+
+    @agent.tool
+    async def propose_type(
+        ctx: RunContext[OntologyAgentDeps],
+        name: str,
+        description: str,
+        kind: Literal["node", "edge"] = "node",
+    ) -> dict:
+        """Propose a new type with inline validation.
+        Runs normalization checks and similarity search before accepting.
+        Does NOT persist the type — just validates and returns feedback.
+
+        Args:
+            name: Proposed type name (PascalCase for node, SCREAMING_SNAKE for edge)
+            description: What this type represents
+            kind: "node" or "edge"
+
+        Returns:
+            {accepted: bool, normalized_name: str, reason: str, similar_existing: list}
+            If rejected, reason explains why. If accepted but similar types exist,
+            similar_existing lists them so you can reconsider.
+        """
+        from neocortex.normalization import normalize_edge_type, normalize_node_type
+
+        # 1. Run Stage 1 normalization/validation
+        try:
+            normalized = normalize_edge_type(name) if kind == "edge" else normalize_node_type(name)
+        except ValueError as e:
+            return {"accepted": False, "normalized_name": name, "reason": str(e), "similar_existing": []}
+
+        # 2. Check for similar existing types
+        similar: list[str] = []
+        if ctx.deps.repo:
+            results = await ctx.deps.repo.find_similar_types(
+                ctx.deps.agent_id,
+                normalized,
+                kind=kind,
+                limit=3,
+                target_schema=ctx.deps.target_schema,
+            )
+            similar = [t.name for t, _count, _ex in results]
+
+        # 3. Check if type already exists (exact match)
+        existing_types = ctx.deps.existing_node_types if kind == "node" else ctx.deps.existing_edge_types
+        if normalized in existing_types:
+            return {
+                "accepted": False,
+                "normalized_name": normalized,
+                "reason": f"Type '{normalized}' already exists. Reuse it.",
+                "similar_existing": similar,
+            }
+
+        return {
+            "accepted": True,
+            "normalized_name": normalized,
+            "reason": "Validation passed.",
+            "similar_existing": similar,
+        }
 
     @agent.instructions
     async def inject_context(ctx: RunContext[OntologyAgentDeps]) -> str:
@@ -98,45 +252,25 @@ def build_ontology_agent(
             parts.extend(
                 [
                     f"Domain context: {ctx.deps.domain_hint}",
-                    "Propose types that are semantically appropriate for this domain.",
-                    "Do NOT reuse types from unrelated domains even if they exist.",
+                    "Propose types semantically appropriate for this domain.",
                     "",
                 ]
             )
-        nt_descs = ctx.deps.node_type_descriptions or {}
-        et_descs = ctx.deps.edge_type_descriptions or {}
-        existing_nt = (
-            "\n".join(f"- {n}: {nt_descs[n]}" if nt_descs.get(n) else f"- {n}" for n in ctx.deps.existing_node_types)
-            or "- none"
-        )
-        existing_et = (
-            "\n".join(f"- {n}: {et_descs[n]}" if et_descs.get(n) else f"- {n}" for n in ctx.deps.existing_edge_types)
-            or "- none"
-        )
+        if ctx.deps.recommended_node_types or ctx.deps.recommended_edge_types:
+            parts.append("Recommended types for this domain (prefer these over inventing new):")
+            if ctx.deps.recommended_node_types:
+                parts.append("  Node types: " + ", ".join(ctx.deps.recommended_node_types.keys()))
+            if ctx.deps.recommended_edge_types:
+                parts.append("  Edge types: " + ", ".join(ctx.deps.recommended_edge_types.keys()))
+            parts.append("")
         parts.extend(
             [
                 "Text to analyze:",
                 ctx.deps.episode_text,
                 "",
-                "Existing node types:",
-                existing_nt,
-                "",
-                "Existing edge types:",
-                existing_et,
-            ]
-        )
-        if ctx.deps.type_examples:
-            parts.extend(["", "Existing types with example entities:"])
-            for type_name, examples in ctx.deps.type_examples.items():
-                parts.append(f"- {type_name}: {', '.join(examples)}")
-            parts.append("If the text mentions any of these entities, reuse their existing type.")
-        parts.extend(
-            [
-                "",
-                "Rules:",
-                "- Propose additions only — do not remove existing types.",
-                "- Prefer extending with new edge types before creating new node types.",
-                "- Avoid one-off or overly specific types.",
+                f"Current ontology has {len(ctx.deps.existing_node_types)} node types "
+                f"and {len(ctx.deps.existing_edge_types)} edge types.",
+                "Use get_ontology_overview and find_similar_types to explore them.",
             ]
         )
         return "\n".join(parts)

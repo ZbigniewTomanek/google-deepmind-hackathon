@@ -132,6 +132,8 @@ async def test_extract_episode_calls_run_extraction():
     mock_settings.librarian_thinking_effort = "low"
     mock_settings.librarian_use_tools = True
     mock_settings.extraction_tool_calls_limit = 150
+    mock_settings.ontology_tool_calls_limit = 30
+    mock_settings.ontology_max_new_types = 3
 
     fake_ctx = {
         "repo": mock_repo,
@@ -185,7 +187,10 @@ async def test_extract_episode_calls_run_extraction():
             ),
             librarian_use_tools=True,
             tool_calls_limit=150,
+            ontology_tool_calls_limit=30,
+            ontology_max_new_types=3,
             domain_hint=None,
+            domain_slug=None,
         )
     finally:
         ctx_mod._services = None
@@ -233,7 +238,10 @@ def test_extraction_settings_defaults():
     assert s.extraction_enabled is True
     for prefix in ("ontology", "extractor", "librarian"):
         assert getattr(s, f"{prefix}_model") == "google-gla:gemini-3-flash-preview"
-        assert getattr(s, f"{prefix}_thinking_effort") == "low"
+    # Ontology agent uses medium thinking for better tool-use sequencing
+    assert s.ontology_thinking_effort == "medium"
+    assert s.extractor_thinking_effort == "low"
+    assert s.librarian_thinking_effort == "low"
     assert s.domain_classifier_model == "google-gla:gemini-3-flash-preview"
 
 

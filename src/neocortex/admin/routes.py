@@ -173,6 +173,87 @@ async def drop_graph(
 
 
 # ---------------------------------------------------------------------------
+# Type consolidation
+# ---------------------------------------------------------------------------
+
+
+class MergeActionResponse(BaseModel):
+    source_type_name: str
+    source_type_id: int
+    target_type_name: str
+    target_type_id: int
+    nodes_moved: int
+
+
+class ArchiveActionResponse(BaseModel):
+    type_name: str
+    type_id: int
+    kind: str
+
+
+class ConsolidationResponse(BaseModel):
+    merges: list[MergeActionResponse]
+    archives: list[ArchiveActionResponse]
+
+
+def _require_repo(request: Request):
+    repo = getattr(request.app.state, "repo", None)
+    if repo is None:
+        raise HTTPException(501, "Type consolidation requires a repository")
+    return repo
+
+
+@router.post("/consolidate/preview", response_model=ConsolidationResponse)
+async def consolidate_preview(
+    request: Request,
+    admin_id: Annotated[str, Depends(require_admin)],
+    schema_name: str | None = None,
+):
+    from neocortex.extraction.type_consolidation import (
+        archive_unused_types,
+        merge_similar_types,
+    )
+
+    repo = _require_repo(request)
+    merges = await merge_similar_types(repo, admin_id, schema=schema_name, dry_run=True)
+    archives = await archive_unused_types(repo, admin_id, schema=schema_name, dry_run=True)
+
+    return ConsolidationResponse(
+        merges=[MergeActionResponse(**m.__dict__) for m in merges],
+        archives=[ArchiveActionResponse(**a.__dict__) for a in archives],
+    )
+
+
+@router.post("/consolidate/apply", response_model=ConsolidationResponse)
+async def consolidate_apply(
+    request: Request,
+    admin_id: Annotated[str, Depends(require_admin)],
+    schema_name: str | None = None,
+):
+    from neocortex.extraction.type_consolidation import (
+        archive_unused_types,
+        merge_similar_types,
+    )
+
+    repo = _require_repo(request)
+    merges = await merge_similar_types(repo, admin_id, schema=schema_name, dry_run=False)
+    archives = await archive_unused_types(repo, admin_id, schema=schema_name, dry_run=False)
+
+    logger.bind(action_log=True).info(
+        "consolidation_applied",
+        admin_id=admin_id,
+        schema_name=schema_name,
+        merges=len(merges),
+        archives=len(archives),
+    )
+
+    return ConsolidationResponse(
+        merges=[MergeActionResponse(**m.__dict__) for m in merges],
+        archives=[ArchiveActionResponse(**a.__dict__) for a in archives],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Job monitoring
 # ---------------------------------------------------------------------------
 

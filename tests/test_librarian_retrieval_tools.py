@@ -267,7 +267,7 @@ async def test_pipeline_passes_repo_to_librarian_deps(repo: InMemoryRepository) 
 @pytest.mark.asyncio
 async def test_pipeline_passes_type_descriptions_to_ontology(repo: InMemoryRepository) -> None:
     """Verify ontology agent gets type descriptions, not just names."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import MagicMock, patch
 
     from neocortex.extraction.agents import OntologyAgentDeps, build_ontology_agent
     from neocortex.extraction.pipeline import run_extraction
@@ -288,8 +288,10 @@ async def test_pipeline_passes_type_descriptions_to_ontology(repo: InMemoryRepos
             deps = kwargs.get("deps")
             if deps is not None:
                 captured_ont_deps.append(deps)
-            result = AsyncMock()
+            result = MagicMock()
             result.output = OntologyProposal()
+            result.all_messages.return_value = []
+            result.usage.return_value = MagicMock(requests=0)
             return result
 
         agent.run = capturing_run  # type: ignore[assignment]  # ty: ignore[invalid-assignment]

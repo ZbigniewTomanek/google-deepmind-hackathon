@@ -11,8 +11,10 @@ import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.usage import UsageLimits
 
+from neocortex.domains.ontology_seeds import DOMAIN_SEEDS
 from neocortex.extraction.agents import (
     AgentInferenceConfig,
     ExtractorAgentDeps,
@@ -23,6 +25,7 @@ from neocortex.extraction.agents import (
     build_ontology_agent,
 )
 from neocortex.extraction.schemas import CurationSummary, LibrarianPayload
+from neocortex.extraction.type_consolidation import archive_unused_types
 from neocortex.schemas.memory import TypeInfo
 
 if TYPE_CHECKING:
@@ -43,8 +46,12 @@ async def run_extraction(
     extractor_config: AgentInferenceConfig | None = None,
     librarian_config: AgentInferenceConfig | None = None,
     domain_hint: str | None = None,
+    domain_slug: str | None = None,
     librarian_use_tools: bool = True,
     tool_calls_limit: int = 150,
+    ontology_tool_calls_limit: int = 30,
+    ontology_max_new_types: int = 3,
+    archive_interval: int = 10,
 ) -> None:
     """Process episodes through the 3-agent pipeline and persist results.
 
@@ -62,8 +69,12 @@ async def run_extraction(
         librarian_config: Inference config for the librarian agent.
         domain_hint: Optional domain context (e.g. "Technical Knowledge: Programming languages, ...")
                      passed to ontology and extractor agents to guide type proposals.
+        domain_slug: Optional domain slug (e.g. "user_profile") used to look up
+                     domain-specific seed ontology recommendations for the ontology agent.
         librarian_use_tools: When True (default), the librarian curates the graph
                              via tools. When False, falls back to _persist_payload.
+        archive_interval: Run archive_unused_types every N episodes (default 10).
+                          Set to 0 to disable.
     """
     ont_cfg = ontology_config or AgentInferenceConfig()
     ext_cfg = extractor_config or AgentInferenceConfig()
@@ -83,6 +94,18 @@ async def run_extraction(
             await repo.cleanup_empty_types(agent_id, max_age_minutes=5, target_schema=target_schema)
         except Exception:
             logger.opt(exception=True).warning("cleanup_empty_types_failed")
+
+    async def _archive_bg() -> None:
+        try:
+            archived = await archive_unused_types(
+                repo, agent_id, schema=target_schema, min_age_hours=24.0, dry_run=False
+            )
+            if archived:
+                logger.info("archive_unused_types_complete", count=len(archived))
+        except Exception:
+            logger.opt(exception=True).warning("archive_unused_types_failed")
+
+    episode_counter = 0
 
     for episode_id in episode_ids:
         episode = await repo.get_episode(agent_id, episode_id, target_schema=read_schema)
@@ -114,6 +137,7 @@ async def run_extraction(
 
         # 2. Ontology stage
         t0 = time.monotonic()
+        seed = DOMAIN_SEEDS.get(domain_slug or "")
         ontology_result = await ontology_agent.run(
             f"Analyze this text and propose ontology extensions:\n\n{text}",
             deps=OntologyAgentDeps(
@@ -124,10 +148,54 @@ async def run_extraction(
                 edge_type_descriptions=edge_type_descs,
                 domain_hint=domain_hint,
                 type_examples=type_examples,
+                recommended_node_types=seed.node_types if seed else {},
+                recommended_edge_types=seed.edge_types if seed else {},
+                repo=repo,
+                agent_id=agent_id,
+                target_schema=target_schema,
             ),
             model_settings=ont_cfg.model_settings,
+            usage_limits=UsageLimits(tool_calls_limit=ontology_tool_calls_limit),
         )
-        logger.debug("stage_timing", stage="ontology_agent", elapsed_s=round(time.monotonic() - t0, 2))
+        ontology_elapsed = round(time.monotonic() - t0, 2)
+        logger.debug("stage_timing", stage="ontology_agent", elapsed_s=ontology_elapsed)
+
+        # Ontology agent observability: log model info, token usage, tool call count
+        ontology_tool_calls = sum(
+            len([p for p in msg.parts if isinstance(p, ToolCallPart)])
+            for msg in ontology_result.all_messages()
+            if hasattr(msg, "parts")
+        )
+        logger.bind(action_log=True).info(
+            "ontology_agent_complete",
+            episode_id=episode_id,
+            agent_id=agent_id,
+            model=ont_cfg.model_name,
+            thinking=ont_cfg.thinking_effort,
+            proposed_node_types=len(ontology_result.output.new_node_types),
+            proposed_edge_types=len(ontology_result.output.new_edge_types),
+            tool_calls=ontology_tool_calls,
+            elapsed_s=ontology_elapsed,
+            usage=str(ontology_result.usage()),
+        )
+
+        # 2.5. Type budget enforcement (defense-in-depth safety valve)
+        if len(ontology_result.output.new_node_types) > ontology_max_new_types:
+            logger.warning(
+                "ontology_type_budget_exceeded",
+                kind="node",
+                proposed=len(ontology_result.output.new_node_types),
+                limit=ontology_max_new_types,
+            )
+            ontology_result.output.new_node_types = ontology_result.output.new_node_types[:ontology_max_new_types]
+        if len(ontology_result.output.new_edge_types) > ontology_max_new_types:
+            logger.warning(
+                "ontology_type_budget_exceeded",
+                kind="edge",
+                proposed=len(ontology_result.output.new_edge_types),
+                limit=ontology_max_new_types,
+            )
+            ontology_result.output.new_edge_types = ontology_result.output.new_edge_types[:ontology_max_new_types]
 
         # 3. Persist new types and merge into existing lists
         t0 = time.monotonic()
@@ -233,6 +301,13 @@ async def run_extraction(
             task = asyncio.create_task(_cleanup_bg())
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
+
+            # Periodic archive of unused types
+            episode_counter += 1
+            if archive_interval > 0 and episode_counter % archive_interval == 0:
+                task = asyncio.create_task(_archive_bg())
+                _bg_tasks.add(task)
+                task.add_done_callback(_bg_tasks.discard)
         else:
             # Fallback: non-tool librarian → _persist_payload
             # Inject bounded name list for dedup context
@@ -295,6 +370,13 @@ async def run_extraction(
             task = asyncio.create_task(_cleanup_bg())
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
+
+            # Periodic archive of unused types
+            episode_counter += 1
+            if archive_interval > 0 and episode_counter % archive_interval == 0:
+                task = asyncio.create_task(_archive_bg())
+                _bg_tasks.add(task)
+                task.add_done_callback(_bg_tasks.discard)
 
     # Ensure all background cleanup tasks complete before returning
     if _bg_tasks:

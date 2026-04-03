@@ -157,13 +157,22 @@ The 3-agent extraction pipeline runs behind `remember` and ingestion, automatica
 Episode (raw text)
     │
     ▼
-Ontology Agent → proposes schema extensions
+Ontology Agent (agentic, tool-using)
+    │  ┌─ get_ontology_overview() ─── usage counts, top types
+    ├──┤  find_similar_types()    ─── trigram search for near-duplicates
+    │  └─ propose_type()          ─── inline validation + registration
     │
     ▼
 Extraction Agent → extracts facts aligned to ontology
     │
     ▼
-Librarian Agent → deduplicates, normalizes, persists
+Librarian Agent → deduplicates, normalizes, persists via tools
 ```
+
+### Three-Layer Type Quality Defense
+
+1. **`propose_type` inline validation**: The ontology agent's `propose_type` tool validates names (format, length, instance-level detection, tool-call artifact rejection) and checks for near-duplicates before accepting proposals.
+2. **Hard type cap**: `ontology_max_new_types` (default 3) limits new types per episode, preventing runaway proliferation.
+3. **`get_or_create_*_type` normalization gate**: At persistence time, type names are re-validated and normalized. Invalid names are rejected with a warning log.
 
 The pipeline runs against PostgreSQL via the Procrastinate job queue. A standalone playground (`src/pydantic_agents_playground/`) provides an isolated SQLite-based version for experimentation.
