@@ -186,7 +186,7 @@ def test_names_are_similar(a: str, b: str, expected: bool) -> None:
     "bad_name",
     [
         "DatasetNoteTheSearchResultsShowed" + "x" * 400,  # 440+ chars
-        "OperationbrCreateOrUpdate" + "x" * 300,  # 300+ chars
+        "OperationbrSomeLongGarbage" + "x" * 300,  # 300+ chars
         "A" * 61,  # Just over limit
     ],
 )
@@ -236,4 +236,122 @@ def test_normalize_node_type_accepts_valid(good_name: str, expected: str) -> Non
 )
 def test_normalize_edge_type_rejects_too_long(bad_name: str) -> None:
     with pytest.raises(ValueError, match="too long"):
+        normalize_edge_type(bad_name)
+
+
+# --- Tool-call artifact rejection (Plan 28, Stage 1) ---
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "ActivityfunctiondefaultApicreateOrUpdateNodecontent",
+        "MentalstatecalldefaultApicreateOrUpdateEdgeedgeType",
+        "PersoncreateOrUpdateNodeContent",
+        "defaultApiCreateNode",
+        "TypeUpdateNodeContent",
+        "SomethingEndcallResult",
+    ],
+)
+def test_normalize_node_type_rejects_tool_call_artifacts(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="tool-call artifact"):
+        normalize_node_type(bad_name)
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "functiondefaultApiRelateTo",
+        "calldefaultEdgeType",
+        "createOrUpdateEdge",
+        "UpdateNodeRelation",
+    ],
+)
+def test_normalize_edge_type_rejects_tool_call_artifacts(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="tool-call artifact"):
+        normalize_edge_type(bad_name)
+
+
+# --- Instance-level type rejection (Plan 28, Stage 1) ---
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "DishGreg",  # Dish + Greg (3 segments: Dish, Gre, g? No — let's check)
+        "DreamAiPresentation",
+        "LocationSalCapeVerde",
+        "DeviceMacMiniServer",
+        "AssetSnowboardguards",
+        "ConditionDurationForFirstFermentation",
+        "InsightEngineKnock",
+        "InsightSubstanceOverstimulation",
+    ],
+)
+def test_normalize_node_type_rejects_instance_level_types(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="instance-level"):
+        normalize_node_type(bad_name)
+
+
+# --- Legitimate compound types still pass (Plan 28, Stage 1) ---
+
+
+@pytest.mark.parametrize(
+    "good_name,expected",
+    [
+        ("BodyPart", "BodyPart"),
+        ("HealthState", "HealthState"),
+        ("FoodItem", "FoodItem"),
+        ("MedicalProcedure", "MedicalProcedure"),
+        ("CookingMethod", "CookingMethod"),
+        ("InterpersonalDynamic", "InterpersonalDynamic"),
+        ("Supplement", "Supplement"),
+    ],
+)
+def test_normalize_node_type_accepts_legitimate_compounds(good_name: str, expected: str) -> None:
+    assert normalize_node_type(good_name) == expected
+
+
+# --- Whitelisted compound types pass (Plan 28, Stage 1) ---
+
+
+@pytest.mark.parametrize(
+    "good_name",
+    [
+        "EventDrivenArchitecture",
+        "ActivityLevel",
+        "ConditionMonitoring",
+        "LocationService",
+        "AssetManagement",
+        "InsightGeneration",
+    ],
+)
+def test_normalize_node_type_accepts_whitelisted_compounds(good_name: str) -> None:
+    normalize_node_type(good_name)
+
+
+# --- Minimum length rejection (Plan 28, Stage 1) ---
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "A",
+        "X",
+    ],
+)
+def test_normalize_node_type_rejects_too_short(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="too short"):
+        normalize_node_type(bad_name)
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "A",
+        "X",
+    ],
+)
+def test_normalize_edge_type_rejects_too_short(bad_name: str) -> None:
+    with pytest.raises(ValueError, match="too short"):
         normalize_edge_type(bad_name)
