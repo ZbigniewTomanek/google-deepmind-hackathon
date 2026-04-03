@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pydantic_ai.usage import UsageLimits
 
+from neocortex.domains.ontology_seeds import DOMAIN_SEEDS
 from neocortex.extraction.agents import (
     AgentInferenceConfig,
     ExtractorAgentDeps,
@@ -43,6 +44,7 @@ async def run_extraction(
     extractor_config: AgentInferenceConfig | None = None,
     librarian_config: AgentInferenceConfig | None = None,
     domain_hint: str | None = None,
+    domain_slug: str | None = None,
     librarian_use_tools: bool = True,
     tool_calls_limit: int = 150,
 ) -> None:
@@ -62,6 +64,8 @@ async def run_extraction(
         librarian_config: Inference config for the librarian agent.
         domain_hint: Optional domain context (e.g. "Technical Knowledge: Programming languages, ...")
                      passed to ontology and extractor agents to guide type proposals.
+        domain_slug: Optional domain slug (e.g. "user_profile") used to look up
+                     domain-specific seed ontology recommendations for the ontology agent.
         librarian_use_tools: When True (default), the librarian curates the graph
                              via tools. When False, falls back to _persist_payload.
     """
@@ -114,6 +118,7 @@ async def run_extraction(
 
         # 2. Ontology stage
         t0 = time.monotonic()
+        seed = DOMAIN_SEEDS.get(domain_slug or "")
         ontology_result = await ontology_agent.run(
             f"Analyze this text and propose ontology extensions:\n\n{text}",
             deps=OntologyAgentDeps(
@@ -124,6 +129,8 @@ async def run_extraction(
                 edge_type_descriptions=edge_type_descs,
                 domain_hint=domain_hint,
                 type_examples=type_examples,
+                recommended_node_types=seed.node_types if seed else {},
+                recommended_edge_types=seed.edge_types if seed else {},
             ),
             model_settings=ont_cfg.model_settings,
         )

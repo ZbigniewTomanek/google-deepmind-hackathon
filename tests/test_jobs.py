@@ -186,6 +186,7 @@ async def test_extract_episode_calls_run_extraction():
             librarian_use_tools=True,
             tool_calls_limit=150,
             domain_hint=None,
+            domain_slug=None,
         )
     finally:
         ctx_mod._services = None

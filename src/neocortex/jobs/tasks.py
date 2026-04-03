@@ -24,6 +24,7 @@ async def extract_episode(
     target_schema: str | None = None,
     source_schema: str | None = None,
     domain_hint: str | None = None,
+    domain_slug: str | None = None,
 ) -> None:
     """Run extraction pipeline for a batch of episodes.
 
@@ -36,6 +37,8 @@ async def extract_episode(
                        graph but results go to a shared domain schema.
         domain_hint: Optional domain context passed to extraction agents to guide
                      semantically appropriate type proposals.
+        domain_slug: Optional domain slug used to look up domain-specific seed
+                     ontology recommendations.
     """
     logger.info(
         "extract_episode_started",
@@ -44,6 +47,7 @@ async def extract_episode(
         target_schema=target_schema,
         source_schema=source_schema,
         domain_hint=domain_hint,
+        domain_slug=domain_slug,
     )
     from neocortex.extraction.agents import AgentInferenceConfig
     from neocortex.extraction.pipeline import run_extraction
@@ -84,6 +88,7 @@ async def extract_episode(
         librarian_use_tools=settings.librarian_use_tools,
         tool_calls_limit=settings.extraction_tool_calls_limit,
         domain_hint=domain_hint,
+        domain_slug=domain_slug,
     )
     logger.info(
         "extract_episode_completed",

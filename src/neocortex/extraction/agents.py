@@ -68,6 +68,8 @@ class OntologyAgentDeps:
     edge_type_descriptions: dict[str, str] | None = None
     domain_hint: str | None = None  # e.g. "Technical Knowledge: Programming languages, ..."
     type_examples: dict[str, list[str]] | None = None  # {type_name: [entity_names]}
+    recommended_node_types: dict[str, str] = field(default_factory=dict)  # {name: description}
+    recommended_edge_types: dict[str, str] = field(default_factory=dict)  # {name: description}
 
 
 def build_ontology_agent(
@@ -130,6 +132,24 @@ def build_ontology_agent(
             for type_name, examples in ctx.deps.type_examples.items():
                 parts.append(f"- {type_name}: {', '.join(examples)}")
             parts.append("If the text mentions any of these entities, reuse their existing type.")
+        if ctx.deps.recommended_node_types:
+            rec_nt = "\n".join(f"- {n}: {d}" for n, d in ctx.deps.recommended_node_types.items())
+            parts.extend(
+                [
+                    "",
+                    "Recommended node types for this domain (prefer these over inventing new ones):",
+                    rec_nt,
+                ]
+            )
+        if ctx.deps.recommended_edge_types:
+            rec_et = "\n".join(f"- {n}: {d}" for n, d in ctx.deps.recommended_edge_types.items())
+            parts.extend(
+                [
+                    "",
+                    "Recommended edge types for this domain (prefer these over inventing new ones):",
+                    rec_et,
+                ]
+            )
         parts.extend(
             [
                 "",
