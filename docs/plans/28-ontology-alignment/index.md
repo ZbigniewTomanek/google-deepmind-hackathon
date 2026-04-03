@@ -206,3 +206,4 @@ revise affected stages, and get user confirmation before continuing.
 - **D1**: No fixed vocabulary -- use seed ontology + validation + better prompts to allow organic growth with guardrails.
 - **D2**: Model upgrade only for ontology agent -- extraction and curation work fine with Flash.
 - **D3**: Cleanup as last stage -- fix the pipeline first, then repair existing damage.
+- **D4**: Redesign ontology agent from 0-shot structured output to agentic tool-using agent. The agent should explore the current ontology (usage counts, example entities, similarity search) and validate its own proposals inline before committing. This replaces the prompt-only fix in original Stages 3-4. See `resources/redesign_handoff.md` for full architectural rationale and implementation guidance.
