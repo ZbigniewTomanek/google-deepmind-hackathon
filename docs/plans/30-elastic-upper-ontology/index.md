@@ -86,7 +86,7 @@ metrics head-to-head.
 ## Files That May Be Changed
 
 ### New Files
-- `migrations/public/0XX_domain_hierarchy.sql` — parent_id, depth, path columns
+- `migrations/public/012_domain_hierarchy.sql` — parent_id, depth, path columns
 - `src/neocortex/domains/seed_generator.py` — dynamic seed generation for new domains
 - `src/neocortex/domains/steward.py` — taxonomy health review and restructuring
 - `scripts/taxonomy_steward.sh` — CLI wrapper for steward process
@@ -109,7 +109,7 @@ metrics head-to-head.
 
 | # | Stage | Status | Commit | Notes |
 |---|-------|--------|--------|-------|
-| 1 | [Test Corpus & Diagnostic Queries](stages/01-.md) | PENDING | — | Resource creation |
+| 1 | [Test Corpus & Diagnostic Queries](stages/01-.md) | DONE | 4a2d236 | Resources created |
 | 2 | [Baseline Experiment](stages/02-.md) | PENDING | — | Run corpus, capture metrics |
 | 3 | [Domain Hierarchy Schema](stages/03-.md) | PENDING | — | DB migration + model changes |
 | 4 | [Hierarchical Domain Classifier](stages/04-.md) | PENDING | — | Prompt rewrite + tree display |
