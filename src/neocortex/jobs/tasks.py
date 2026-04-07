@@ -91,6 +91,7 @@ async def extract_episode(
         ontology_max_new_types=settings.ontology_max_new_types,
         domain_hint=domain_hint,
         domain_slug=domain_slug,
+        seed_generator=services.get("seed_generator"),
     )
     logger.info(
         "extract_episode_completed",

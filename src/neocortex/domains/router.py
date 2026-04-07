@@ -19,6 +19,7 @@ from neocortex.domains.models import (
     SemanticDomain,
 )
 from neocortex.domains.protocol import DomainService
+from neocortex.domains.seed_generator import SeedGenerator
 from neocortex.permissions.protocol import PermissionChecker
 from neocortex.schema_manager import SchemaManager
 
@@ -38,6 +39,7 @@ class DomainRouter:
         permissions: PermissionChecker,
         job_app: procrastinate.App | None = None,
         classification_threshold: float = 0.3,
+        seed_generator: SeedGenerator | None = None,
     ) -> None:
         self._domain_service = domain_service
         self._classifier = classifier
@@ -45,6 +47,7 @@ class DomainRouter:
         self._permissions = permissions
         self._job_app = job_app
         self._classification_threshold = classification_threshold
+        self._seed_generator = seed_generator
 
     async def list_domains(self) -> list[SemanticDomain]:
         return await self._domain_service.list_domains()
@@ -101,6 +104,12 @@ class DomainRouter:
         if classification.proposed_domain is not None and self._schema_mgr is not None:
             new_domain = await self._provision_domain(classification.proposed_domain, agent_id)
             if new_domain is not None:
+                # Warm the seed cache for the newly provisioned domain
+                if self._seed_generator is not None:
+                    try:
+                        await self._seed_generator.resolve_seed(new_domain.slug)
+                    except Exception:
+                        logger.opt(exception=True).warning("seed_cache_warm_failed", slug=new_domain.slug)
                 matches.append(
                     DomainClassification(
                         domain_slug=new_domain.slug,
@@ -146,24 +155,52 @@ class DomainRouter:
                 )
             )
 
-        logger.bind(action_log=True).info(
-            "domain_routing_completed",
-            agent_id=agent_id,
-            episode_id=episode_id,
-            routed_to=[r.schema_name for r in results],
-            domain_count=len(results),
-        )
+        if results:
+            logger.bind(action_log=True).info(
+                "domain_routing_completed",
+                agent_id=agent_id,
+                episode_id=episode_id,
+                routed_to=[r.schema_name for r in results],
+                domain_count=len(results),
+            )
+        else:
+            logger.bind(action_log=True).warning(
+                "domain_routing_unrouted",
+                agent_id=agent_id,
+                episode_id=episode_id,
+                matched_count=len(classification.matched_domains),
+                proposed=classification.proposed_domain is not None,
+                reason="no_domains_matched_or_provisioned",
+            )
         return results
 
     async def _provision_domain(self, proposed: ProposedDomain, agent_id: str) -> SemanticDomain | None:
         """Create a new domain, provision its shared schema, and grant permissions."""
         slug = _sanitize_slug(proposed.slug)
+
+        # Resolve parent_slug to parent_id (D3: do not auto-create missing parents).
+        # If the parent slug does not resolve, treat the proposal as root-level
+        # rather than silently creating a synthetic parent domain.
+        parent_id: int | None = None
+        if proposed.parent_slug is not None:
+            parent = await self._domain_service.get_domain(proposed.parent_slug)
+            if parent is not None:
+                parent_id = parent.id
+            else:
+                logger.bind(action_log=True).warning(
+                    "domain_provision_parent_not_found",
+                    proposed_slug=slug,
+                    parent_slug=proposed.parent_slug,
+                    action="treating_as_root",
+                )
+
         try:
             domain = await self._domain_service.create_domain(
                 slug=slug,
                 name=proposed.name,
                 description=proposed.description,
                 created_by=agent_id,
+                parent_id=parent_id,
             )
         except Exception:
             logger.warning("domain_provision_create_failed", slug=slug)

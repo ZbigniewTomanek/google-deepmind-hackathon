@@ -1,7 +1,12 @@
 # Diagnostic Queries
 
-SQL queries for measuring upper ontology behavior before and after implementation.
-Run via `psql` or the `scripts/ingest.sh` wrapper.
+SQL queries for measuring upper-ontology behavior before and after implementation.
+Run via `psql`.
+
+Important: shared domain schemas are populated by routed `extract_episode` jobs.
+Episodes themselves remain in the personal graph unless `target_graph` is
+explicitly set. Measure routing via `procrastinate_jobs`, `ontology_domains`, and
+shared-schema nodes/edges.
 
 ## Connection
 
@@ -11,123 +16,24 @@ psql "postgresql://neocortex:neocortex@localhost:5432/neocortex"
 
 ---
 
-## Q1: Domain Registry — All Domains
+## Q1: Domain Registry
 
-```sql
-SELECT id, slug, name, schema_name, seed, created_by, created_at
-FROM ontology_domains
-ORDER BY id;
-```
-
-**Baseline expectation**: Exactly 4 rows (seed domains).
-**Post-implementation expectation**: 6-10 rows with new non-seed domains.
-
----
-
-## Q2: Episode Count Per Domain Schema
+Pre-hierarchy (Stages 1–2):
 
 ```sql
 SELECT
-    d.slug AS domain,
+    d.id,
+    d.slug,
+    d.name,
+    d.schema_name,
     d.seed,
-    s.schema_name,
-    COALESCE(ep.episode_count, 0) AS episodes
+    d.created_by,
+    d.created_at
 FROM ontology_domains d
-LEFT JOIN graph_registry s ON s.schema_name = d.schema_name
-LEFT JOIN LATERAL (
-    SELECT count(*) AS episode_count
-    FROM (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = d.schema_name AND table_name = 'episode'
-    ) tbl
-    CROSS JOIN LATERAL (
-        SELECT count(*) AS episode_count
-        FROM pg_catalog.pg_class c
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = d.schema_name AND c.relname = 'episode'
-    ) cnt
-) ep ON true
-ORDER BY episodes DESC;
+ORDER BY d.slug;
 ```
 
-**Simpler alternative** (run per schema):
-
-```sql
--- Replace {schema} with actual schema name
-SELECT count(*) AS episode_count FROM {schema}.episode;
-```
-
----
-
-## Q3: Domain Utilization — Nodes and Types Per Domain
-
-```sql
--- Run for each domain schema. Replace {schema}.
-SELECT
-    '{schema}' AS domain_schema,
-    (SELECT count(*) FROM {schema}.node WHERE NOT forgotten) AS active_nodes,
-    (SELECT count(*) FROM {schema}.edge) AS edges,
-    (SELECT count(*) FROM {schema}.node_type) AS node_types,
-    (SELECT count(*) FROM {schema}.edge_type) AS edge_types,
-    (SELECT count(*) FROM {schema}.node_type nt
-     WHERE EXISTS (SELECT 1 FROM {schema}.node n WHERE n.type_id = nt.id AND NOT n.forgotten)) AS used_node_types,
-    (SELECT count(*) FROM {schema}.edge_type et
-     WHERE EXISTS (SELECT 1 FROM {schema}.edge e WHERE e.type_id = et.id)) AS used_edge_types;
-```
-
----
-
-## Q4: Catch-All Absorption Rate
-
-Measures what fraction of episodes end up in `domain_knowledge` vs specialized domains.
-
-```sql
-WITH domain_episodes AS (
-    SELECT
-        d.slug,
-        (SELECT count(*) FROM ncx_shared__user_profile.episode) AS ct
-    FROM ontology_domains d WHERE d.slug = 'user_profile'
-    UNION ALL
-    SELECT 'technical_knowledge',
-        (SELECT count(*) FROM ncx_shared__technical_knowledge.episode)
-    UNION ALL
-    SELECT 'work_context',
-        (SELECT count(*) FROM ncx_shared__work_context.episode)
-    UNION ALL
-    SELECT 'domain_knowledge',
-        (SELECT count(*) FROM ncx_shared__domain_knowledge.episode)
-)
-SELECT
-    slug,
-    ct AS episodes,
-    round(100.0 * ct / NULLIF(sum(ct) OVER (), 0), 1) AS pct
-FROM domain_episodes
-ORDER BY ct DESC;
-```
-
----
-
-## Q5: Type Landscape Per Domain
-
-Shows all node types with usage counts — reveals whether seed types dominate
-or new types emerge.
-
-```sql
--- Replace {schema}
-SELECT
-    nt.name AS type_name,
-    nt.description,
-    count(n.id) AS usage_count,
-    nt.created_at
-FROM {schema}.node_type nt
-LEFT JOIN {schema}.node n ON n.type_id = nt.id AND NOT n.forgotten
-GROUP BY nt.id
-ORDER BY usage_count DESC, nt.name;
-```
-
----
-
-## Q6: Domain Hierarchy (post-implementation)
+Post-hierarchy (Stage 3+):
 
 ```sql
 SELECT
@@ -138,42 +44,190 @@ SELECT
     p.slug AS parent_slug,
     d.depth,
     d.path,
-    d.seed
+    d.schema_name,
+    d.seed,
+    d.created_by,
+    d.created_at
 FROM ontology_domains d
 LEFT JOIN ontology_domains p ON p.id = d.parent_id
-ORDER BY d.path, d.slug;
+ORDER BY d.path NULLS FIRST, d.slug;
+```
+
+Use for:
+- baseline domain count
+- non-seed domain detection
+- hierarchy verification after Stage 3+
+
+---
+
+## Q2: Routed Episodes Per Domain
+
+Counts successful shared-schema extraction jobs by target domain.
+
+```sql
+SELECT
+    d.slug AS domain,
+    d.schema_name,
+    count(*) FILTER (
+        WHERE j.task_name = 'extract_episode'
+          AND j.status = 'succeeded'
+          AND j.args->>'target_schema' = d.schema_name
+    ) AS routed_jobs,
+    count(DISTINCT (j.args->'episode_ids'->>0)) FILTER (
+        WHERE j.task_name = 'extract_episode'
+          AND j.status = 'succeeded'
+          AND j.args->>'target_schema' = d.schema_name
+    ) AS routed_episodes
+FROM ontology_domains d
+LEFT JOIN procrastinate_jobs j ON j.args->>'target_schema' = d.schema_name
+GROUP BY d.slug, d.schema_name
+ORDER BY routed_episodes DESC, d.slug;
+```
+
+This is the primary routing-distribution metric for this plan.
+
+---
+
+## Q3: Shared Graph Utilization Per Domain
+
+Run in `psql`; this uses `\gexec` to expand one query per registered domain schema.
+
+```sql
+SELECT format($fmt$
+SELECT
+    %L AS domain,
+    %L AS schema_name,
+    (SELECT count(*) FROM %I.node WHERE NOT forgotten) AS active_nodes,
+    (SELECT count(*) FROM %I.edge) AS edges,
+    (SELECT count(*) FROM %I.node_type) AS node_types,
+    (SELECT count(*) FROM %I.edge_type) AS edge_types,
+    (SELECT count(*)
+       FROM %I.node_type nt
+      WHERE EXISTS (
+          SELECT 1 FROM %I.node n
+           WHERE n.type_id = nt.id AND NOT n.forgotten
+      )
+    ) AS used_node_types,
+    (SELECT count(*)
+       FROM %I.edge_type et
+      WHERE EXISTS (
+          SELECT 1 FROM %I.edge e
+           WHERE e.type_id = et.id
+      )
+    ) AS used_edge_types;
+$fmt$,
+    slug, schema_name,
+    schema_name, schema_name, schema_name, schema_name,
+    schema_name, schema_name,
+    schema_name, schema_name
+)
+FROM ontology_domains
+WHERE schema_name IS NOT NULL
+ORDER BY slug
+\gexec
 ```
 
 ---
 
-## Q7: Steward Health Metrics
+## Q4: Catch-All Absorption Rate
 
-Domain health snapshot for the taxonomy steward.
+Measures what fraction of routed shared-schema episodes end up in
+`domain_knowledge` versus all routed shared-domain extractions.
 
 ```sql
--- Type diversity (Shannon entropy proxy)
--- Replace {schema}
-WITH type_usage AS (
-    SELECT nt.name, count(n.id) AS cnt
-    FROM {schema}.node_type nt
-    LEFT JOIN {schema}.node n ON n.type_id = nt.id AND NOT n.forgotten
-    GROUP BY nt.id
-    HAVING count(n.id) > 0
+WITH routed AS (
+    SELECT
+        d.slug,
+        count(DISTINCT (j.args->'episode_ids'->>0)) AS routed_episodes
+    FROM ontology_domains d
+    LEFT JOIN procrastinate_jobs j
+      ON j.task_name = 'extract_episode'
+     AND j.status = 'succeeded'
+     AND j.args->>'target_schema' = d.schema_name
+    GROUP BY d.slug
 )
 SELECT
-    count(*) AS active_types,
-    sum(cnt) AS total_nodes,
-    round(avg(cnt), 1) AS avg_nodes_per_type,
-    max(cnt) AS max_type_usage,
-    min(cnt) AS min_type_usage
-FROM type_usage;
+    slug,
+    routed_episodes,
+    round(100.0 * routed_episodes / NULLIF(sum(routed_episodes) OVER (), 0), 1) AS pct
+FROM routed
+ORDER BY routed_episodes DESC, slug;
 ```
+
+---
+
+## Q5: Type Landscape Per Domain
+
+Run in `psql`; this uses `\gexec`.
+
+```sql
+SELECT format($fmt$
+SELECT
+    %L AS domain,
+    nt.name AS type_name,
+    nt.description,
+    count(n.id) AS usage_count,
+    nt.created_at
+FROM %I.node_type nt
+LEFT JOIN %I.node n
+  ON n.type_id = nt.id
+ AND NOT n.forgotten
+GROUP BY nt.id
+ORDER BY usage_count DESC, nt.name;
+$fmt$, slug, schema_name, schema_name)
+FROM ontology_domains
+WHERE schema_name IS NOT NULL
+ORDER BY slug
+\gexec
+```
+
+---
+
+## Q6: Unmatched / Unrouted Summary
+
+Use this after Stage 4 removes the default `domain_knowledge` fallback.
+This is log-driven because there is no route ledger table yet.
+
+```bash
+grep -i "domain_classification_result\|domain_provisioned\|route_episode_completed" log/agent_actions.log | tail -200
+```
+
+Record manually:
+- docs with `domain_provisioned`
+- docs routed only to `domain_knowledge`
+- docs with no routed shared schema
+
+---
+
+## Q7: Steward Health Inputs
+
+Report-oriented snapshot combining routed-episode counts with shared-graph usage.
+
+```sql
+WITH routed AS (
+    SELECT
+        args->>'target_schema' AS schema_name,
+        count(DISTINCT (args->'episode_ids'->>0)) AS routed_episodes
+    FROM procrastinate_jobs
+    WHERE task_name = 'extract_episode'
+      AND status = 'succeeded'
+      AND args->>'target_schema' IS NOT NULL
+    GROUP BY args->>'target_schema'
+)
+SELECT
+    d.slug,
+    d.schema_name,
+    coalesce(r.routed_episodes, 0) AS routed_episodes
+FROM ontology_domains d
+LEFT JOIN routed r ON r.schema_name = d.schema_name
+ORDER BY routed_episodes DESC, d.slug;
+```
+
+Combine with `Q3` for full steward reporting.
 
 ---
 
 ## Baseline Capture Template
-
-Run all queries and record results in this format:
 
 ```markdown
 ### Baseline Results — [date]
@@ -182,9 +236,12 @@ Run all queries and record results in this format:
 |--------|-------|
 | Total domains | |
 | Non-seed domains | |
-| Episodes in domain_knowledge | |
+| Total personal-graph episodes ingested | |
+| Total successful route jobs | |
+| Total successful shared extract jobs | |
+| Routed episodes in domain_knowledge | |
 | Catch-all absorption % | |
-| Total unique node types (all domains) | |
-| Total unique edge types (all domains) | |
-| Novel-domain documents that created new domains | |
+| Novel docs that created non-seed domains | |
+| Novel docs routed outside domain_knowledge | |
+| Novel docs left unrouted | |
 ```

@@ -1,11 +1,11 @@
 # Plan 30: Elastic Upper Ontology
 
-| Field          | Value                                                   |
-| -------------- | ------------------------------------------------------- |
-| Date           | 2026-04-06                                              |
-| Branch         | `elastic-upper-ontology`                                |
-| Predecessors   | Plan 11 (upper ontology routing), Plan 17 (entity normalization), Plan 28 (ontology alignment), Plan 29 (ontology validation) |
-| Goal           | Make the upper ontology (semantic domain layer) elastic: new domains and sub-domains emerge organically from incoming knowledge, following OWL/upper-ontology methodology, instead of staying rigidly locked to 4 hardcoded seed domains |
+| Field | Value |
+| --- | --- |
+| Date | 2026-04-06 |
+| Branch | `elastic-upper-ontology` |
+| Predecessors | Plan 11 (upper ontology routing), Plan 17 (entity normalization), Plan 28 (ontology alignment), Plan 29 (ontology validation) |
+| Goal | Make the upper ontology elastic: novel knowledge can create new shared domains and child domains instead of defaulting to the 4 rigid seed domains |
 
 ---
 
@@ -13,109 +13,129 @@
 
 ### Problem Statement
 
-After Plans 28/29, the **per-domain type ontology** is healthy — the extraction
-pipeline produces clean, validated, deduplicated types. But the **upper ontology**
-(the domain layer that routes knowledge to shared graphs) is frozen. The system
-has exactly 4 seed domains (`user_profile`, `technical_knowledge`, `work_context`,
-`domain_knowledge`) and never creates new ones, even when novel content arrives.
-
-Content about cinema, literature, music, history, or philosophy all gets dumped
-into `domain_knowledge` — a catch-all bucket that prevents domain specialization.
+After Plans 28/29, the per-domain type ontology is healthy, but the upper
+ontology is still rigid. The system starts with 4 seed domains
+(`user_profile`, `technical_knowledge`, `work_context`, `domain_knowledge`) and
+the current classifier strongly prefers those existing domains. As a result,
+novel content is usually absorbed into `domain_knowledge` instead of creating a
+more specific shared domain.
 
 ### Root Cause Analysis
 
 | # | Root Cause | Severity | Evidence |
-|---|-----------|----------|----------|
-| 1 | **Classifier prompt is too conservative** | Critical | Says "CONSERVATIVE: strongly prefer existing domains" and provides no examples of how to output a ProposedDomain. The LLM almost never fills the optional field. |
-| 2 | **`domain_knowledge` is a catch-all sink** | Critical | Keyword fallback defaults to `domain_knowledge`. Any unclassified content goes here instead of triggering domain creation. |
-| 3 | **No domain hierarchy** | High | Flat list of 4 domains. No sub-domains, no parent-child relationships. OWL's `rdfs:subClassOf` has no equivalent. Novel content that is adjacent to an existing domain (e.g., "sports" near "user_profile") has no way to specialize. |
-| 4 | **New domains get zero guidance** | High | `DOMAIN_SEEDS` is hardcoded for 4 domains. A newly provisioned domain starts with an empty type vocabulary — the ontology agent has no recommendations. |
-| 5 | **No taxonomy maintenance process** | Medium | No mechanism to review domain utilization, split overstuffed domains, merge sparse ones, or refine domain descriptions. The taxonomy is write-once. |
-| 6 | **No cross-domain type alignment** | Low | Same concept (e.g., `Person`, `Location`) exists independently in every domain schema. No shared upper types or equivalence tracking. |
+| --- | --- | --- | --- |
+| 1 | Classifier prompt is too conservative | Critical | `classifier.py` explicitly says to strongly prefer existing domains |
+| 2 | `domain_knowledge` is the default fallback | Critical | Keyword fallback currently routes unmatched text to `domain_knowledge` |
+| 3 | No hierarchy in `ontology_domains` | High | Domains are flat; there is no `parent_id`, `depth`, or `path` |
+| 4 | New domains have no seed guidance | High | `DOMAIN_SEEDS` only covers the 4 hardcoded seeds |
+| 5 | No review/reporting loop for taxonomy health | Medium | No report exists for routed volume, type diversity, or catch-all pressure |
 
-### OWL / Upper Ontology Methodology
+### Measurement Note
 
-This plan borrows from established upper ontology practice (SUMO, DOLCE, BFO):
+This codebase does **not** store routed episodes inside shared domain schemas
+unless ingestion explicitly sets `target_graph`. Normal routing works as:
 
-- **Taxonomic hierarchy**: Domains form a tree via `is_subdomain_of`. Top-level
-  domains are broad categories; sub-domains specialize. E.g., `arts_and_culture`
-  → `cinema`, `literature`, `music`.
-- **Open-world assumption**: The taxonomy is never "complete" — new domains can
-  always be proposed when knowledge doesn't fit existing structure.
-- **Subsumption-based routing**: Content is classified at the most specific
-  applicable level. A sub-domain inherits its parent's context.
-- **Separate maintenance**: Taxonomy evolution is a distinct concern from
-  per-episode extraction. A steward process reviews and restructures periodically.
+1. ingest episode into the personal graph
+2. enqueue `route_episode`
+3. enqueue shared-schema `extract_episode` jobs with `target_schema`
+4. write nodes/edges/types into the shared graph
+
+Therefore this plan measures routing via:
+- `ontology_domains`
+- `procrastinate_jobs`
+- shared-schema nodes/edges/types
+- `log/agent_actions.log`
+
+It does **not** use shared-schema `episode` counts as a routing metric.
 
 ---
 
 ## Strategy
 
-**Approach: Hierarchical domains + adaptive classifier + taxonomy steward.**
+**Approach: correct the measurement model first, then implement elastic domain
+creation, then add lightweight hierarchy and reporting.**
 
-### Phase A: Baseline (Stages 1–2)
-Establish quantitative baselines using a diverse test corpus on a fresh
-installation. Measure: domain routing distribution, catch-all absorption rate,
-novel-domain creation rate (expected: 0%), type growth patterns.
+### Phase A: Baseline and Correct Diagnostics (Stages 1–2)
 
-### Phase B: Implementation (Stages 3–6)
-1. Add hierarchical domain schema (parent_id, depth, path)
-2. Overhaul the classifier to propose sub-domains and show the domain tree
-3. Auto-generate seed ontologies for newly created domains
-4. Build a taxonomy steward CLI for periodic domain health review
+Validate the command/query pack and capture the current baseline using the real
+routing/storage model.
 
-### Phase C: Validation (Stage 7)
-Re-run the identical corpus from Phase A against the improved system. Compare
-metrics head-to-head.
+### Phase B: Elastic Domain Creation (Stages 3–5)
+
+1. Add hierarchy fields to `ontology_domains`
+2. Rewrite the classifier to use the domain tree and stop defaulting unmatched
+   content to `domain_knowledge`
+3. Generate or inherit ontology seeds for newly created domains
+
+### Phase C: Reporting and Re-validation (Stages 6–7)
+
+1. Add a report-only taxonomy steward based on routed-episode counts and
+   shared-schema graph usage
+2. Re-run the same corpus and compare against the corrected baseline
 
 ---
 
 ## Success Criteria
 
-| Metric | Baseline (expected) | Target |
-|--------|---------------------|--------|
-| Novel-domain creation rate | 0% (all novel content → domain_knowledge) | ≥50% of novel-domain texts trigger new domain/sub-domain creation |
-| Catch-all absorption rate | 100% of unmatched content → domain_knowledge | <30% — most content finds a specific domain |
-| Domain count after corpus | 4 (unchanged) | 6–10 (organic growth) |
-| Hierarchy depth | 1 (flat) | 2–3 levels |
-| New domain seed quality | N/A (no new domains) | New domains get ≥5 recommended node types + ≥5 edge types |
-| Taxonomy steward coverage | N/A | Steward can report health metrics for all domains |
+| Metric | Baseline | Target |
+| --- | --- | --- |
+| Successful route jobs for 12-doc corpus | Measure current state | 12 successful `route_episode` jobs |
+| Non-seed domains created from novel docs | Measure current state | >=2 |
+| Novel docs routed outside `domain_knowledge` | Measure current state | >=3 of docs 07–12 |
+| Novel docs left unrouted | Measure current state | <=1 of docs 07–12 |
+| Catch-all absorption rate | Measure current state | materially lower than baseline |
+| Created domains with non-zero shared graph artifacts | N/A | every created domain |
+| Child domains created (`parent_id IS NOT NULL`) | 0 | >=1 |
+| Seed generation quality | N/A | >=5 recommended node types and >=5 edge types for a new domain |
+| Steward report coverage | N/A | report runs cleanly for all domains |
 
 ---
 
 ## Files That May Be Changed
 
 ### New Files
-- `migrations/public/012_domain_hierarchy.sql` — parent_id, depth, path columns
-- `src/neocortex/domains/seed_generator.py` — dynamic seed generation for new domains
-- `src/neocortex/domains/steward.py` — taxonomy health review and restructuring
-- `scripts/taxonomy_steward.sh` — CLI wrapper for steward process
+
+- `migrations/public/012_domain_hierarchy.sql`
+- `src/neocortex/domains/seed_generator.py`
+- `src/neocortex/domains/steward.py`
+- `scripts/taxonomy_steward.sh`
+- `tests/test_seed_generator.py`
+- `tests/test_taxonomy_steward.py`
 
 ### Modified Files
-- `src/neocortex/domains/models.py` — SemanticDomain gains parent_id, depth, path, children
-- `src/neocortex/domains/protocol.py` — new methods: get_domain_tree, get_domain_children, move_domain
-- `src/neocortex/domains/pg_service.py` — hierarchy-aware queries
-- `src/neocortex/domains/memory_service.py` — in-memory hierarchy support
-- `src/neocortex/domains/classifier.py` — rewritten prompt with tree display + proposal examples
-- `src/neocortex/domains/router.py` — hierarchy-aware provisioning, parent context inheritance
-- `src/neocortex/domains/ontology_seeds.py` — lookup by slug chain, fallback to parent seeds
-- `src/neocortex/extraction/pipeline.py` — pass parent seed context for new domains
-- `tests/test_domain_classifier.py` — updated for hierarchical proposals
-- `tests/test_domain_router.py` — updated for sub-domain provisioning
+
+- `src/neocortex/domains/models.py`
+- `src/neocortex/domains/protocol.py`
+- `src/neocortex/domains/pg_service.py`
+- `src/neocortex/domains/memory_service.py`
+- `src/neocortex/domains/classifier.py`
+- `src/neocortex/domains/router.py`
+- `src/neocortex/domains/ontology_seeds.py`
+- `src/neocortex/extraction/pipeline.py`
+- `src/neocortex/services.py`
+- `src/neocortex/jobs/tasks.py`
+- `src/neocortex/mcp_settings.py`
+- `tests/test_domain_classifier.py`
+- `tests/test_domain_router.py`
+- `tests/test_domain_models.py`
+- `tests/test_domain_e2e.py`
+- `tests/test_jobs.py`
+- `docs/plans/30-elastic-upper-ontology/resources/commands.md`
+- `docs/plans/30-elastic-upper-ontology/resources/queries.md`
 
 ---
 
 ## Progress Tracker
 
 | # | Stage | Status | Commit | Notes |
-|---|-------|--------|--------|-------|
-| 1 | [Test Corpus & Diagnostic Queries](stages/01-.md) | DONE | 4a2d236 | Resources created |
-| 2 | [Baseline Experiment](stages/02-.md) | PENDING | — | Run corpus, capture metrics |
-| 3 | [Domain Hierarchy Schema](stages/03-.md) | PENDING | — | DB migration + model changes |
-| 4 | [Hierarchical Domain Classifier](stages/04-.md) | PENDING | — | Prompt rewrite + tree display |
-| 5 | [Dynamic Seed Generation](stages/05-.md) | PENDING | — | Auto-seed new domains |
-| 6 | [Taxonomy Steward CLI](stages/06-.md) | PENDING | — | Health metrics + restructuring |
-| 7 | [Re-validation](stages/07-.md) | PENDING | — | Compare against baseline |
+| --- | --- | --- | --- | --- |
+| 1 | [Corpus, Diagnostics, and Environment Smoke Check](stages/01-.md) | DONE | — | Q1 split into pre/post-hierarchy variants; corpus + commands validated; 801 unit tests pass; live E2E deferred (Docker infra issue) |
+| 2 | [Baseline Experiment](stages/02-.md) | DONE | — | Baseline captured: 4 seed domains only, 0 novel domains created, domain_knowledge absorbed all 6 novel docs (37.5% catch-all rate), 12 route + 24 shared extract jobs all succeeded |
+| 3 | [Domain Hierarchy Schema](stages/03-.md) | DONE | — | Migration, models, protocol, PG/memory services, router parent_slug resolution, 43 domain tests + 847 full suite pass |
+| 4 | [Hierarchical Domain Classifier](stages/04-.md) | DONE | — | Tree-aware prompt, format_domain_tree, no domain_knowledge fallback, thinking_effort→medium, unrouted logging, 853 tests pass |
+| 5 | [Dynamic Seed Generation](stages/05-.md) | DONE | — | SeedGenerator with static/cache/parent/LLM resolution, wired into pipeline + jobs + router cache warming, 860 tests pass |
+| 6 | [Taxonomy Steward Report](stages/06-.md) | DONE | — | Steward module with DomainHealth/StewardProposal models, 4 proposal heuristics (split/merge/drift/underutilized), Markdown report formatter, CLI entry point, shell wrapper, 20 tests + 880 full suite pass |
+| 7 | [Re-validation](stages/07-.md) | DONE | — | 6/6 novel docs created non-seed domains, catch-all 37.5%→25.8%, 8 child domains, 12/13 domains with graph artifacts, steward report clean |
 
 ---
 
@@ -123,35 +143,39 @@ metrics head-to-head.
 
 You are an autonomous agent executing this plan stage by stage.
 
-**Before each stage**: Read the stage file. Check dependencies (previous stages
-marked DONE). Read all files listed in the stage's "Files" section before making
-changes.
+**Before each stage**
+- Read the stage file
+- Check dependencies in this tracker
+- Read every file listed in the stage's `Files` section before changing code
 
-**During each stage**: Follow steps in order. Run verification commands. If a
-step fails, diagnose and fix before proceeding. Log any issues in the Issues
-section below.
+**During each stage**
+- Follow the steps in order
+- Run the verification commands exactly as written
+- If a query or command disagrees with the current codebase, fix the plan artifact before continuing
 
-**After each stage**: Run the verification checklist. Create a single commit
-with the message from the stage file. Update this index (mark stage DONE, add
-commit hash). Move to the next stage.
+**After each stage**
+- Run the verification checklist
+- Create a single commit with the stage's commit message
+- Update this index with the new status and commit hash
 
-**If blocked**: Log the blocker in Issues. Skip to the next unblocked stage if
-possible. Do not proceed past a blocking dependency.
+**If blocked**
+- Log the blocker in `Issues`
+- Do not continue past a blocking dependency
 
 ---
 
 ## Issues
 
 | # | Stage | Severity | Description | Resolution |
-|---|-------|----------|-------------|------------|
+| --- | --- | --- | --- | --- |
 
 ---
 
 ## Decisions
 
 | # | Decision | Rationale |
-|---|----------|-----------|
-| D1 | Hierarchical domains (not flat tags) | OWL methodology — subsumption gives routing precision and inheritance. Tags would require ad-hoc overlap resolution. |
-| D2 | Separate steward process (not inline) | Taxonomy maintenance is a different concern than per-episode extraction. Inline decisions during classification would add latency and token cost to every ingestion. |
-| D3 | Parent seed inheritance | New sub-domains inherit their parent's seed ontology as a starting point, then specialize. Avoids cold-start with empty vocabulary. |
-| D4 | LLM-assisted seed generation | Static seed dictionaries don't scale. Use a cheap LLM call to generate domain-appropriate type recommendations from the domain description + parent context. |
+| --- | --- | --- |
+| D1 | Measure routing via `procrastinate_jobs` + shared-schema graph artifacts | Shared-domain routing does not populate shared-schema `episode` tables in the default path |
+| D2 | Keep Stage 6 report-only | Taxonomy restructuring is a separate workflow and should not be mixed into the first elastic-routing rollout |
+| D3 | Do not auto-create synthetic parent domains | A hallucinated `parent_slug` should not silently create shared graphs with generic metadata |
+| D4 | Use parent seed inheritance before LLM generation | New child domains should start from existing context instead of a cold start |

@@ -213,6 +213,58 @@ class TestDomainProvisioning:
         assert domain is None
 
 
+# ── TestHierarchyE2E ──
+
+
+class TestHierarchyE2E:
+    """End-to-end hierarchy flows: child domain provisioning via the full routing stack."""
+
+    @pytest.mark.asyncio
+    async def test_child_domain_provisioned_with_correct_hierarchy(self) -> None:
+        """Proposed child domain gets correct depth, path, and parent_id through full pipeline."""
+        mock_schema_mgr = AsyncMock()
+        mock_schema_mgr.create_graph = AsyncMock(
+            side_effect=lambda agent_id, purpose, is_shared=False: f"ncx_{agent_id}__{purpose}"
+        )
+
+        domain_svc = InMemoryDomainService()
+        await domain_svc.seed_defaults()
+        permissions = InMemoryPermissionService(bootstrap_admin_id="admin")
+
+        proposing_classifier = AsyncMock()
+        proposing_classifier.classify = AsyncMock(
+            return_value=ClassificationResult(
+                matched_domains=[],
+                proposed_domain=ProposedDomain(
+                    slug="python",
+                    name="Python",
+                    description="Python-specific knowledge",
+                    reasoning="Specific subdomain of technical knowledge",
+                    parent_slug="technical_knowledge",
+                ),
+            )
+        )
+
+        router = DomainRouter(
+            domain_service=domain_svc,
+            classifier=proposing_classifier,
+            schema_mgr=mock_schema_mgr,
+            permissions=permissions,
+        )
+
+        results = await router.route_and_extract("agent1", 1, "Python asyncio tutorial")
+        assert len(results) == 1
+        assert results[0].domain_slug == "python"
+
+        # Verify domain tree shows hierarchy
+        tree = await domain_svc.get_domain_tree()
+        tk = next(d for d in tree if d.slug == "technical_knowledge")
+        assert len(tk.children) == 1
+        assert tk.children[0].slug == "python"
+        assert tk.children[0].depth == 1
+        assert tk.children[0].path == "technical_knowledge.python"
+
+
 # ── TestPipelineIntegration ──
 
 

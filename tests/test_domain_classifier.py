@@ -5,8 +5,46 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from neocortex.domains import InMemoryDomainService
-from neocortex.domains.classifier import AgentDomainClassifier, DomainClassifier, MockDomainClassifier
-from neocortex.domains.models import ClassificationResult
+from neocortex.domains.classifier import (
+    AgentDomainClassifier,
+    DomainClassifier,
+    MockDomainClassifier,
+    format_domain_tree,
+)
+from neocortex.domains.models import ClassificationResult, SemanticDomain
+
+
+class TestFormatDomainTree:
+    def test_flat_domains(self) -> None:
+        domains = [
+            SemanticDomain(slug="a", name="A", description="Domain A", depth=0, path="a"),
+            SemanticDomain(slug="b", name="B", description="Domain B", depth=0, path="b"),
+        ]
+        result = format_domain_tree(domains)
+        assert result == "a: Domain A\nb: Domain B"
+
+    def test_nested_domains(self) -> None:
+        domains = [
+            SemanticDomain(slug="tech", name="Tech", description="Technical", depth=0, path="tech"),
+            SemanticDomain(slug="python", name="Python", description="Python lang", depth=1, path="tech.python"),
+            SemanticDomain(slug="asyncio", name="Asyncio", description="Async IO", depth=2, path="tech.python.asyncio"),
+        ]
+        result = format_domain_tree(domains)
+        lines = result.split("\n")
+        assert lines[0] == "tech: Technical"
+        assert lines[1] == "  python: Python lang"
+        assert lines[2] == "    asyncio: Async IO"
+
+    def test_sorts_by_path(self) -> None:
+        domains = [
+            SemanticDomain(slug="z", name="Z", description="Last", depth=0, path="z"),
+            SemanticDomain(slug="a", name="A", description="First", depth=0, path="a"),
+        ]
+        result = format_domain_tree(domains)
+        assert result.startswith("a: First")
+
+    def test_empty_domains(self) -> None:
+        assert format_domain_tree([]) == ""
 
 
 class TestMockDomainClassifier:
@@ -48,11 +86,11 @@ class TestMockDomainClassifier:
         assert "domain_knowledge" in slugs
 
     @pytest.mark.asyncio
-    async def test_fallback_to_domain_knowledge(self, classifier: MockDomainClassifier, domains: list) -> None:
+    async def test_unmatched_text_returns_empty(self, classifier: MockDomainClassifier, domains: list) -> None:
+        """Unmatched text returns empty matched_domains — no silent domain_knowledge fallback."""
         result = await classifier.classify("The weather is nice today", domains)
-        assert len(result.matched_domains) == 1
-        assert result.matched_domains[0].domain_slug == "domain_knowledge"
-        assert result.matched_domains[0].confidence == 0.4
+        assert len(result.matched_domains) == 0
+        assert result.proposed_domain is None
 
     @pytest.mark.asyncio
     async def test_all_confidences_above_threshold(self, classifier: MockDomainClassifier, domains: list) -> None:
@@ -61,7 +99,6 @@ class TestMockDomainClassifier:
             "We need to ship project X by Friday",
             "React hooks simplify state management",
             "The theory of relativity explains gravitational effects",
-            "The weather is nice today",
         ]
         for text in texts:
             result = await classifier.classify(text, domains)
@@ -97,7 +134,7 @@ class TestAgentDomainClassifierKeywordFallback:
 
     @pytest.mark.asyncio
     async def test_keyword_fallback_fires_on_empty_llm_result(self, domains: list) -> None:
-        """When LLM returns no matches, keyword fallback should fire."""
+        """When LLM returns no matches and no proposal, keyword fallback should fire."""
         classifier = AgentDomainClassifier()
 
         # Mock the PydanticAI agent.run to return empty ClassificationResult
@@ -119,8 +156,8 @@ class TestAgentDomainClassifierKeywordFallback:
         assert all(m.reasoning == "keyword_fallback" for m in result.matched_domains)
 
     @pytest.mark.asyncio
-    async def test_keyword_fallback_default_to_domain_knowledge(self, domains: list) -> None:
-        """When LLM and keywords both miss, fallback defaults to domain_knowledge."""
+    async def test_no_default_to_domain_knowledge(self, domains: list) -> None:
+        """When LLM and keywords both miss, returns empty — no domain_knowledge fallback."""
         classifier = AgentDomainClassifier()
 
         mock_result = MagicMock()
@@ -136,9 +173,40 @@ class TestAgentDomainClassifierKeywordFallback:
                 domains=domains,
             )
 
-        assert len(result.matched_domains) == 1
-        assert result.matched_domains[0].domain_slug == "domain_knowledge"
-        assert result.matched_domains[0].confidence == 0.4
+        assert len(result.matched_domains) == 0
+        assert result.proposed_domain is None
+
+    @pytest.mark.asyncio
+    async def test_keyword_fallback_skipped_when_llm_proposes_domain(self, domains: list) -> None:
+        """When LLM returns no matches but proposes a domain, keyword fallback should NOT fire."""
+        from neocortex.domains.models import ProposedDomain
+
+        classifier = AgentDomainClassifier()
+
+        mock_result = MagicMock()
+        mock_result.output = ClassificationResult(
+            matched_domains=[],
+            proposed_domain=ProposedDomain(
+                slug="weather",
+                name="Weather",
+                description="Weather and climate",
+                reasoning="Novel domain",
+            ),
+        )
+
+        with patch("neocortex.domains.classifier.Agent") as mock_agent_cls:
+            mock_agent_instance = AsyncMock()
+            mock_agent_instance.run = AsyncMock(return_value=mock_result)
+            mock_agent_cls.return_value = mock_agent_instance
+
+            result = await classifier.classify(
+                "The weather is lovely today",
+                domains=domains,
+            )
+
+        assert len(result.matched_domains) == 0
+        assert result.proposed_domain is not None
+        assert result.proposed_domain.slug == "weather"
 
     @pytest.mark.asyncio
     async def test_keyword_fallback_not_used_when_llm_matches(self, domains: list) -> None:
