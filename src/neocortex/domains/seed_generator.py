@@ -26,7 +26,7 @@ class SeedGenerator:
     def __init__(
         self,
         domain_service: DomainService,
-        model: str = "google-gla:gemini-3-flash-preview",
+        model: str = "openai-responses:gpt-5.4-mini",
     ) -> None:
         self._domain_service = domain_service
         self._model = model

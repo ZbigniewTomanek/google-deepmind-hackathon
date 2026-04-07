@@ -41,7 +41,7 @@ class AgentDomainClassifier:
 
     def __init__(
         self,
-        model_name: str = "google-gla:gemini-3-flash-preview",
+        model_name: str = "openai-responses:gpt-5.4-mini",
         thinking_effort: ThinkingLevel = "low",
     ) -> None:
         self._model = model_name
