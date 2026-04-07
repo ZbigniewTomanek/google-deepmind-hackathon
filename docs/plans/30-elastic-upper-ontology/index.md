@@ -135,7 +135,7 @@ routing/storage model.
 | 4 | [Hierarchical Domain Classifier](stages/04-.md) | DONE | — | Tree-aware prompt, format_domain_tree, no domain_knowledge fallback, thinking_effort→medium, unrouted logging, 853 tests pass |
 | 5 | [Dynamic Seed Generation](stages/05-.md) | DONE | — | SeedGenerator with static/cache/parent/LLM resolution, wired into pipeline + jobs + router cache warming, 860 tests pass |
 | 6 | [Taxonomy Steward Report](stages/06-.md) | DONE | — | Steward module with DomainHealth/StewardProposal models, 4 proposal heuristics (split/merge/drift/underutilized), Markdown report formatter, CLI entry point, shell wrapper, 20 tests + 880 full suite pass |
-| 7 | [Re-validation](stages/07-.md) | PENDING | — | Compare against corrected baseline |
+| 7 | [Re-validation](stages/07-.md) | DONE | — | 6/6 novel docs created non-seed domains, catch-all 37.5%→25.8%, 8 child domains, 12/13 domains with graph artifacts, steward report clean |
 
 ---
 
