@@ -146,25 +146,44 @@ class DomainRouter:
                 )
             )
 
-        logger.bind(action_log=True).info(
-            "domain_routing_completed",
-            agent_id=agent_id,
-            episode_id=episode_id,
-            routed_to=[r.schema_name for r in results],
-            domain_count=len(results),
-        )
+        if results:
+            logger.bind(action_log=True).info(
+                "domain_routing_completed",
+                agent_id=agent_id,
+                episode_id=episode_id,
+                routed_to=[r.schema_name for r in results],
+                domain_count=len(results),
+            )
+        else:
+            logger.bind(action_log=True).warning(
+                "domain_routing_unrouted",
+                agent_id=agent_id,
+                episode_id=episode_id,
+                matched_count=len(classification.matched_domains),
+                proposed=classification.proposed_domain is not None,
+                reason="no_domains_matched_or_provisioned",
+            )
         return results
 
     async def _provision_domain(self, proposed: ProposedDomain, agent_id: str) -> SemanticDomain | None:
         """Create a new domain, provision its shared schema, and grant permissions."""
         slug = _sanitize_slug(proposed.slug)
 
-        # Resolve parent_slug to parent_id (D3: do not auto-create missing parents)
+        # Resolve parent_slug to parent_id (D3: do not auto-create missing parents).
+        # If the parent slug does not resolve, treat the proposal as root-level
+        # rather than silently creating a synthetic parent domain.
         parent_id: int | None = None
         if proposed.parent_slug is not None:
             parent = await self._domain_service.get_domain(proposed.parent_slug)
             if parent is not None:
                 parent_id = parent.id
+            else:
+                logger.bind(action_log=True).warning(
+                    "domain_provision_parent_not_found",
+                    proposed_slug=slug,
+                    parent_slug=proposed.parent_slug,
+                    action="treating_as_root",
+                )
 
         try:
             domain = await self._domain_service.create_domain(

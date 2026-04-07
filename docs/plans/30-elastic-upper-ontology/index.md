@@ -132,7 +132,7 @@ routing/storage model.
 | 1 | [Corpus, Diagnostics, and Environment Smoke Check](stages/01-.md) | DONE | — | Q1 split into pre/post-hierarchy variants; corpus + commands validated; 801 unit tests pass; live E2E deferred (Docker infra issue) |
 | 2 | [Baseline Experiment](stages/02-.md) | DONE | — | Baseline captured: 4 seed domains only, 0 novel domains created, domain_knowledge absorbed all 6 novel docs (37.5% catch-all rate), 12 route + 24 shared extract jobs all succeeded |
 | 3 | [Domain Hierarchy Schema](stages/03-.md) | DONE | — | Migration, models, protocol, PG/memory services, router parent_slug resolution, 43 domain tests + 847 full suite pass |
-| 4 | [Hierarchical Domain Classifier](stages/04-.md) | PENDING | — | Tree-aware prompt + no forced catch-all fallback |
+| 4 | [Hierarchical Domain Classifier](stages/04-.md) | DONE | — | Tree-aware prompt, format_domain_tree, no domain_knowledge fallback, thinking_effort→medium, unrouted logging, 853 tests pass |
 | 5 | [Dynamic Seed Generation](stages/05-.md) | PENDING | — | Generated/inherited seed guidance for new domains |
 | 6 | [Taxonomy Steward Report](stages/06-.md) | PENDING | — | Report-only taxonomy health review |
 | 7 | [Re-validation](stages/07-.md) | PENDING | — | Compare against corrected baseline |

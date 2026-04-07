@@ -337,6 +337,25 @@ class TestDomainProvisioningWithParent:
         assert domain.path == "cooking"
 
 
+class TestUnmatchedTextReturnsEmpty:
+    @pytest.mark.asyncio
+    async def test_unmatched_text_no_fallback(
+        self,
+        domain_service: InMemoryDomainService,
+        classifier: MockDomainClassifier,
+        permissions: InMemoryPermissionService,
+    ) -> None:
+        """Unmatched text returns empty results — no silent domain_knowledge fallback."""
+        router = DomainRouter(
+            domain_service=domain_service,
+            classifier=classifier,
+            schema_mgr=None,
+            permissions=permissions,
+        )
+        results = await router.route_and_extract("agent1", 1, "The weather is beautiful today")
+        assert results == []
+
+
 class TestEnsureSchema:
     @pytest.mark.asyncio
     async def test_idempotent_for_seeded_domains(

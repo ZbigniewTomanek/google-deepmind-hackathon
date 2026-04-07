@@ -126,7 +126,7 @@ class MCPSettings(BaseSettings):
     # Note: requires extraction_enabled=True (domain routing uses the job queue)
     domain_routing_enabled: bool = True
     domain_classifier_model: str = "google-gla:gemini-3-flash-preview"
-    domain_classifier_thinking_effort: ThinkingLevel = "low"
+    domain_classifier_thinking_effort: ThinkingLevel = "medium"
     domain_classification_threshold: float = 0.3
 
     # Admin
