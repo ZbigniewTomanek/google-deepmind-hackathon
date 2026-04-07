@@ -129,7 +129,7 @@ routing/storage model.
 
 | # | Stage | Status | Commit | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | [Corpus, Diagnostics, and Environment Smoke Check](stages/01-.md) | PENDING | — | Resource pack must be validated against current routing model |
+| 1 | [Corpus, Diagnostics, and Environment Smoke Check](stages/01-.md) | DONE | — | Q1 split into pre/post-hierarchy variants; corpus + commands validated; 801 unit tests pass; live E2E deferred (Docker infra issue) |
 | 2 | [Baseline Experiment](stages/02-.md) | PENDING | — | Capture corrected baseline |
 | 3 | [Domain Hierarchy Schema](stages/03-.md) | PENDING | — | Add `parent_id`, `depth`, `path` |
 | 4 | [Hierarchical Domain Classifier](stages/04-.md) | PENDING | — | Tree-aware prompt + no forced catch-all fallback |

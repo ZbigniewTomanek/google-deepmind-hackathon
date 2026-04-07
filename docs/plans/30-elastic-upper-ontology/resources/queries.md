@@ -18,6 +18,23 @@ psql "postgresql://neocortex:neocortex@localhost:5432/neocortex"
 
 ## Q1: Domain Registry
 
+Pre-hierarchy (Stages 1–2):
+
+```sql
+SELECT
+    d.id,
+    d.slug,
+    d.name,
+    d.schema_name,
+    d.seed,
+    d.created_by,
+    d.created_at
+FROM ontology_domains d
+ORDER BY d.slug;
+```
+
+Post-hierarchy (Stage 3+):
+
 ```sql
 SELECT
     d.id,
