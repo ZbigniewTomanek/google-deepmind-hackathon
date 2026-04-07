@@ -42,7 +42,7 @@ class AgentDomainClassifier:
     def __init__(
         self,
         model_name: str = "openai-responses:gpt-5.4-mini",
-        thinking_effort: ThinkingLevel = "low",
+        thinking_effort: ThinkingLevel = "medium",
     ) -> None:
         self._model = model_name
         self._model_settings = ModelSettings(thinking=thinking_effort)

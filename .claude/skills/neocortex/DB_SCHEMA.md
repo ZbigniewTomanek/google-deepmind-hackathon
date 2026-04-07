@@ -77,11 +77,16 @@ CREATE TABLE ontology_domains (
     seed        BOOLEAN DEFAULT false,
     created_at  TIMESTAMPTZ DEFAULT now(),
     updated_at  TIMESTAMPTZ DEFAULT now(),
-    created_by  TEXT
+    created_by  TEXT,
+    parent_id   INTEGER REFERENCES ontology_domains(id),  -- hierarchy (Plan 30)
+    depth       INTEGER NOT NULL DEFAULT 0,                -- 0 = root, 1 = child, etc.
+    path        TEXT NOT NULL DEFAULT ''                    -- dot-separated slug path
 );
+-- Indexes: parent_id, path
 ```
 
 **Seed domains:** `user_profile`, `technical_knowledge`, `work_context`, `domain_knowledge`.
+Domains are hierarchical — `parent_id` links child domains to parents, `depth` tracks nesting level, `path` stores the dot-separated slug path (e.g., `domain_knowledge.film_and_media_studies`).
 
 ### node_type / edge_type (public)
 
@@ -319,9 +324,15 @@ ORDER BY gp.agent_id;
 -- Agents with admin status
 SELECT agent_id, is_admin, created_at FROM agent_registry WHERE is_admin = true;
 
--- Domain routing configuration
-SELECT slug, name, schema_name, seed, created_by
-FROM ontology_domains ORDER BY slug;
+-- Domain routing configuration (with hierarchy)
+SELECT slug, name, schema_name, seed, created_by, parent_id, depth, path
+FROM ontology_domains ORDER BY path, id;
+
+-- Domain tree view (parent-child relationships)
+SELECT child.slug, child.name, child.depth, child.path, parent.slug AS parent_slug
+FROM ontology_domains child
+LEFT JOIN ontology_domains parent ON child.parent_id = parent.id
+ORDER BY child.path;
 
 -- Check if seed domain schemas actually exist
 SELECT od.slug, od.schema_name,

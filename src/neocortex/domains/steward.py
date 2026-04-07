@@ -50,6 +50,8 @@ class DomainHealth:
 
     # Top active node type names (for drift / merge analysis)
     top_node_types: list[str] = field(default_factory=list)
+    # Parallel counts for top_node_types (same order, for concentration analysis)
+    top_node_type_counts: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -69,7 +71,6 @@ class StewardProposal:
 _SPLIT_MIN_EPISODES = 10
 _SPLIT_MIN_TYPES_USED = 6
 _SPLIT_MAX_CONCENTRATION = 0.4  # no single type > 40% of nodes
-_MERGE_MAX_EPISODES = 3
 _UNDERUTILIZED_MAX_EPISODES = 1
 
 
@@ -120,6 +121,7 @@ class TaxonomySteward:
                     health.node_types_used = stats["node_types_used"]
                     health.edge_types_used = stats["edge_types_used"]
                     health.top_node_types = stats["top_node_types"]
+                    health.top_node_type_counts = stats["top_node_type_counts"]
                 except Exception:
                     logger.opt(exception=True).warning("steward_graph_stats_failed", schema=schema)
 
@@ -178,6 +180,7 @@ class TaxonomySteward:
                 " LIMIT 5"
             )
             top_node_types = [r["name"] for r in top_rows]
+            top_node_type_counts = [r["cnt"] for r in top_rows]
 
         return {
             "active_nodes": active_nodes or 0,
@@ -187,6 +190,7 @@ class TaxonomySteward:
             "node_types_used": node_types_used or 0,
             "edge_types_used": edge_types_used or 0,
             "top_node_types": top_node_types,
+            "top_node_type_counts": top_node_type_counts,
         }
 
     # ------------------------------------------------------------------
@@ -211,9 +215,11 @@ class TaxonomySteward:
                 and h.node_types_used >= _SPLIT_MIN_TYPES_USED
                 and h.active_nodes > 0
             ):
-                avg_per_type = h.active_nodes / h.node_types_used
-                # Simple proxy: if average is low relative to total, types are spread
-                concentration = avg_per_type / h.active_nodes if h.active_nodes > 0 else 1.0
+                # Use actual max-type share when per-type counts are available
+                if h.top_node_type_counts and h.active_nodes > 0:
+                    concentration = max(h.top_node_type_counts) / h.active_nodes
+                else:
+                    concentration = 1.0 / h.node_types_used if h.node_types_used > 0 else 1.0
                 if concentration < _SPLIT_MAX_CONCENTRATION:
                     proposals.append(
                         StewardProposal(

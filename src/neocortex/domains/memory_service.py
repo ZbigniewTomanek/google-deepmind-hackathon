@@ -72,11 +72,11 @@ class InMemoryDomainService:
         return True
 
     async def get_domain_tree(self) -> list[SemanticDomain]:
-        all_domains = sorted(self._domains.values(), key=lambda d: (d.path, d.id or 0))
-
-        # Reset children lists (they may carry stale data from previous calls)
-        for d in all_domains:
-            d.children = []
+        # Copy domain objects to avoid mutating shared state in self._domains
+        all_domains = sorted(
+            [d.model_copy(update={"children": []}) for d in self._domains.values()],
+            key=lambda d: (d.path, d.id or 0),
+        )
 
         by_id: dict[int, SemanticDomain] = {}
         roots: list[SemanticDomain] = []

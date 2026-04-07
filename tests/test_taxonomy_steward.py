@@ -65,6 +65,7 @@ def sample_health() -> list[DomainHealth]:
             node_types_used=5,
             edge_types_used=4,
             top_node_types=["Person", "Preference", "Goal", "Habit", "Location"],
+            top_node_type_counts=[6, 5, 4, 3, 2],
         ),
         _seed_health(
             "technical_knowledge",
@@ -77,6 +78,7 @@ def sample_health() -> list[DomainHealth]:
             node_types_used=8,
             edge_types_used=6,
             top_node_types=["Language", "Framework", "Library", "Concept", "Pattern"],
+            top_node_type_counts=[12, 10, 10, 9, 9],
         ),
         _seed_health(
             "work_context",
@@ -157,6 +159,7 @@ class TestSplitProposals:
                 active_nodes=50,
                 node_types_used=8,
                 top_node_types=["A", "B", "C", "D", "E", "F", "G", "H"],
+                top_node_type_counts=[8, 7, 7, 7, 6, 6, 5, 4],
             ),
         ]
         proposals = steward.generate_proposals(health)
@@ -446,6 +449,7 @@ class TestDomainHealthDefaults:
         assert h.node_types_used == 0
         assert h.edge_types_used == 0
         assert h.top_node_types == []
+        assert h.top_node_type_counts == []
 
 
 # ---------------------------------------------------------------------------
