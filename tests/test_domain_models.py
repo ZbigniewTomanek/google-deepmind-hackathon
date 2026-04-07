@@ -111,6 +111,103 @@ class TestInMemoryDomainService:
         assert isinstance(svc, DomainService)
 
 
+class TestDomainHierarchy:
+    @pytest.fixture
+    async def svc(self) -> InMemoryDomainService:
+        svc = InMemoryDomainService()
+        await svc.seed_defaults()
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_seed_domains_are_roots(self, svc: InMemoryDomainService) -> None:
+        domains = await svc.list_domains()
+        for d in domains:
+            assert d.parent_id is None
+            assert d.depth == 0
+            assert d.path == d.slug
+
+    @pytest.mark.asyncio
+    async def test_create_child_domain(self, svc: InMemoryDomainService) -> None:
+        parent = await svc.get_domain("technical_knowledge")
+        assert parent is not None
+        child = await svc.create_domain(
+            slug="python",
+            name="Python",
+            description="Python programming",
+            created_by="test",
+            parent_id=parent.id,
+        )
+        assert child.parent_id == parent.id
+        assert child.depth == 1
+        assert child.path == "technical_knowledge.python"
+
+    @pytest.mark.asyncio
+    async def test_create_grandchild_domain(self, svc: InMemoryDomainService) -> None:
+        parent = await svc.get_domain("technical_knowledge")
+        assert parent is not None
+        child = await svc.create_domain(
+            slug="python",
+            name="Python",
+            description="Python programming",
+            created_by="test",
+            parent_id=parent.id,
+        )
+        grandchild = await svc.create_domain(
+            slug="django",
+            name="Django",
+            description="Django web framework",
+            created_by="test",
+            parent_id=child.id,
+        )
+        assert grandchild.depth == 2
+        assert grandchild.path == "technical_knowledge.python.django"
+
+    @pytest.mark.asyncio
+    async def test_get_domain_tree(self, svc: InMemoryDomainService) -> None:
+        parent = await svc.get_domain("technical_knowledge")
+        assert parent is not None
+        await svc.create_domain(
+            slug="python",
+            name="Python",
+            description="Python programming",
+            created_by="test",
+            parent_id=parent.id,
+        )
+        tree = await svc.get_domain_tree()
+        # All seed domains are roots
+        assert len(tree) == 4
+        # Find technical_knowledge and check it has children
+        tk = next(d for d in tree if d.slug == "technical_knowledge")
+        assert len(tk.children) == 1
+        assert tk.children[0].slug == "python"
+
+    @pytest.mark.asyncio
+    async def test_get_children(self, svc: InMemoryDomainService) -> None:
+        parent = await svc.get_domain("technical_knowledge")
+        assert parent is not None
+        await svc.create_domain(
+            slug="python", name="Python", description="Python", created_by="test", parent_id=parent.id
+        )
+        await svc.create_domain(slug="rust", name="Rust", description="Rust", created_by="test", parent_id=parent.id)
+        assert parent.id is not None
+        children = await svc.get_children(parent.id)
+        assert len(children) == 2
+        slugs = {c.slug for c in children}
+        assert slugs == {"python", "rust"}
+
+    @pytest.mark.asyncio
+    async def test_create_root_domain_without_parent(self, svc: InMemoryDomainService) -> None:
+        domain = await svc.create_domain(
+            slug="health",
+            name="Health",
+            description="Health domain",
+            created_by="test",
+        )
+        assert domain.parent_id is None
+        assert domain.depth == 0
+        assert domain.path == "health"
+
+
 class TestSemanticDomainModel:
     def test_minimal_creation(self) -> None:
         domain = SemanticDomain(slug="test", name="Test", description="A test domain")
@@ -118,3 +215,10 @@ class TestSemanticDomainModel:
         assert domain.id is None
         assert domain.schema_name is None
         assert domain.seed is False
+
+    def test_hierarchy_defaults(self) -> None:
+        domain = SemanticDomain(slug="test", name="Test", description="A test domain")
+        assert domain.parent_id is None
+        assert domain.depth == 0
+        assert domain.path == ""
+        assert domain.children == []

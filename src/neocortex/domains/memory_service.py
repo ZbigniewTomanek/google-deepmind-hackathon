@@ -25,9 +25,20 @@ class InMemoryDomainService:
         description: str,
         created_by: str,
         schema_name: str | None = None,
+        parent_id: int | None = None,
     ) -> SemanticDomain:
         if slug in self._domains:
             raise ValueError(f"Domain with slug '{slug}' already exists")
+
+        # Compute depth and path from parent
+        depth = 0
+        path = slug
+        if parent_id is not None:
+            parent = next((d for d in self._domains.values() if d.id == parent_id), None)
+            if parent is not None:
+                depth = parent.depth + 1
+                path = f"{parent.path}.{slug}"
+
         domain = SemanticDomain(
             id=self._next_id,
             slug=slug,
@@ -37,6 +48,9 @@ class InMemoryDomainService:
             seed=False,
             created_at=datetime.now(UTC),
             created_by=created_by,
+            parent_id=parent_id,
+            depth=depth,
+            path=path,
         )
         self._next_id += 1
         self._domains[slug] = domain
@@ -56,6 +70,31 @@ class InMemoryDomainService:
             return False
         del self._domains[slug]
         return True
+
+    async def get_domain_tree(self) -> list[SemanticDomain]:
+        all_domains = sorted(self._domains.values(), key=lambda d: (d.path, d.id or 0))
+
+        # Reset children lists (they may carry stale data from previous calls)
+        for d in all_domains:
+            d.children = []
+
+        by_id: dict[int, SemanticDomain] = {}
+        roots: list[SemanticDomain] = []
+        for d in all_domains:
+            if d.id is not None:
+                by_id[d.id] = d
+        for d in all_domains:
+            if d.parent_id is not None and d.parent_id in by_id:
+                by_id[d.parent_id].children.append(d)
+            else:
+                roots.append(d)
+        return roots
+
+    async def get_children(self, parent_id: int) -> list[SemanticDomain]:
+        return sorted(
+            [d for d in self._domains.values() if d.parent_id == parent_id],
+            key=lambda d: d.id or 0,
+        )
 
     async def seed_defaults(self) -> None:
         for seed_domain in SEED_DOMAINS:

@@ -16,6 +16,10 @@ class SemanticDomain(BaseModel):
     seed: bool = False
     created_at: datetime | None = None
     created_by: str | None = None
+    parent_id: int | None = None
+    depth: int = 0
+    path: str = ""
+    children: list[SemanticDomain] = Field(default_factory=list)
 
 
 class DomainClassification(BaseModel):
@@ -33,6 +37,7 @@ class ProposedDomain(BaseModel):
     name: str
     description: str
     reasoning: str
+    parent_slug: str | None = None
 
 
 class ClassificationResult(BaseModel):
@@ -62,6 +67,9 @@ SEED_DOMAINS = [
         ),
         schema_name="ncx_shared__user_profile",
         seed=True,
+        parent_id=None,
+        depth=0,
+        path="user_profile",
     ),
     SemanticDomain(
         slug="technical_knowledge",
@@ -73,6 +81,9 @@ SEED_DOMAINS = [
         ),
         schema_name="ncx_shared__technical_knowledge",
         seed=True,
+        parent_id=None,
+        depth=0,
+        path="technical_knowledge",
     ),
     SemanticDomain(
         slug="work_context",
@@ -84,6 +95,9 @@ SEED_DOMAINS = [
         ),
         schema_name="ncx_shared__work_context",
         seed=True,
+        parent_id=None,
+        depth=0,
+        path="work_context",
     ),
     SemanticDomain(
         slug="domain_knowledge",
@@ -95,5 +109,8 @@ SEED_DOMAINS = [
         ),
         schema_name="ncx_shared__domain_knowledge",
         seed=True,
+        parent_id=None,
+        depth=0,
+        path="domain_knowledge",
     ),
 ]

@@ -256,6 +256,87 @@ class TestEmptyDomains:
         assert results == []
 
 
+class TestDomainProvisioningWithParent:
+    @pytest.mark.asyncio
+    async def test_proposed_domain_with_valid_parent_slug(
+        self,
+        domain_service: InMemoryDomainService,
+        permissions: InMemoryPermissionService,
+        mock_schema_mgr: AsyncMock,
+    ) -> None:
+        """Proposed domain with parent_slug resolves parent_id and creates child domain."""
+        proposing_classifier = AsyncMock()
+        proposing_classifier.classify = AsyncMock(
+            return_value=ClassificationResult(
+                matched_domains=[],
+                proposed_domain=ProposedDomain(
+                    slug="python",
+                    name="Python",
+                    description="Python programming",
+                    reasoning="Specific technical subdomain",
+                    parent_slug="technical_knowledge",
+                ),
+            )
+        )
+
+        router = DomainRouter(
+            domain_service=domain_service,
+            classifier=proposing_classifier,
+            schema_mgr=mock_schema_mgr,
+            permissions=permissions,
+        )
+        results = await router.route_and_extract("agent1", 1, "Python asyncio patterns")
+
+        assert len(results) == 1
+        assert results[0].domain_slug == "python"
+
+        # Verify hierarchy
+        domain = await domain_service.get_domain("python")
+        assert domain is not None
+        parent = await domain_service.get_domain("technical_knowledge")
+        assert parent is not None
+        assert domain.parent_id == parent.id
+        assert domain.depth == 1
+        assert domain.path == "technical_knowledge.python"
+
+    @pytest.mark.asyncio
+    async def test_proposed_domain_with_invalid_parent_slug_creates_root(
+        self,
+        domain_service: InMemoryDomainService,
+        permissions: InMemoryPermissionService,
+        mock_schema_mgr: AsyncMock,
+    ) -> None:
+        """Proposed domain with nonexistent parent_slug creates a root domain (D3)."""
+        proposing_classifier = AsyncMock()
+        proposing_classifier.classify = AsyncMock(
+            return_value=ClassificationResult(
+                matched_domains=[],
+                proposed_domain=ProposedDomain(
+                    slug="cooking",
+                    name="Cooking",
+                    description="Cooking knowledge",
+                    reasoning="Novel domain",
+                    parent_slug="nonexistent_parent",
+                ),
+            )
+        )
+
+        router = DomainRouter(
+            domain_service=domain_service,
+            classifier=proposing_classifier,
+            schema_mgr=mock_schema_mgr,
+            permissions=permissions,
+        )
+        results = await router.route_and_extract("agent1", 1, "Making sourdough bread")
+
+        assert len(results) == 1
+        domain = await domain_service.get_domain("cooking")
+        assert domain is not None
+        assert domain.parent_id is None
+        assert domain.depth == 0
+        assert domain.path == "cooking"
+
+
 class TestEnsureSchema:
     @pytest.mark.asyncio
     async def test_idempotent_for_seeded_domains(

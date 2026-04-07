@@ -158,12 +158,21 @@ class DomainRouter:
     async def _provision_domain(self, proposed: ProposedDomain, agent_id: str) -> SemanticDomain | None:
         """Create a new domain, provision its shared schema, and grant permissions."""
         slug = _sanitize_slug(proposed.slug)
+
+        # Resolve parent_slug to parent_id (D3: do not auto-create missing parents)
+        parent_id: int | None = None
+        if proposed.parent_slug is not None:
+            parent = await self._domain_service.get_domain(proposed.parent_slug)
+            if parent is not None:
+                parent_id = parent.id
+
         try:
             domain = await self._domain_service.create_domain(
                 slug=slug,
                 name=proposed.name,
                 description=proposed.description,
                 created_by=agent_id,
+                parent_id=parent_id,
             )
         except Exception:
             logger.warning("domain_provision_create_failed", slug=slug)
