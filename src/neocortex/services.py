@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from neocortex.domains.router import DomainRouter
+    from neocortex.domains.seed_generator import SeedGenerator
 
 import procrastinate
 import procrastinate.exceptions
@@ -34,6 +35,7 @@ class ServiceContext(TypedDict):
     job_app: procrastinate.App | None
     permissions: PermissionChecker
     domain_router: DomainRouter | None
+    seed_generator: SeedGenerator | None
 
 
 async def create_services(settings: MCPSettings) -> ServiceContext:
@@ -48,11 +50,13 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         permissions: PermissionChecker = mem_permissions
 
         domain_router: DomainRouter | None = None
+        mock_seed_gen: SeedGenerator | None = None
         if settings.domain_routing_enabled:
             from neocortex.domains import InMemoryDomainService
             from neocortex.domains.classifier import MockDomainClassifier
             from neocortex.domains.models import SEED_DOMAINS
             from neocortex.domains.router import DomainRouter
+            from neocortex.domains.seed_generator import SeedGenerator
 
             domain_svc = InMemoryDomainService()
             await domain_svc.seed_defaults()
@@ -62,6 +66,11 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
                 if domain.schema_name:
                     mem_permissions.register_shared_schema(domain.schema_name)
 
+            mock_seed_gen = SeedGenerator(
+                domain_service=domain_svc,
+                model=settings.domain_classifier_model,
+            )
+
             domain_router = DomainRouter(
                 domain_service=domain_svc,
                 classifier=MockDomainClassifier(),
@@ -69,6 +78,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
                 permissions=permissions,
                 job_app=None,
                 classification_threshold=settings.domain_classification_threshold,
+                seed_generator=mock_seed_gen,
             )
 
         return ServiceContext(
@@ -82,6 +92,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             job_app=None,
             permissions=permissions,
             domain_router=domain_router,
+            seed_generator=mock_seed_gen,
         )
 
     pg_config = PostgresConfig()
@@ -135,8 +146,15 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
 
     # Create domain router after job_app (needs it for enqueuing)
     pg_domain_router: DomainRouter | None = None
+    pg_seed_gen: SeedGenerator | None = None
     if settings.domain_routing_enabled and domain_svc is not None and domain_classifier is not None:
         from neocortex.domains.router import DomainRouter
+        from neocortex.domains.seed_generator import SeedGenerator
+
+        pg_seed_gen = SeedGenerator(
+            domain_service=domain_svc,
+            model=settings.domain_classifier_model,
+        )
 
         pg_domain_router = DomainRouter(
             domain_service=domain_svc,
@@ -145,6 +163,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
             permissions=pg_permissions,
             job_app=job_app,
             classification_threshold=settings.domain_classification_threshold,
+            seed_generator=pg_seed_gen,
         )
 
     ctx = ServiceContext(
@@ -158,6 +177,7 @@ async def create_services(settings: MCPSettings) -> ServiceContext:
         job_app=job_app,
         permissions=pg_permissions,
         domain_router=pg_domain_router,
+        seed_generator=pg_seed_gen,
     )
 
     # Make services available to Procrastinate task handlers

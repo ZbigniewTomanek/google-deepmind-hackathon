@@ -19,6 +19,7 @@ from neocortex.domains.models import (
     SemanticDomain,
 )
 from neocortex.domains.protocol import DomainService
+from neocortex.domains.seed_generator import SeedGenerator
 from neocortex.permissions.protocol import PermissionChecker
 from neocortex.schema_manager import SchemaManager
 
@@ -38,6 +39,7 @@ class DomainRouter:
         permissions: PermissionChecker,
         job_app: procrastinate.App | None = None,
         classification_threshold: float = 0.3,
+        seed_generator: SeedGenerator | None = None,
     ) -> None:
         self._domain_service = domain_service
         self._classifier = classifier
@@ -45,6 +47,7 @@ class DomainRouter:
         self._permissions = permissions
         self._job_app = job_app
         self._classification_threshold = classification_threshold
+        self._seed_generator = seed_generator
 
     async def list_domains(self) -> list[SemanticDomain]:
         return await self._domain_service.list_domains()
@@ -101,6 +104,12 @@ class DomainRouter:
         if classification.proposed_domain is not None and self._schema_mgr is not None:
             new_domain = await self._provision_domain(classification.proposed_domain, agent_id)
             if new_domain is not None:
+                # Warm the seed cache for the newly provisioned domain
+                if self._seed_generator is not None:
+                    try:
+                        await self._seed_generator.resolve_seed(new_domain.slug)
+                    except Exception:
+                        logger.opt(exception=True).warning("seed_cache_warm_failed", slug=new_domain.slug)
                 matches.append(
                     DomainClassification(
                         domain_slug=new_domain.slug,

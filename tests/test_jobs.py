@@ -135,10 +135,13 @@ async def test_extract_episode_calls_run_extraction():
     mock_settings.ontology_tool_calls_limit = 30
     mock_settings.ontology_max_new_types = 3
 
+    mock_seed_generator = AsyncMock()
+
     fake_ctx = {
         "repo": mock_repo,
         "embeddings": mock_embeddings,
         "settings": mock_settings,
+        "seed_generator": mock_seed_generator,
     }
     ctx_mod._services = fake_ctx  # ty: ignore[invalid-assignment]
 
@@ -191,6 +194,7 @@ async def test_extract_episode_calls_run_extraction():
             ontology_max_new_types=3,
             domain_hint=None,
             domain_slug=None,
+            seed_generator=mock_seed_generator,
         )
     finally:
         ctx_mod._services = None

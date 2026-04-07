@@ -30,6 +30,7 @@ from neocortex.schemas.memory import TypeInfo
 
 if TYPE_CHECKING:
     from neocortex.db.protocol import MemoryRepository
+    from neocortex.domains.seed_generator import SeedGenerator
     from neocortex.embedding_service import EmbeddingService
 
 _UNSET: str = "__UNSET__"
@@ -47,6 +48,7 @@ async def run_extraction(
     librarian_config: AgentInferenceConfig | None = None,
     domain_hint: str | None = None,
     domain_slug: str | None = None,
+    seed_generator: SeedGenerator | None = None,
     librarian_use_tools: bool = True,
     tool_calls_limit: int = 150,
     ontology_tool_calls_limit: int = 30,
@@ -137,7 +139,10 @@ async def run_extraction(
 
         # 2. Ontology stage
         t0 = time.monotonic()
-        seed = DOMAIN_SEEDS.get(domain_slug or "")
+        if seed_generator is not None and domain_slug:
+            seed = await seed_generator.resolve_seed(domain_slug)
+        else:
+            seed = DOMAIN_SEEDS.get(domain_slug or "")
         ontology_result = await ontology_agent.run(
             f"Analyze this text and propose ontology extensions:\n\n{text}",
             deps=OntologyAgentDeps(
