@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 import asyncpg
@@ -21,6 +21,7 @@ from neocortex.scoring import (
     compute_base_activation,
     compute_hybrid_score,
     compute_recency_score,
+    compute_stm_boost,
     compute_supersession_adjustment,
     mmr_rerank,
 )
@@ -2128,6 +2129,13 @@ class GraphServiceAdapter:
                 score *= 0.5
             else:
                 score *= self._settings.recall_unconsolidated_episode_boost
+            # Short-term memory boost for very recent episodes
+            stm_hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
+            score *= compute_stm_boost(
+                hours_ago=stm_hours_ago,
+                stm_window_hours=self._settings.episode_stm_window_hours,
+                boost_factor=self._settings.episode_stm_boost_factor,
+            )
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -2421,6 +2429,15 @@ class GraphServiceAdapter:
             else:
                 # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
                 score *= self._settings.recall_unconsolidated_episode_boost
+
+            # Short-term memory boost for very recent episodes
+            if created_at:
+                stm_hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
+                score *= compute_stm_boost(
+                    hours_ago=stm_hours_ago,
+                    stm_window_hours=self._settings.episode_stm_window_hours,
+                    boost_factor=self._settings.episode_stm_boost_factor,
+                )
 
             primary_id = int(row["id"])
             result_dicts.append(_episode_result_dict(row, score, activation, ep_importance))
