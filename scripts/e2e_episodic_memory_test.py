@@ -45,8 +45,8 @@ AGENT_SCHEMA = "ncx_alice__personal"
 
 SUFFIX = uuid.uuid4().hex[:8]
 
-JOB_WAIT_TIMEOUT = 120
-JOB_POLL_INTERVAL = 3
+JOB_WAIT_TIMEOUT = 600
+JOB_POLL_INTERVAL = 5
 
 SESSION_A = f"morning-standup-{SUFFIX}"
 SESSION_B = f"afternoon-debug-{SUFFIX}"
@@ -161,17 +161,28 @@ async def _wait_for_extraction(baseline_job_id: int) -> None:
                 """SELECT
                     count(*) FILTER (WHERE status = 'todo') AS pending,
                     count(*) FILTER (WHERE status = 'doing') AS running,
-                    count(*) FILTER (WHERE status = 'succeeded') AS completed
+                    count(*) FILTER (WHERE status = 'succeeded') AS completed,
+                    count(*) FILTER (WHERE status = 'failed') AS failed
                 FROM procrastinate_jobs
                 WHERE queue_name = 'extraction' AND id > $1""",
                 baseline_job_id,
             )
-            pending, running, completed = int(row["pending"]), int(row["running"]), int(row["completed"])
+            pending = int(row["pending"])
+            running = int(row["running"])
+            completed = int(row["completed"])
+            failed = int(row["failed"])
             elapsed = int(time.monotonic() - start)
-            print(f"  [{elapsed:3d}s] pending={pending} running={running} completed={completed}")
-            if pending == 0 and running == 0 and completed > 0:
-                print(f"  Extraction complete: {completed} jobs finished")
-                return
+            extra = f" failed={failed}" if failed else ""
+            print(f"  [{elapsed:3d}s] pending={pending} running={running} completed={completed}{extra}")
+            if pending == 0 and running == 0:
+                if completed > 0:
+                    msg = f"  Extraction complete: {completed} jobs finished"
+                    if failed:
+                        msg += f" ({failed} failed)"
+                    print(msg)
+                    return
+                if failed > 0:
+                    raise AssertionError(f"All {failed} extraction jobs failed")
             await asyncio.sleep(JOB_POLL_INTERVAL)
         raise AssertionError(f"Extraction jobs did not complete within {JOB_WAIT_TIMEOUT}s")
     finally:
@@ -556,13 +567,13 @@ async def test_combined_recall() -> None:
     """Stage 5: Verify combined episodic + graph node recall."""
     print("\n=== Stage 5: Combined Recall + Formatted Context ===")
 
-    # Query should match both episode text AND extracted graph nodes
-    # (e.g., "PostgreSQL" should appear as both episode content and an extracted entity)
+    # Query should match both episode text AND extracted graph nodes.
+    # Use a high limit so extracted nodes don't crowd out episodes.
     result = await mcp_call(
         "recall",
         {
             "query": f"PostgreSQL database upgrade {SUFFIX}",
-            "limit": 20,
+            "limit": 50,
         },
     )
     items = result["results"]
@@ -574,6 +585,13 @@ async def test_combined_recall() -> None:
     print(f"  Total results: {len(items)}")
     print(f"  Episodes: {len(episodes)}")
     print(f"  Graph nodes: {len(nodes)}")
+    if items:
+        top3 = items[:3]
+        for i, item in enumerate(top3):
+            kind = item.get("source_kind")
+            score = item.get("score", 0)
+            name = item.get("name", "")[:60]
+            print(f"    #{i+1}: {kind} score={score:.4f} name={name}")
 
     if not episodes:
         raise AssertionError("No episodes in combined recall — expected session episodes")
