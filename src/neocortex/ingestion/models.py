@@ -10,6 +10,10 @@ class TextIngestionRequest(BaseModel):
         default=None,
         description="Target shared graph schema. If omitted, stores to agent's personal graph.",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="Conversation/session grouping id. If omitted, one UUID is generated per ingestion request.",
+    )
     force: bool = Field(
         default=False,
         description="If true, skip dedup check and ingest even if content was already processed.",
@@ -22,6 +26,10 @@ class EventsIngestionRequest(BaseModel):
     target_graph: str | None = Field(
         default=None,
         description="Target shared graph schema. If omitted, stores to agent's personal graph.",
+    )
+    session_id: str | None = Field(
+        default=None,
+        description="Conversation/session grouping id. If omitted, one UUID is generated per ingestion request.",
     )
     force: bool = Field(
         default=False,

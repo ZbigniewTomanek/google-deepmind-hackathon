@@ -101,7 +101,7 @@ This plan targets the highest-ROI subset of these gaps.
 
 | # | Stage | Status | Notes | Commit |
 |---|-------|--------|-------|--------|
-| 1 | [Episode session tagging](stages/01-episode-session-tagging.md) | PENDING | | |
+| 1 | [Episode session tagging](stages/01-episode-session-tagging.md) | DONE | Migrations, models, protocol, adapter, mock, graph_service, episode_processor, routes all updated with session_id + session_sequence | `feat(episodes): add session grouping and storage-time ordering` |
 | 2 | [FOLLOWS edge creation in extraction](stages/02-follows-edge-creation.md) | PENDING | | |
 | 3 | [Temporal neighbor expansion in recall](stages/03-temporal-neighbor-expansion.md) | PENDING | | |
 | 4 | [Short-term recency boost](stages/04-short-term-recency-boost.md) | PENDING | | |

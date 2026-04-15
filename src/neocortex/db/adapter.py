@@ -155,6 +155,7 @@ class GraphServiceAdapter:
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         episode_metadata = metadata or {}
         if context:
@@ -166,14 +167,30 @@ class GraphServiceAdapter:
                 source_type=source_type,
                 metadata=episode_metadata,
                 content_hash=content_hash,
+                session_id=session_id,
             )
             return episode.id
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
+            # Assign session_sequence under advisory lock if session_id is set
+            session_sequence = None
+            if session_id is not None:
+                # Advisory lock keyed on hash of (schema_name, agent_id, session_id)
+                lock_key = hash((schema_name, agent_id, session_id)) & 0x7FFFFFFFFFFFFFFF
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+                seq_row = await conn.fetchrow(
+                    "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                    "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                    agent_id,
+                    session_id,
+                )
+                session_sequence = seq_row["next_seq"]
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, content_hash)
-                   VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+                """INSERT INTO episode
+                   (agent_id, content, source_type, metadata,
+                    importance, content_hash, session_id, session_sequence)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
                    RETURNING id""",
                 agent_id,
                 content,
@@ -181,6 +198,8 @@ class GraphServiceAdapter:
                 json.dumps(episode_metadata),
                 importance,
                 content_hash,
+                session_id,
+                session_sequence,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -196,6 +215,7 @@ class GraphServiceAdapter:
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         episode_metadata = metadata or {}
         if context:
@@ -204,9 +224,24 @@ class GraphServiceAdapter:
             raise RuntimeError("Connection pool required for store_episode_to.")
 
         async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+            # Assign session_sequence under advisory lock if session_id is set
+            session_sequence = None
+            if session_id is not None:
+                lock_key = hash((target_schema, agent_id, session_id)) & 0x7FFFFFFFFFFFFFFF
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+                seq_row = await conn.fetchrow(
+                    "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                    "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                    agent_id,
+                    session_id,
+                )
+                session_sequence = seq_row["next_seq"]
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, owner_role, content_hash)
-                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
+                """INSERT INTO episode
+                   (agent_id, content, source_type, metadata,
+                    importance, owner_role, content_hash,
+                    session_id, session_sequence)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)
                    RETURNING id""",
                 agent_id,
                 content,
@@ -215,6 +250,8 @@ class GraphServiceAdapter:
                 importance,
                 agent_id,
                 content_hash,
+                session_id,
+                session_sequence,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -550,7 +587,8 @@ class GraphServiceAdapter:
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 "SELECT id, agent_id, content, source_type, metadata, "
-                "access_count, last_accessed_at, importance, consolidated, created_at "
+                "access_count, last_accessed_at, importance, consolidated, "
+                "session_id, session_sequence, created_at "
                 "FROM episode WHERE id = $1",
                 episode_id,
             )

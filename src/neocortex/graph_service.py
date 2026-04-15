@@ -248,25 +248,44 @@ class GraphService:
         source_type: str | None = None,
         metadata: dict | None = None,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> Episode:
         meta_json = json.dumps(metadata or {})
         emb_str = str(embedding) if embedding else None
+        # Compute session_sequence if session_id is provided
+        session_sequence = None
+        if session_id is not None:
+            seq_row = await self._pg.fetchrow(
+                "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                agent_id,
+                session_id,
+            )
+            if seq_row is not None:
+                session_sequence = seq_row["next_seq"]
         row = await self._pg.fetchrow(
-            """INSERT INTO episode (agent_id, content, embedding, source_type, metadata, content_hash)
-               VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6)
-               RETURNING id, agent_id, content, source_type, metadata, content_hash, created_at""",
+            """INSERT INTO episode
+               (agent_id, content, embedding, source_type,
+                metadata, content_hash, session_id, session_sequence)
+               VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6, $7, $8)
+               RETURNING id, agent_id, content, source_type, metadata,
+                         content_hash, session_id, session_sequence,
+                         created_at""",
             agent_id,
             content,
             emb_str,
             source_type,
             meta_json,
             content_hash,
+            session_id,
+            session_sequence,
         )
         return self._row_to_episode(row)
 
     async def get_episode(self, id: int) -> Episode | None:
         row = await self._pg.fetchrow(
-            "SELECT id, agent_id, content, source_type, metadata, created_at FROM episode WHERE id = $1",
+            "SELECT id, agent_id, content, source_type, metadata, session_id, session_sequence, created_at "
+            "FROM episode WHERE id = $1",
             id,
         )
         return self._row_to_episode(row) if row else None

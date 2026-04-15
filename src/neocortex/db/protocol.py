@@ -19,6 +19,7 @@ class MemoryRepository(Protocol):
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         """Store a raw episode and return the episode ID."""
 
@@ -32,6 +33,7 @@ class MemoryRepository(Protocol):
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         """Store an episode in an explicit target schema (for shared graph writes)."""
 

@@ -14,6 +14,7 @@ class IngestionProcessor(Protocol):
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> IngestionResult: ...
 
     async def process_document(
@@ -25,6 +26,7 @@ class IngestionProcessor(Protocol):
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> IngestionResult: ...
 
     async def process_events(
@@ -34,6 +36,7 @@ class IngestionProcessor(Protocol):
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> IngestionResult: ...
 
     async def process_audio(
@@ -45,6 +48,7 @@ class IngestionProcessor(Protocol):
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> MediaIngestionResult: ...
 
     async def process_video(
@@ -56,4 +60,5 @@ class IngestionProcessor(Protocol):
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> MediaIngestionResult: ...

@@ -70,7 +70,12 @@ async def ingest_text(
         await _check_write_permission(request, agent_id, body.target_graph)
     processor = request.app.state.processor
     return await processor.process_text(
-        agent_id, body.text, body.metadata, target_schema=body.target_graph, force=body.force
+        agent_id,
+        body.text,
+        body.metadata,
+        target_schema=body.target_graph,
+        force=body.force,
+        session_id=body.session_id,
     )
 
 
@@ -81,6 +86,7 @@ async def ingest_document(
     agent_id: Annotated[str, Depends(get_agent_id)],
     metadata: str | None = Form(default=None),
     target_graph: str | None = Form(default=None),
+    session_id: str | None = Form(default=None),
     force: bool = Form(default=False),
 ) -> IngestionResult:
     if target_graph:
@@ -119,6 +125,7 @@ async def ingest_document(
         parsed_metadata,
         target_schema=target_graph,
         force=force,
+        session_id=session_id,
     )
 
 
@@ -132,7 +139,12 @@ async def ingest_events(
         await _check_write_permission(request, agent_id, body.target_graph)
     processor = request.app.state.processor
     return await processor.process_events(
-        agent_id, body.events, body.metadata, target_schema=body.target_graph, force=body.force
+        agent_id,
+        body.events,
+        body.metadata,
+        target_schema=body.target_graph,
+        force=body.force,
+        session_id=body.session_id,
     )
 
 
@@ -180,6 +192,7 @@ async def ingest_audio(
     agent_id: Annotated[str, Depends(get_agent_id)],
     metadata: str | None = Form(default=None),
     target_graph: str | None = Form(default=None),
+    session_id: str | None = Form(default=None),
     force: bool = Form(default=False),
 ) -> MediaIngestionResult:
     if target_graph:
@@ -216,6 +229,7 @@ async def ingest_audio(
         parsed_metadata,
         target_schema=target_graph,
         force=force,
+        session_id=session_id,
     )
 
     logger.bind(action_log=True).info(
@@ -236,6 +250,7 @@ async def ingest_video(
     agent_id: Annotated[str, Depends(get_agent_id)],
     metadata: str | None = Form(default=None),
     target_graph: str | None = Form(default=None),
+    session_id: str | None = Form(default=None),
     force: bool = Form(default=False),
 ) -> MediaIngestionResult:
     if target_graph:
@@ -272,6 +287,7 @@ async def ingest_video(
         parsed_metadata,
         target_schema=target_graph,
         force=force,
+        session_id=session_id,
     )
 
     logger.bind(action_log=True).info(

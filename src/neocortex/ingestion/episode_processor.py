@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import tempfile
+import uuid
 from typing import TYPE_CHECKING
 
 import procrastinate
@@ -118,12 +119,27 @@ class EpisodeProcessor:
         source_type: str,
         target_schema: str | None = None,
         content_hash: str | None = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> int:
         if target_schema:
             return await self._repo.store_episode_to(
-                agent_id, target_schema, text, source_type=source_type, content_hash=content_hash
+                agent_id,
+                target_schema,
+                text,
+                source_type=source_type,
+                content_hash=content_hash,
+                metadata=metadata,
+                session_id=session_id,
             )
-        return await self._repo.store_episode(agent_id, text, source_type=source_type, content_hash=content_hash)
+        return await self._repo.store_episode(
+            agent_id,
+            text,
+            source_type=source_type,
+            content_hash=content_hash,
+            metadata=metadata,
+            session_id=session_id,
+        )
 
     async def process_text(
         self,
@@ -132,7 +148,9 @@ class EpisodeProcessor:
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> IngestionResult:
+        request_session_id = session_id or str(uuid.uuid4())
         content_hash = self._compute_hash(text)
         if not force:
             # Note: concurrent requests with identical content may both pass this
@@ -148,7 +166,13 @@ class EpisodeProcessor:
                     existing_episode_id=next(iter(existing.values())),
                 )
         episode_id = await self._store_episode(
-            agent_id, text, "ingestion_text", target_schema, content_hash=content_hash
+            agent_id,
+            text,
+            "ingestion_text",
+            target_schema,
+            content_hash=content_hash,
+            metadata=metadata,
+            session_id=request_session_id,
         )
         await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
@@ -169,7 +193,9 @@ class EpisodeProcessor:
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> IngestionResult:
+        request_session_id = session_id or str(uuid.uuid4())
         content_hash = self._compute_hash_bytes(content)
         if not force:
             existing = await self._repo.check_episode_hashes(agent_id, [content_hash], target_schema=target_schema)
@@ -183,7 +209,13 @@ class EpisodeProcessor:
                 )
         text = content.decode("utf-8", errors="replace")
         episode_id = await self._store_episode(
-            agent_id, text, "ingestion_document", target_schema, content_hash=content_hash
+            agent_id,
+            text,
+            "ingestion_document",
+            target_schema,
+            content_hash=content_hash,
+            metadata=metadata,
+            session_id=request_session_id,
         )
         await self._embed_episode(episode_id, text, agent_id, target_schema)
         await self._enqueue_extraction(agent_id, episode_id, target_schema)
@@ -202,7 +234,9 @@ class EpisodeProcessor:
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> IngestionResult:
+        request_session_id = session_id or str(uuid.uuid4())
         # Pre-compute hashes for all events
         event_texts = [json.dumps(event, sort_keys=True) for event in events]
         event_hashes = [self._compute_hash(text) for text in event_texts]
@@ -224,7 +258,13 @@ class EpisodeProcessor:
             seen_hashes.add(content_hash)
             try:
                 episode_id = await self._store_episode(
-                    agent_id, event_text, "ingestion_event", target_schema, content_hash=content_hash
+                    agent_id,
+                    event_text,
+                    "ingestion_event",
+                    target_schema,
+                    content_hash=content_hash,
+                    metadata=metadata,
+                    session_id=request_session_id,
                 )
                 await self._embed_episode(episode_id, event_text, agent_id, target_schema)
                 await self._enqueue_extraction(agent_id, episode_id, target_schema)
@@ -265,6 +305,7 @@ class EpisodeProcessor:
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> MediaIngestionResult:
         """Compress audio -> describe via Gemini -> store file -> store episode."""
         return await self._process_media(
@@ -277,6 +318,7 @@ class EpisodeProcessor:
             target_schema=target_schema,
             compressed_ext="ogg",
             force=force,
+            session_id=session_id,
         )
 
     async def process_video(
@@ -288,6 +330,7 @@ class EpisodeProcessor:
         metadata: dict,
         target_schema: str | None = None,
         force: bool = False,
+        session_id: str | None = None,
     ) -> MediaIngestionResult:
         """Compress video -> describe via Gemini -> store file -> store episode."""
         return await self._process_media(
@@ -300,6 +343,7 @@ class EpisodeProcessor:
             target_schema=target_schema,
             compressed_ext="mp4",
             force=force,
+            session_id=session_id,
         )
 
     async def _process_media(
@@ -313,12 +357,14 @@ class EpisodeProcessor:
         target_schema: str | None,
         compressed_ext: str,
         force: bool = False,
+        session_id: str | None = None,
     ) -> MediaIngestionResult:
         """Shared pipeline: compress -> describe -> store file -> store episode.
 
         Caller is responsible for writing the upload to raw_path; this method
         cleans up raw_path after processing.
         """
+        request_session_id = session_id or str(uuid.uuid4())
         # Early dedup check on raw file bytes — before the expensive pipeline
         with open(raw_path, "rb") as f:
             raw_bytes = f.read()
@@ -389,7 +435,13 @@ class EpisodeProcessor:
             # 6-8. Store, embed, enqueue
             source_type = f"ingestion_{media_type}"
             episode_id = await self._store_episode(
-                agent_id, episode_text, source_type, target_schema, content_hash=content_hash
+                agent_id,
+                episode_text,
+                source_type,
+                target_schema,
+                content_hash=content_hash,
+                metadata=metadata,
+                session_id=request_session_id,
             )
             await self._embed_episode(episode_id, episode_text, agent_id, target_schema)
             await self._enqueue_extraction(agent_id, episode_id, target_schema)
