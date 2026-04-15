@@ -75,7 +75,7 @@ This plan creates a single E2E test script (`scripts/e2e_episodic_memory_test.py
 | 2 | [Session recall with neighbor expansion](stages/02-session-recall-with-neighbors.md) | DONE | Recall + neighbor expansion test, cross-session isolation check | test(e2e): add session recall with neighbor expansion validation |
 | 3 | [STM boost and recency validation](stages/03-stm-boost-validation.md) | DONE | Backdate helper, fresh episode ingestion, STM boost score comparison (soft check) | test(e2e): add STM boost recency validation |
 | 4 | [Extraction pipeline + FOLLOWS edges](stages/04-extraction-and-follows-edges.md) | DONE | Extraction wait helper, FOLLOWS edge verification, extracted nodes check via discover_graphs, wired into main() | test(e2e): add extraction pipeline and FOLLOWS edge validation |
-| 5 | [Combined recall + formatted context](stages/05-combined-recall-and-formatted-context.md) | PENDING | | |
+| 5 | [Combined recall + formatted context](stages/05-combined-recall-and-formatted-context.md) | DONE | Combined episodic+node recall, formatted_context JSON validation, graph traversal check, wired into main() | test(e2e): add combined recall and formatted context validation |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
