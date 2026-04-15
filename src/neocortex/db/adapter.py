@@ -295,6 +295,7 @@ class GraphServiceAdapter:
         limit: int = 10,
         query_embedding: list[float] | None = None,
         expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         if self._pool is None or self._router is None:
             return await self._recall_via_graph(
@@ -311,6 +312,7 @@ class GraphServiceAdapter:
                     limit,
                     query_embedding=query_embedding,
                     expand_neighbors=expand_neighbors,
+                    episode_query_embedding=episode_query_embedding if schema_name.endswith("__personal") else None,
                 )
                 for schema_name in schemas
             )
@@ -2165,6 +2167,7 @@ class GraphServiceAdapter:
         limit: int,
         query_embedding: list[float] | None = None,
         expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped recall.")
@@ -2181,6 +2184,7 @@ class GraphServiceAdapter:
         async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             if query_embedding is not None:
                 emb_str = str(query_embedding)
+                ep_emb_str = str(episode_query_embedding) if episode_query_embedding is not None else emb_str
                 node_rows = await conn.fetch(
                     """SELECT n.id, n.name, n.content, n.source, n.type_id,
                               COALESCE(nt.name, 'Untyped') AS resolved_type_name,
@@ -2221,7 +2225,7 @@ class GraphServiceAdapter:
                        ORDER BY created_at DESC
                        LIMIT $4""",
                     escaped_query,
-                    emb_str,
+                    ep_emb_str,
                     self._settings.recall_vector_distance_threshold,
                     limit,
                 )

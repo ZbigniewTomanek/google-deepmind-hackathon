@@ -56,6 +56,7 @@ class MemoryRepository(Protocol):
         limit: int = 10,
         query_embedding: list[float] | None = None,
         expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         """Return ranked recall results for an agent."""
 

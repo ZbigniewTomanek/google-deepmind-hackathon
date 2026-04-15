@@ -105,7 +105,7 @@ This plan targets the highest-ROI subset of these gaps.
 | 2 | [FOLLOWS edge creation in extraction](stages/02-follows-edge-creation.md) | DONE | Protocol, adapter, mock, pipeline updated; consolidation target-aware; personal-only FOLLOWS linking | `feat(extraction): link personal episodes with FOLLOWS edges` |
 | 3 | [Temporal neighbor expansion in recall](stages/03-temporal-neighbor-expansion.md) | DONE | Settings, RecallItem fields, protocol/adapter/mock signatures, _fetch_episode_neighbors, neighbor prefetch in connection scope, cluster sort | `feat(recall): expand personal episode recall with temporal neighbors` |
 | 4 | [Short-term recency boost](stages/04-short-term-recency-boost.md) | DONE | Settings, compute_stm_boost in scoring.py, applied in adapter.py (both recall paths), unit tests | `feat(scoring): add short-term recency boost for intra-session episode prioritization` |
-| 5 | [Recall output formatting & provenance](stages/05-recall-output-formatting.md) | PENDING | | |
+| 5 | [Recall output formatting & provenance](stages/05-recall-output-formatting.md) | DONE | formatted_context on RecallResult, episode_query_embedding with role-bias, _format_recall_context helper, audit fields, 14 new tests | `feat(tools): expose structured session recall context` |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 

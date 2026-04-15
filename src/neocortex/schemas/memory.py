@@ -45,6 +45,7 @@ class RecallResult(BaseModel):
     results: list[RecallItem]
     total: int
     query: str
+    formatted_context: str | None = None
 
 
 class TypeInfo(BaseModel):

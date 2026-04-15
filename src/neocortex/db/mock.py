@@ -161,6 +161,7 @@ class InMemoryRepository:
         limit: int = 10,
         query_embedding: list[float] | None = None,
         expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         query_lower = query.lower()
         # Must stay in sync with MCPSettings defaults
