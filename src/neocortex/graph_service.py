@@ -1,3 +1,4 @@
+import hashlib
 import json
 from typing import Any
 
@@ -252,34 +253,58 @@ class GraphService:
     ) -> Episode:
         meta_json = json.dumps(metadata or {})
         emb_str = str(embedding) if embedding else None
-        # Compute session_sequence if session_id is provided
-        session_sequence = None
-        if session_id is not None:
-            seq_row = await self._pg.fetchrow(
-                "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
-                "FROM episode WHERE agent_id = $1 AND session_id = $2",
-                agent_id,
-                session_id,
-            )
-            if seq_row is not None:
-                session_sequence = seq_row["next_seq"]
-        row = await self._pg.fetchrow(
-            """INSERT INTO episode
-               (agent_id, content, embedding, source_type,
-                metadata, content_hash, session_id, session_sequence)
-               VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6, $7, $8)
-               RETURNING id, agent_id, content, source_type, metadata,
-                         content_hash, session_id, session_sequence,
-                         created_at""",
-            agent_id,
-            content,
-            emb_str,
-            source_type,
-            meta_json,
-            content_hash,
-            session_id,
-            session_sequence,
-        )
+        # Compute session_sequence under advisory lock if session_id is provided,
+        # using a single connection to prevent concurrent duplicate sequences.
+        async with self._pg.pool.acquire() as conn:
+            session_sequence = None
+            if session_id is not None:
+                lock_material = f"public:{agent_id}:{session_id}"
+                lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
+                async with conn.transaction():
+                    await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+                    seq_row = await conn.fetchrow(
+                        "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                        "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                        agent_id,
+                        session_id,
+                    )
+                    if seq_row is not None:
+                        session_sequence = seq_row["next_seq"]
+                    row = await conn.fetchrow(
+                        """INSERT INTO episode
+                           (agent_id, content, embedding, source_type,
+                            metadata, content_hash, session_id, session_sequence)
+                           VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6, $7, $8)
+                           RETURNING id, agent_id, content, source_type, metadata,
+                                     content_hash, session_id, session_sequence,
+                                     created_at""",
+                        agent_id,
+                        content,
+                        emb_str,
+                        source_type,
+                        meta_json,
+                        content_hash,
+                        session_id,
+                        session_sequence,
+                    )
+            else:
+                row = await conn.fetchrow(
+                    """INSERT INTO episode
+                       (agent_id, content, embedding, source_type,
+                        metadata, content_hash, session_id, session_sequence)
+                       VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6, $7, $8)
+                       RETURNING id, agent_id, content, source_type, metadata,
+                                 content_hash, session_id, session_sequence,
+                                 created_at""",
+                    agent_id,
+                    content,
+                    emb_str,
+                    source_type,
+                    meta_json,
+                    content_hash,
+                    session_id,
+                    session_sequence,
+                )
         return self._row_to_episode(row)
 
     async def get_episode(self, id: int) -> Episode | None:

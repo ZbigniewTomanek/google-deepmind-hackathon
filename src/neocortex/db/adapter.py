@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -141,6 +142,17 @@ class GraphServiceAdapter:
             return graph_scoped_connection(self._pool, schema_name, agent_id=agent_id)
         return schema_scoped_connection(self._pool, schema_name)
 
+    def _apply_stm_boost(self, score: float, created_at: datetime | None) -> float:
+        """Apply short-term memory boost for recent episodes."""
+        if created_at is None:
+            return score
+        hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
+        return score * compute_stm_boost(
+            hours_ago=hours_ago,
+            stm_window_hours=self._settings.episode_stm_window_hours,
+            boost_factor=self._settings.episode_stm_boost_factor,
+        )
+
     async def _resolve_schema(self, agent_id: str, target_schema: str | None = None) -> str:
         """Resolve the target schema name for write operations."""
         if target_schema is not None:
@@ -179,8 +191,6 @@ class GraphServiceAdapter:
             session_sequence = None
             if session_id is not None:
                 # Advisory lock keyed on deterministic hash of (schema_name, agent_id, session_id)
-                import hashlib
-
                 lock_material = f"{schema_name}:{agent_id}:{session_id}"
                 lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
@@ -232,8 +242,6 @@ class GraphServiceAdapter:
             # Assign session_sequence under advisory lock if session_id is set
             session_sequence = None
             if session_id is not None:
-                import hashlib
-
                 lock_material = f"{target_schema}:{agent_id}:{session_id}"
                 lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
@@ -1810,8 +1818,6 @@ class GraphServiceAdapter:
         if self._pool is None or self._router is None:
             return
 
-        import hashlib
-
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
             current = await conn.fetchrow(
@@ -2138,14 +2144,7 @@ class GraphServiceAdapter:
                 score *= 0.5
             else:
                 score *= self._settings.recall_unconsolidated_episode_boost
-            # Short-term memory boost for very recent episodes
-            if created_at:
-                stm_hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
-                score *= compute_stm_boost(
-                    hours_ago=stm_hours_ago,
-                    stm_window_hours=self._settings.episode_stm_window_hours,
-                    boost_factor=self._settings.episode_stm_boost_factor,
-                )
+            score = self._apply_stm_boost(score, created_at)
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -2457,14 +2456,7 @@ class GraphServiceAdapter:
                 # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
                 score *= self._settings.recall_unconsolidated_episode_boost
 
-            # Short-term memory boost for very recent episodes
-            if created_at:
-                stm_hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
-                score *= compute_stm_boost(
-                    hours_ago=stm_hours_ago,
-                    stm_window_hours=self._settings.episode_stm_window_hours,
-                    boost_factor=self._settings.episode_stm_boost_factor,
-                )
+            score = self._apply_stm_boost(score, created_at)
 
             primary_id = int(row["id"])
             result_dicts.append(_episode_result_dict(row, score, activation, ep_importance))

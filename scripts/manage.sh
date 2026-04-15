@@ -168,9 +168,10 @@ do_start() {
             # Skip comments and blank lines
             [[ "$key" =~ ^[[:space:]]*# ]] && continue
             [[ -z "$key" ]] && continue
-            # Strip leading/trailing whitespace from key
+            # Strip leading/trailing whitespace and optional 'export' prefix from key
             key="${key#"${key%%[![:space:]]*}"}"
             key="${key%"${key##*[![:space:]]}"}"
+            key="${key#export }"
             # Strip surrounding quotes from value
             value="${value#\"}" ; value="${value%\"}"
             value="${value#\'}" ; value="${value%\'}"
