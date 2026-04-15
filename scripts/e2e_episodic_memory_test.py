@@ -193,6 +193,100 @@ async def test_session_ingestion() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stage 2: Session Recall with Neighbors
+# ---------------------------------------------------------------------------
+
+
+async def test_session_recall_with_neighbors() -> None:
+    """Stage 2: Recall with neighbor expansion and session clustering."""
+    print("\n=== Stage 2: Session Recall with Neighbors ===")
+
+    # Query that should match Session A content
+    result = await mcp_call(
+        "recall",
+        {
+            "query": f"PostgreSQL upgrade timeline and risks {SUFFIX}",
+            "limit": 20,
+        },
+    )
+    items = result["results"]
+
+    if not items:
+        raise AssertionError("Recall returned no results")
+
+    # Check that we got episode results
+    episode_items = [i for i in items if i.get("source_kind") == "episode"]
+    print(f"  Recall returned {len(items)} items, {len(episode_items)} episodes")
+
+    if len(episode_items) < 2:
+        raise AssertionError(f"Expected at least 2 episode results (nucleus + neighbors), " f"got {len(episode_items)}")
+
+    # Check for neighbor episodes (those brought in by expansion)
+    nucleus_episodes = [e for e in episode_items if e.get("neighbor_of") is None]
+    neighbor_episodes = [e for e in episode_items if e.get("neighbor_of") is not None]
+    print(f"  Nucleus episodes: {len(nucleus_episodes)}")
+    print(f"  Neighbor episodes: {len(neighbor_episodes)}")
+
+    if not neighbor_episodes:
+        raise AssertionError(
+            "No neighbor episodes found — neighbor expansion may not be working. "
+            "Check that recall_expand_neighbors setting is True."
+        )
+
+    # Verify neighbor scores are discounted relative to nucleus
+    for neighbor in neighbor_episodes:
+        nucleus_id = neighbor["neighbor_of"]
+        nucleus = next((e for e in nucleus_episodes if e["item_id"] == nucleus_id), None)
+        if nucleus and neighbor["score"] >= nucleus["score"]:
+            print(
+                f"  WARNING: Neighbor {neighbor['item_id']} score "
+                f"({neighbor['score']:.4f}) >= nucleus {nucleus_id} score "
+                f"({nucleus['score']:.4f})"
+            )
+
+    # Verify session_id is present on episode results
+    session_episodes = [e for e in episode_items if e.get("session_id")]
+    if not session_episodes:
+        raise AssertionError("No episodes have session_id in recall results")
+
+    print(f"  Episodes with session_id: {len(session_episodes)}")
+    print("\n=== Stage 2 PASSED ===")
+
+
+async def test_cross_session_isolation() -> None:
+    """Verify neighbor expansion stays within session boundaries."""
+    print("\n--- Cross-Session Isolation Check ---")
+
+    result = await mcp_call(
+        "recall",
+        {
+            "query": f"API latency spike search endpoint {SUFFIX}",
+            "limit": 20,
+        },
+    )
+    items = result["results"]
+    episode_items = [i for i in items if i.get("source_kind") == "episode"]
+
+    # Find neighbor episodes and check their session_id
+    for ep in episode_items:
+        if ep.get("neighbor_of") and ep.get("session_id"):
+            # Find the nucleus this neighbor belongs to
+            nucleus = next(
+                (e for e in episode_items if e["item_id"] == ep["neighbor_of"]),
+                None,
+            )
+            if nucleus and nucleus.get("session_id") != ep["session_id"]:
+                raise AssertionError(
+                    f"Neighbor episode {ep['item_id']} (session={ep['session_id']}) "
+                    f"has different session than nucleus {ep['neighbor_of']} "
+                    f"(session={nucleus.get('session_id')}). "
+                    f"Cross-session neighbor expansion should not happen."
+                )
+
+    print("  Cross-session isolation verified")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -209,6 +303,10 @@ async def main() -> None:
 
     # Stage 1: Session ingestion
     await test_session_ingestion()
+
+    # Stage 2: Session recall with neighbors
+    await test_session_recall_with_neighbors()
+    await test_cross_session_isolation()
 
     print("\n=== ALL TESTS PASSED ===")
 
