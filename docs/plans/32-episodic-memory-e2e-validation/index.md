@@ -73,7 +73,7 @@ This plan creates a single E2E test script (`scripts/e2e_episodic_memory_test.py
 |---|-------|--------|-------|--------|
 | 1 | [Test skeleton + session ingestion](stages/01-test-skeleton-and-session-ingestion.md) | DONE | Script skeleton, session data, ingestion via HTTP API, DB verification | test(e2e): add episodic memory test skeleton with session ingestion |
 | 2 | [Session recall with neighbor expansion](stages/02-session-recall-with-neighbors.md) | DONE | Recall + neighbor expansion test, cross-session isolation check | test(e2e): add session recall with neighbor expansion validation |
-| 3 | [STM boost and recency validation](stages/03-stm-boost-validation.md) | PENDING | | |
+| 3 | [STM boost and recency validation](stages/03-stm-boost-validation.md) | DONE | Backdate helper, fresh episode ingestion, STM boost score comparison (soft check) | test(e2e): add STM boost recency validation |
 | 4 | [Extraction pipeline + FOLLOWS edges](stages/04-extraction-and-follows-edges.md) | PENDING | | |
 | 5 | [Combined recall + formatted context](stages/05-combined-recall-and-formatted-context.md) | PENDING | | |
 
