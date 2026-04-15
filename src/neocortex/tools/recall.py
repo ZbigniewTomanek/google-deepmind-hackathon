@@ -250,8 +250,12 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     # Re-sort by updated score
     all_results.sort(key=lambda item: item.score, reverse=True)
 
-    # Record access for returned results (ACT-R activation tracking)
-    final_results = all_results[:limit]
+    # Keep top `limit` primary items (non-neighbors) plus all neighbors
+    # of surviving nuclei, so that session-context expansion isn't lost.
+    primary = [i for i in all_results if i.neighbor_of is None][:limit]
+    primary_ids = {i.item_id for i in primary}
+    neighbors = [i for i in all_results if i.neighbor_of is not None and i.neighbor_of in primary_ids]
+    final_results = primary + neighbors
     recalled_node_ids = [r.item_id for r in final_results if r.source_kind == "node"]
     recalled_episode_ids = [r.item_id for r in final_results if r.source_kind == "episode"]
     if recalled_node_ids:

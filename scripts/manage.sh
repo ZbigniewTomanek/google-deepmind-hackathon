@@ -161,8 +161,14 @@ do_start() {
     apply_migrations
 
     # --- Source .env ---
+    # Preserve caller-set NEOCORTEX_DEV_TOKENS_FILE (e.g. from run_e2e.sh)
+    # since .env may override it.
+    local _saved_tokens="${NEOCORTEX_DEV_TOKENS_FILE:-}"
     if [[ -f "$PROJECT_DIR/.env" ]]; then
         set -a; source "$PROJECT_DIR/.env"; set +a
+    fi
+    if [[ -n "$_saved_tokens" ]]; then
+        NEOCORTEX_DEV_TOKENS_FILE="$_saved_tokens"
     fi
 
     # --- MCP server ---
@@ -176,6 +182,11 @@ do_start() {
     echo $! > "$PIDFILE_MCP"
     log "  PID $(cat "$PIDFILE_MCP") → log: $LOGDIR/mcp_stdout.log"
 
+    # Wait for MCP to be healthy before starting ingestion server —
+    # both run create_services() which provisions shared schemas, and
+    # concurrent schema creation causes "tuple concurrently updated" errors.
+    wait_for_healthy "http://127.0.0.1:${MCP_PORT}/health" "$MAX_WAIT"
+
     # --- Ingestion server ---
     log "Starting ingestion server (port $INGESTION_PORT)..."
     NEOCORTEX_AUTH_MODE=dev_token \
@@ -186,8 +197,7 @@ do_start() {
     echo $! > "$PIDFILE_INGESTION"
     log "  PID $(cat "$PIDFILE_INGESTION") → log: $LOGDIR/ingestion_stdout.log"
 
-    # --- Health checks ---
-    wait_for_healthy "http://127.0.0.1:${MCP_PORT}/health" "$MAX_WAIT"
+    # --- Health check for ingestion ---
     wait_for_healthy "http://127.0.0.1:${INGESTION_PORT}/health" "$MAX_WAIT"
 
     ok "All services running. Ready for testing."

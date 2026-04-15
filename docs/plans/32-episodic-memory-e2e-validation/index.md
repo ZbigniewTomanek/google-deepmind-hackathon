@@ -31,6 +31,8 @@ This plan creates a single E2E test script (`scripts/e2e_episodic_memory_test.py
 
 **Key constraint**: The `remember` MCP tool does not expose `session_id`. Session-tagged episodes must be ingested via the HTTP ingestion API (`POST /ingest/text` with `session_id` field). Recall is performed via the MCP `recall` tool.
 
+**Update (Stage 6)**: Running the E2E test against a live server revealed five bugs — including a production-breaking neighbor expansion bug that made the MemMachine feature non-functional. See Stage 6 for details.
+
 ---
 
 ## Strategy
@@ -40,6 +42,8 @@ This plan creates a single E2E test script (`scripts/e2e_episodic_memory_test.py
 **Phase B — Scoring Validation (Stage 3)**: Ingest episodes and verify that the STM boost and recency scoring affect recall ordering as expected — recent episodes should rank higher than stale ones with equivalent semantic relevance.
 
 **Phase C — Full Pipeline (Stages 4-5)**: Wait for extraction to complete, verify that extracted knowledge graph nodes and FOLLOWS edges exist in the DB, then test combined recall that returns both episodic matches and graph-node matches in a single query. Validate `formatted_context` JSON structure end-to-end.
+
+**Phase D — Bug Fixes (Stage 6)**: Fix the production and infrastructure bugs discovered during E2E execution. Includes: startup race condition in `manage.sh`, token file override, 1-based session sequences, and a production-breaking neighbor expansion bug in `adapter.py` + `recall.py` where neighbors were always truncated before reaching the caller.
 
 ---
 
@@ -62,6 +66,13 @@ This plan creates a single E2E test script (`scripts/e2e_episodic_memory_test.py
 ### E2E Test Script
 - `scripts/e2e_episodic_memory_test.py` (new) -- The main E2E test script exercising all Plan 31 features
 
+### Infrastructure (Stage 6)
+- `scripts/manage.sh` -- Stagger startup, fix token file override from `.env`
+
+### Production Bug Fixes (Stage 6)
+- `src/neocortex/db/adapter.py` -- Neighbor expansion: episode over-fetch, nucleus-only `seen_episode_ids`, neighbor-preserving truncation
+- `src/neocortex/tools/recall.py` -- Neighbor-preserving truncation in recall tool (second truncation site)
+
 ### Plan Documentation
 - `docs/plans/32-episodic-memory-e2e-validation/index.md` -- This file (progress tracker updates)
 
@@ -76,6 +87,7 @@ This plan creates a single E2E test script (`scripts/e2e_episodic_memory_test.py
 | 3 | [STM boost and recency validation](stages/03-stm-boost-validation.md) | DONE | Backdate helper, fresh episode ingestion, STM boost score comparison (soft check) | test(e2e): add STM boost recency validation |
 | 4 | [Extraction pipeline + FOLLOWS edges](stages/04-extraction-and-follows-edges.md) | DONE | Extraction wait helper, FOLLOWS edge verification, extracted nodes check via discover_graphs, wired into main() | test(e2e): add extraction pipeline and FOLLOWS edge validation |
 | 5 | [Combined recall + formatted context](stages/05-combined-recall-and-formatted-context.md) | DONE | Combined episodic+node recall, formatted_context JSON validation, graph traversal check, wired into main() | test(e2e): add combined recall and formatted context validation |
+| 6 | [Fix bugs found by E2E](stages/06-fix-bugs-found-by-e2e.md) | IN_PROGRESS | Fixed B1-B4 (startup race, token override, 1-based sequences, neighbor expansion dead). B5 (extraction API connection error) still open. Stages 1-3 pass; Stage 4+ blocked on B5. | fix: repair neighbor expansion, startup race, and token override bugs found by E2E |
 
 Statuses: `PENDING` -> `IN_PROGRESS` -> `DONE` | `BLOCKED` | `SKIPPED`
 
@@ -111,7 +123,13 @@ revise affected stages, and get user confirmation before continuing.
 
 ## Issues
 
-[Document any problems discovered during execution]
+**I1 — Neighbor expansion was non-functional in production (Stage 6, B4)**: The MemMachine neighbor expansion feature passed unit tests against `InMemoryRepository` but was dead end-to-end due to two compounding bugs: (a) `seen_episode_ids` included all SQL-matched episodes, preventing any from appearing as neighbors, and (b) two separate `[:limit]` truncations in `adapter.py:recall()` and `tools/recall.py` always cut the lower-scored neighbors. Fixed by over-fetching episodes, restricting nucleus set to top-`limit` by vector_sim, and preserving neighbors of surviving nuclei in both truncation sites.
+
+**I2 — Extraction API connection errors (Stage 6, B5)**: `extract_episode` jobs fail with `pydantic_ai.exceptions.ModelAPIError: Connection error` while `route_episode` jobs succeed. Both use Gemini API but different model calls. Needs investigation — may be rate limiting, model endpoint differences, or timeout on longer extraction calls. Blocks Stages 4-5 of the E2E test.
+
+**I3 — `manage.sh` startup race (Stage 6, B1)**: Both MCP and ingestion servers started concurrently, racing on shared-schema provisioning (`CREATE SCHEMA` + `INSERT INTO graph_registry`). Fixed by waiting for MCP health before starting ingestion. Root cause (no idempotent schema creation) could recur in other deployment scenarios.
+
+**I4 — `.env` overrides caller env vars (Stage 6, B2)**: `manage.sh` sources `.env` with `set -a` which overwrites env vars exported by the caller (`run_e2e.sh`). Fixed with save/restore for `NEOCORTEX_DEV_TOKENS_FILE`. Other env vars could have the same problem in the future.
 
 ---
 
@@ -124,3 +142,7 @@ revise affected stages, and get user confirmation before continuing.
 **D3 — Extraction wait with polling**: Stages that depend on extraction must poll the DB for extraction job completion before asserting on graph state. Use the same `JOB_WAIT_TIMEOUT = 120` / `JOB_POLL_INTERVAL = 3` pattern from `e2e_cognitive_recall_test.py`.
 
 **D4 — Test isolation via unique suffix**: Each test run generates a `uuid.uuid4().hex[:8]` suffix appended to all ingested text, preventing collisions with previous runs on the same DB instance. Same pattern as `e2e_hybrid_recall_test.py`.
+
+**D5 — Neighbor expansion fix: over-fetch + nucleus-only seen set (Stage 6)**: To make neighbor expansion work, the episode SQL now over-fetches (`max(limit*3, limit+10)` candidates), sorts by `vector_sim`, and only the top `limit` become nucleus candidates in `seen_episode_ids`. Over-fetched episodes can still be discovered as session neighbors. Both `adapter.py:recall()` and `tools/recall.py` now truncate by counting only non-neighbor items toward `limit`, preserving neighbors of surviving nuclei. This means the caller may receive more than `limit` items — `limit` primary results plus their session-context neighbors.
+
+**D6 — Session A test data restructured for neighbor coverage (Stage 6)**: Original Session A (4 PG-related turns) was too semantically homogeneous — all episodes matched any PG query via vector similarity, leaving nothing for expansion. Restructured to 6 turns spanning 3 topics (party, PG, hiring) so a PG-specific query hits only turns 3-5 as nucleus, and expansion pulls in adjacent unrelated turns as context neighbors.

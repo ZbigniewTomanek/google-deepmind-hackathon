@@ -326,7 +326,13 @@ class GraphServiceAdapter:
         merged_results = [item for batch in results_per_schema for item in batch]
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
         deduped = _deduplicate_recall_items(merged_results)
-        top_results = deduped[:limit]
+        # Keep top `limit` primary items (non-neighbors), plus all neighbors
+        # of surviving nuclei.  Without this, neighbors (scored at 0.6x) are
+        # always cut by a naive [:limit] slice, making expansion useless.
+        primary = [i for i in deduped if i.neighbor_of is None][:limit]
+        primary_ids = {i.item_id for i in primary}
+        neighbors = [i for i in deduped if i.neighbor_of is not None and i.neighbor_of in primary_ids]
+        top_results = primary + neighbors
         return _sort_session_clusters_chronologically(top_results)
 
     async def update_episode_embedding(
@@ -2188,6 +2194,11 @@ class GraphServiceAdapter:
         )
         half_life = self._settings.recall_recency_half_life_hours
 
+        # Over-fetch episode candidates when neighbor expansion is on,
+        # so the SQL returns episodes from multiple sessions rather than
+        # only the most recent (which may all be from the same session).
+        episode_sql_limit = max(limit * 3, limit + 10) if expand_neighbors else limit
+
         async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             if query_embedding is not None:
                 emb_str = str(query_embedding)
@@ -2234,7 +2245,7 @@ class GraphServiceAdapter:
                     escaped_query,
                     ep_emb_str,
                     self._settings.recall_vector_distance_threshold,
-                    limit,
+                    episode_sql_limit,
                 )
             else:
                 # Text-only path — no regression from existing behavior
@@ -2266,7 +2277,7 @@ class GraphServiceAdapter:
                        ORDER BY created_at DESC
                        LIMIT $2""",
                     escaped_query,
-                    limit,
+                    episode_sql_limit,
                 )
 
             # Fetch supersession relationships for candidate nodes
@@ -2301,6 +2312,16 @@ class GraphServiceAdapter:
             neighbors_by_nucleus: dict[int, list[dict]] = {}
 
             if expand_neighbors and self._settings.recall_expand_neighbors and schema_name.endswith("__personal"):
+                # Only the top-`limit` episodes (by vector similarity) are nucleus
+                # candidates.  Over-fetched episodes beyond `limit` can still be
+                # discovered as session neighbors — this is the whole point of
+                # over-fetching.  Replace episode_row_dicts with the nucleus set
+                # so only they get scored as primary results later.
+                episode_row_dicts = sorted(
+                    episode_row_dicts,
+                    key=lambda r: (r.get("vector_sim") or 0.0),
+                    reverse=True,
+                )[:limit]
                 seen_episode_ids = {int(r["id"]) for r in episode_row_dicts}
                 for ep in episode_row_dicts:
                     if ep.get("session_id") is None:

@@ -51,8 +51,24 @@ JOB_POLL_INTERVAL = 3
 SESSION_A = f"morning-standup-{SUFFIX}"
 SESSION_B = f"afternoon-debug-{SUFFIX}"
 
-# Session A: morning standup discussion about database migration (4 turns)
+# Session A: morning standup discussion (6 turns).
+# Turns 1-2 are about the office party (unrelated to PG).
+# Turns 3-4 are about the PostgreSQL upgrade (will match PG queries).
+# Turns 5-6 are about hiring/onboarding (unrelated to PG).
+# This structure ensures that a PG-specific recall query will directly
+# hit turns 3-4, and neighbor expansion should pull in turns 2 and 5-6
+# as session context — validating the MemMachine nucleus+neighbor model.
 SESSION_A_TURNS = [
+    (
+        "First item on the standup agenda: the team holiday party is"
+        " confirmed for June 15th at the rooftop venue. Everyone needs"
+        f" to RSVP by end of this week. [{SUFFIX}]"
+    ),
+    (
+        "Catering options for the party are Mediterranean or BBQ."
+        " Maria is collecting votes in the Slack channel."
+        f" Budget approved for 50 people. [{SUFFIX}]"
+    ),
     (
         "We discussed the PostgreSQL 16 upgrade timeline in standup today."
         " The DBA team wants to do it during the maintenance window"
@@ -64,13 +80,14 @@ SESSION_A_TURNS = [
         f" in the analytics pipeline first. [{SUFFIX}]"
     ),
     (
-        "Alice volunteered to run the JSONB query audit. She'll check"
+        "Alice volunteered to run the JSONB query audit. She will check"
         " all stored procedures and the three most active Grafana"
-        f" dashboards. [{SUFFIX}]"
+        f" dashboards before the migration. [{SUFFIX}]"
     ),
     (
-        "The team agreed to freeze schema migrations one week before"
-        f" the PG16 upgrade. No DDL changes after April 26th. [{SUFFIX}]"
+        "Last topic: we have two new backend engineers starting next"
+        " Monday. Bob is preparing the onboarding checklist and setting"
+        f" up their development environments. [{SUFFIX}]"
     ),
 ]
 
@@ -194,7 +211,7 @@ async def verify_session_in_db(session_id: str, expected_count: int) -> None:
         )
         if len(rows) != expected_count:
             raise AssertionError(f"Expected {expected_count} episodes for session {session_id}, " f"got {len(rows)}")
-        for i, row in enumerate(rows):
+        for i, row in enumerate(rows, start=1):
             if row["session_sequence"] != i:
                 raise AssertionError(
                     f"Episode {row['id']} has session_sequence={row['session_sequence']}, " f"expected {i}"
@@ -248,12 +265,14 @@ async def test_session_recall_with_neighbors() -> None:
     """Stage 2: Recall with neighbor expansion and session clustering."""
     print("\n=== Stage 2: Session Recall with Neighbors ===")
 
-    # Query that should match Session A content
+    # Query specifically about PG upgrade — should match Session A turns 3-5
+    # but NOT turns 1-2 (party) or turn 6 (hiring).  Neighbor expansion should
+    # pull those unrelated session turns in as context neighbors.
     result = await mcp_call(
         "recall",
         {
-            "query": f"PostgreSQL upgrade timeline and risks {SUFFIX}",
-            "limit": 20,
+            "query": f"PostgreSQL 16 upgrade JSONB audit timeline {SUFFIX}",
+            "limit": 5,
         },
     )
     items = result["results"]
@@ -264,6 +283,17 @@ async def test_session_recall_with_neighbors() -> None:
     # Check that we got episode results
     episode_items = [i for i in items if i.get("source_kind") == "episode"]
     print(f"  Recall returned {len(items)} items, {len(episode_items)} episodes")
+
+    # Debug: print each episode's details
+    for ep in episode_items:
+        content_preview = ep.get("content", "")[:60]
+        print(
+            f"    ep={ep['item_id']} score={ep['score']:.4f} "
+            f"session={ep.get('session_id', 'N/A')[:20]}... "
+            f"seq={ep.get('session_sequence')} "
+            f"neighbor_of={ep.get('neighbor_of')} "
+            f"content={content_preview}..."
+        )
 
     if len(episode_items) < 2:
         raise AssertionError(f"Expected at least 2 episode results (nucleus + neighbors), " f"got {len(episode_items)}")
