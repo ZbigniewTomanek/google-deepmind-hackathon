@@ -50,7 +50,12 @@ class MemoryRepository(Protocol):
         ...
 
     async def recall(
-        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+        self,
+        query: str,
+        agent_id: str,
+        limit: int = 10,
+        query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
     ) -> list[RecallItem]:
         """Return ranked recall results for an agent."""
 

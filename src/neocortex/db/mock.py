@@ -155,7 +155,12 @@ class InMemoryRepository:
         return result
 
     async def recall(
-        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+        self,
+        query: str,
+        agent_id: str,
+        limit: int = 10,
+        query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
     ) -> list[RecallItem]:
         query_lower = query.lower()
         # Must stay in sync with MCPSettings defaults

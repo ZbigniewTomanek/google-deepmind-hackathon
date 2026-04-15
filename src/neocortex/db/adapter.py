@@ -288,7 +288,12 @@ class GraphServiceAdapter:
         return {row["content_hash"]: int(row["id"]) for row in rows}
 
     async def recall(
-        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+        self,
+        query: str,
+        agent_id: str,
+        limit: int = 10,
+        query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
     ) -> list[RecallItem]:
         if self._pool is None or self._router is None:
             return await self._recall_via_graph(
@@ -298,13 +303,22 @@ class GraphServiceAdapter:
         schemas = await self._router.route_recall(agent_id)
         results_per_schema = await asyncio.gather(
             *(
-                self._recall_in_schema(schema_name, query, agent_id, limit, query_embedding=query_embedding)
+                self._recall_in_schema(
+                    schema_name,
+                    query,
+                    agent_id,
+                    limit,
+                    query_embedding=query_embedding,
+                    expand_neighbors=expand_neighbors,
+                )
                 for schema_name in schemas
             )
         )
         merged_results = [item for batch in results_per_schema for item in batch]
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
-        return _deduplicate_recall_items(merged_results)[:limit]
+        deduped = _deduplicate_recall_items(merged_results)
+        top_results = deduped[:limit]
+        return _sort_session_clusters_chronologically(top_results)
 
     async def update_episode_embedding(
         self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
@@ -2142,6 +2156,7 @@ class GraphServiceAdapter:
         agent_id: str,
         limit: int,
         query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
     ) -> list[RecallItem]:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped recall.")
@@ -2186,7 +2201,7 @@ class GraphServiceAdapter:
                     """SELECT id, content, source_type,
                               access_count, last_accessed_at, importance,
                               consolidated,
-                              created_at,
+                              created_at, session_id, session_sequence,
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
@@ -2225,7 +2240,7 @@ class GraphServiceAdapter:
                     """SELECT id, content, source_type,
                               access_count, last_accessed_at, importance,
                               consolidated,
-                              created_at,
+                              created_at, session_id, session_sequence,
                               NULL::double precision AS vector_sim
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
@@ -2261,6 +2276,34 @@ class GraphServiceAdapter:
                     supersession_edges["superseded_by"].setdefault(r["target_id"], []).append(r)
                 for r in superseding_rows:
                     supersession_edges["supersedes"].setdefault(r["source_id"], []).append(r)
+
+            # Prefetch temporal neighbors for personal episode expansion
+            episode_row_dicts = [dict(r) for r in episode_rows]
+            neighbors_by_nucleus: dict[int, list[dict]] = {}
+
+            if expand_neighbors and self._settings.recall_expand_neighbors and schema_name.endswith("__personal"):
+                seen_episode_ids = {int(r["id"]) for r in episode_row_dicts}
+                for ep in episode_row_dicts:
+                    if ep.get("session_id") is None:
+                        continue
+                    neighbors = await self._fetch_episode_neighbors(
+                        conn=conn,
+                        episode_id=int(ep["id"]),
+                        session_id=str(ep["session_id"]),
+                        created_at=ep["created_at"],
+                        session_sequence=ep.get("session_sequence"),
+                        window=self._settings.recall_neighbor_window,
+                    )
+                    unique_neighbors: list[dict] = []
+                    for nb in neighbors:
+                        nb_id = int(nb["id"])
+                        if nb_id in seen_episode_ids:
+                            continue
+                        seen_episode_ids.add(nb_id)
+                        nb["neighbor_of"] = int(ep["id"])
+                        unique_neighbors.append(nb)
+                    if unique_neighbors:
+                        neighbors_by_nucleus[int(ep["id"])] = unique_neighbors
 
         # Build intermediate dicts (includes embedding for MMR, stripped before return)
         result_dicts: list[dict] = []
@@ -2322,7 +2365,29 @@ class GraphServiceAdapter:
                 }
             )
 
-        for row in episode_rows:
+        def _episode_result_dict(
+            row: dict, score: float, activation: float | None, importance: float, neighbor_of: int | None = None
+        ) -> dict:
+            embedding_vec = row.get("embedding_vec")
+            return {
+                "score": score,
+                "embedding": list(embedding_vec) if embedding_vec is not None else None,
+                "item_id": int(row["id"]),
+                "name": f"Episode #{int(row['id'])}",
+                "content": str(row["content"]),
+                "item_type": "Episode",
+                "activation_score": activation,
+                "importance": importance,
+                "source": str(row["source_type"]) if row.get("source_type") is not None else None,
+                "source_kind": "episode",
+                "graph_name": schema_name,
+                "created_at": row.get("created_at"),
+                "session_id": str(row["session_id"]) if row.get("session_id") is not None else None,
+                "session_sequence": int(row["session_sequence"]) if row.get("session_sequence") is not None else None,
+                "neighbor_of": neighbor_of,
+            }
+
+        for row in episode_row_dicts:
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
@@ -2357,22 +2422,29 @@ class GraphServiceAdapter:
                 # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
                 score *= self._settings.recall_unconsolidated_episode_boost
 
-            embedding_vec = row.get("embedding_vec")
-            result_dicts.append(
-                {
-                    "score": score,
-                    "embedding": list(embedding_vec) if embedding_vec is not None else None,
-                    "item_id": int(row["id"]),
-                    "name": f"Episode #{int(row['id'])}",
-                    "content": str(row["content"]),
-                    "item_type": "Episode",
-                    "activation_score": activation,
-                    "importance": ep_importance,
-                    "source": str(row["source_type"]) if row["source_type"] is not None else None,
-                    "source_kind": "episode",
-                    "graph_name": schema_name,
-                }
-            )
+            primary_id = int(row["id"])
+            result_dicts.append(_episode_result_dict(row, score, activation, ep_importance))
+
+            # Append neighbor episodes with discounted score
+            for nb in neighbors_by_nucleus.get(primary_id, []):
+                nb_created = nb.get("created_at")
+                nb_access = int(nb.get("access_count") or 0)
+                nb_last_acc = nb.get("last_accessed_at") or nb_created
+                nb_activation = (
+                    compute_base_activation(
+                        nb_access,
+                        nb_last_acc,
+                        decay_rate=self._settings.activation_decay_rate,
+                        access_exponent=self._settings.activation_access_exponent,
+                    )
+                    if nb_last_acc
+                    else None
+                )
+                nb_importance = float(nb["importance"]) if nb.get("importance") is not None else 0.5
+                nb_score = score * self._settings.recall_neighbor_score_factor
+                result_dicts.append(
+                    _episode_result_dict(nb, nb_score, nb_activation, nb_importance, neighbor_of=primary_id)
+                )
 
         # Apply MMR diversity reranking if enabled
         if self._settings.recall_mmr_enabled:
@@ -2398,9 +2470,75 @@ class GraphServiceAdapter:
                     source=d["source"],
                     source_kind=d["source_kind"],
                     graph_name=d["graph_name"],
+                    created_at=d.get("created_at"),
+                    session_id=d.get("session_id"),
+                    session_sequence=d.get("session_sequence"),
+                    neighbor_of=d.get("neighbor_of"),
                 )
             )
         return results
+
+    async def _fetch_episode_neighbors(
+        self,
+        conn,
+        episode_id: int,
+        session_id: str,
+        created_at,
+        session_sequence: int | None,
+        window: int = 3,
+    ) -> list[dict]:
+        """Fetch temporal neighbor episodes within the same session."""
+        before_limit = max(1, window // 3)
+        after_limit = max(1, window - before_limit)
+
+        before = await conn.fetch(
+            f"""
+            SELECT id, content, source_type,
+                   access_count, last_accessed_at, importance, consolidated,
+                   created_at, session_id, session_sequence,
+                   NULL::double precision AS vector_sim,
+                   NULL::float[] AS embedding_vec
+            FROM episode
+            WHERE session_id = $1
+              AND id <> $2
+              AND (
+                (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence < $4)
+                OR ($4::int IS NULL AND (created_at, id) < ($3, $2))
+              )
+            ORDER BY session_sequence DESC NULLS LAST, created_at DESC, id DESC
+            LIMIT {before_limit}
+            """,
+            session_id,
+            episode_id,
+            created_at,
+            session_sequence,
+        )
+        after = await conn.fetch(
+            f"""
+            SELECT id, content, source_type,
+                   access_count, last_accessed_at, importance, consolidated,
+                   created_at, session_id, session_sequence,
+                   NULL::double precision AS vector_sim,
+                   NULL::float[] AS embedding_vec
+            FROM episode
+            WHERE session_id = $1
+              AND id <> $2
+              AND (
+                (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence > $4)
+                OR ($4::int IS NULL AND (created_at, id) > ($3, $2))
+              )
+            ORDER BY session_sequence ASC NULLS LAST, created_at ASC, id ASC
+            LIMIT {after_limit}
+            """,
+            session_id,
+            episode_id,
+            created_at,
+            session_sequence,
+        )
+        rows: list[dict] = []
+        rows.extend(dict(r) | {"neighbor_position": "before"} for r in before)
+        rows.extend(dict(r) | {"neighbor_position": "after"} for r in after)
+        return rows
 
     async def _get_types(self, table_name: str, count_table: str, agent_id: str | None = None) -> list[TypeInfo]:
         if self._pool is None or self._router is None or agent_id is None:
@@ -2522,3 +2660,36 @@ def _deduplicate_recall_items(items: Iterable[RecallItem]) -> list[RecallItem]:
         deduplicated.append(item)
 
     return deduplicated
+
+
+def _sort_session_clusters_chronologically(items: list[RecallItem]) -> list[RecallItem]:
+    """Reorder results so episodes from the same session appear in chronological order."""
+    result: list[RecallItem] = []
+    consumed: set[tuple[str, int, str | None]] = set()
+
+    def key_for(item: RecallItem) -> tuple[str, int, str | None]:
+        return (item.source_kind, item.item_id, item.graph_name)
+
+    for item in items:
+        key = key_for(item)
+        if key in consumed:
+            continue
+        if item.source_kind != "episode" or not item.session_id:
+            consumed.add(key)
+            result.append(item)
+            continue
+
+        cluster = [
+            x
+            for x in items
+            if x.source_kind == "episode"
+            and x.graph_name == item.graph_name
+            and x.session_id == item.session_id
+            and key_for(x) not in consumed
+        ]
+        cluster.sort(key=lambda x: (x.session_sequence is None, x.session_sequence or 0, x.created_at or "", x.item_id))
+        for c in cluster:
+            consumed.add(key_for(c))
+            result.append(c)
+
+    return result

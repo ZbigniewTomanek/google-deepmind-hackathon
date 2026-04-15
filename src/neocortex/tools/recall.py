@@ -56,7 +56,13 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
         query_embedding = await embeddings.embed(query)
 
     # Episode + existing node recall
-    results = await repo.recall(query=query, agent_id=agent_id, limit=limit, query_embedding=query_embedding)
+    results = await repo.recall(
+        query=query,
+        agent_id=agent_id,
+        limit=limit,
+        query_embedding=query_embedding,
+        expand_neighbors=settings.recall_expand_neighbors,
+    )
 
     # Node search with graph traversal
     matched_node_tuples = await repo.search_nodes(
