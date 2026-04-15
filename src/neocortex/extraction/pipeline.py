@@ -285,7 +285,9 @@ async def run_extraction(
             logger.debug("stage_timing", stage="librarian_agent", elapsed_s=round(time.monotonic() - t0, 2))
 
             # Mark episode as consolidated
-            await repo.mark_episode_consolidated(agent_id, episode_id)
+            await repo.mark_episode_consolidated(agent_id, episode_id, target_schema=read_schema)
+            if target_schema is None and read_schema is None:
+                await repo.link_personal_episode_to_session_predecessor(agent_id, episode_id)
 
             # Log the curation summary
             summary = librarian_result.output
@@ -359,6 +361,7 @@ async def run_extraction(
                 payload,
                 target_schema=target_schema,
                 extractor_descriptions=extractor_descriptions,
+                episode_schema=read_schema,
             )
             logger.debug("stage_timing", stage="persist_payload", elapsed_s=round(time.monotonic() - t0, 2))
 
@@ -396,6 +399,7 @@ async def _persist_payload(
     payload: LibrarianPayload,
     target_schema: str | None = None,
     extractor_descriptions: dict[str, str] | None = None,
+    episode_schema: str | None = None,
 ) -> None:
     """Persist librarian output to the knowledge graph.
 
@@ -461,7 +465,9 @@ async def _persist_payload(
         name_to_node_id[entity.name] = node.id
 
     # Mark episode as consolidated (extraction completed)
-    await repo.mark_episode_consolidated(agent_id, episode_id)
+    await repo.mark_episode_consolidated(agent_id, episode_id, target_schema=episode_schema)
+    if target_schema is None and episode_schema is None:
+        await repo.link_personal_episode_to_session_predecessor(agent_id, episode_id)
 
     # Persist relations as edges
     for rel in payload.relations:

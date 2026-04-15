@@ -273,8 +273,26 @@ class MemoryRepository(Protocol):
 
     # ── Episodic Consolidation ──
 
-    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
-        """Mark an episode as consolidated (extraction completed)."""
+    async def mark_episode_consolidated(
+        self,
+        agent_id: str,
+        episode_id: int,
+        target_schema: str | None = None,
+    ) -> None:
+        """Mark an episode as consolidated in the schema where the episode row lives."""
+
+    async def link_personal_episode_to_session_predecessor(
+        self,
+        agent_id: str,
+        episode_id: int,
+    ) -> None:
+        """Create a personal-graph FOLLOWS edge from this episode to its predecessor.
+
+        Always operates on the agent's personal schema. No-op when the episode has
+        no session_id, no predecessor exists, no extracted nodes exist for either
+        episode, or the FOLLOWS type is missing.
+        """
+        ...
 
     # ── Edge Reinforcement ──
 

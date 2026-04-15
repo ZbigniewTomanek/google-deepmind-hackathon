@@ -1764,16 +1764,112 @@ class GraphServiceAdapter:
 
     # ── Episodic Consolidation ──
 
-    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> None:
         if self._pool is None or self._router is None:
             return
 
+        if target_schema is not None:
+            async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+                await conn.execute(
+                    "UPDATE episode SET consolidated = true WHERE id = $1",
+                    episode_id,
+                )
+        else:
+            schema_name = await self._router.route_store(agent_id)
+            async with schema_scoped_connection(self._pool, schema_name) as conn:
+                await conn.execute(
+                    "UPDATE episode SET consolidated = true WHERE id = $1",
+                    episode_id,
+                )
+
+    async def link_personal_episode_to_session_predecessor(self, agent_id: str, episode_id: int) -> None:
+        if self._pool is None or self._router is None:
+            return
+
+        import hashlib
+
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
-            await conn.execute(
-                "UPDATE episode SET consolidated = true WHERE id = $1",
+            current = await conn.fetchrow(
+                """
+                SELECT id, session_id, session_sequence, created_at
+                FROM episode
+                WHERE id = $1 AND agent_id = $2
+                """,
                 episode_id,
+                agent_id,
             )
+            if current is None or current["session_id"] is None:
+                return
+
+            session_id = str(current["session_id"])
+            lock_material = f"{schema_name}:{agent_id}:{session_id}"
+            lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
+
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+
+                previous = await conn.fetchrow(
+                    """
+                    SELECT id
+                    FROM episode
+                    WHERE agent_id = $1
+                      AND session_id = $2
+                      AND id <> $3
+                      AND (
+                        (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence < $4)
+                        OR ($4::int IS NULL AND (created_at, id) < ($5, $3))
+                      )
+                    ORDER BY session_sequence DESC NULLS LAST, created_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    agent_id,
+                    session_id,
+                    episode_id,
+                    current["session_sequence"],
+                    current["created_at"],
+                )
+                if previous is None:
+                    return
+
+                prev_id = int(previous["id"])
+                prev_node_id = await conn.fetchval(
+                    """
+                    SELECT id FROM node
+                    WHERE properties->>'_source_episode' = $1
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT 1
+                    """,
+                    str(prev_id),
+                )
+                curr_node_id = await conn.fetchval(
+                    """
+                    SELECT id FROM node
+                    WHERE properties->>'_source_episode' = $1
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT 1
+                    """,
+                    str(episode_id),
+                )
+                if prev_node_id is None or curr_node_id is None:
+                    return
+
+                follows_type_id = await conn.fetchval("SELECT id FROM edge_type WHERE name = 'FOLLOWS'")
+                if follows_type_id is None:
+                    return
+
+                await conn.execute(
+                    """
+                    INSERT INTO edge (source_id, target_id, type_id, weight, properties)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    ON CONFLICT (source_id, target_id, type_id) DO NOTHING
+                    """,
+                    curr_node_id,
+                    prev_node_id,
+                    follows_type_id,
+                    0.9,
+                    json.dumps({"episode_follows": episode_id, "episode_precedes": prev_id}),
+                )
 
     # ── Edge Reinforcement ──
 

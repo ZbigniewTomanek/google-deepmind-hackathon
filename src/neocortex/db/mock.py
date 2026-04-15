@@ -880,11 +880,14 @@ class InMemoryRepository:
 
     # ── Episodic Consolidation ──
 
-    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> None:
         for ep in self._episodes:
             if ep["id"] == episode_id and ep["agent_id"] == agent_id:
                 ep["consolidated"] = True
                 return
+
+    async def link_personal_episode_to_session_predecessor(self, agent_id: str, episode_id: int) -> None:
+        pass
 
     # ── Access Tracking ──
 
