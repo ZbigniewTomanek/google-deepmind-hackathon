@@ -30,6 +30,30 @@ def compute_recency_score(timestamp: datetime, half_life_hours: float) -> float:
     return math.pow(2.0, -hours_ago / half_life_hours)
 
 
+def compute_stm_boost(
+    hours_ago: float,
+    stm_window_hours: float,
+    boost_factor: float,
+) -> float:
+    """Return a multiplicative boost for episodes within the STM window.
+
+    Linear decay from `boost_factor` at age=0 to 1.0 at age=stm_window_hours.
+    Returns 1.0 (no boost) for episodes older than the window.
+
+    Args:
+        hours_ago: Age of the episode in hours.
+        stm_window_hours: Window boundary in hours. Episodes older than this get 1.0.
+        boost_factor: Peak multiplier for brand-new (0-hour-old) episodes. Must be >= 1.0.
+
+    Returns:
+        Boost multiplier >= 1.0.
+    """
+    if hours_ago >= stm_window_hours or stm_window_hours <= 0 or boost_factor <= 1.0:
+        return 1.0
+    fraction_remaining = 1.0 - (hours_ago / stm_window_hours)
+    return 1.0 + (boost_factor - 1.0) * fraction_remaining
+
+
 def compute_base_activation(
     access_count: int,
     last_accessed_at: datetime,
@@ -224,6 +248,23 @@ def mmr_rerank(
 
     # Append items without embeddings at the end (no diversity signal available)
     return selected + without_emb
+
+
+def truncate_preserving_neighbors(items: list, limit: int) -> list:
+    """Keep top ``limit`` primary items plus neighbors of surviving nuclei.
+
+    Without this, neighbors (scored at 0.6x of their nucleus) are always
+    cut by a naive ``[:limit]`` slice, making session-context expansion
+    useless.  The returned list may exceed ``limit`` — it contains
+    ``limit`` primary results plus their session-context neighbors.
+
+    Works with any objects that have ``neighbor_of`` and ``item_id``
+    attributes (e.g. ``RecallItem``).
+    """
+    primary = [i for i in items if i.neighbor_of is None][:limit]
+    primary_ids = {i.item_id for i in primary}
+    neighbors = [i for i in items if i.neighbor_of is not None and i.neighbor_of in primary_ids]
+    return primary + neighbors
 
 
 def neighborhood_to_adjacency(

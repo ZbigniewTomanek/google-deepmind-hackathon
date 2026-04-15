@@ -1,3 +1,4 @@
+import hashlib
 import json
 from typing import Any
 
@@ -248,25 +249,68 @@ class GraphService:
         source_type: str | None = None,
         metadata: dict | None = None,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> Episode:
         meta_json = json.dumps(metadata or {})
         emb_str = str(embedding) if embedding else None
-        row = await self._pg.fetchrow(
-            """INSERT INTO episode (agent_id, content, embedding, source_type, metadata, content_hash)
-               VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6)
-               RETURNING id, agent_id, content, source_type, metadata, content_hash, created_at""",
-            agent_id,
-            content,
-            emb_str,
-            source_type,
-            meta_json,
-            content_hash,
-        )
+        # Compute session_sequence under advisory lock if session_id is provided,
+        # using a single connection to prevent concurrent duplicate sequences.
+        async with self._pg.pool.acquire() as conn:
+            session_sequence = None
+            if session_id is not None:
+                lock_material = f"public:{agent_id}:{session_id}"
+                lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
+                async with conn.transaction():
+                    await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+                    seq_row = await conn.fetchrow(
+                        "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                        "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                        agent_id,
+                        session_id,
+                    )
+                    if seq_row is not None:
+                        session_sequence = seq_row["next_seq"]
+                    row = await conn.fetchrow(
+                        """INSERT INTO episode
+                           (agent_id, content, embedding, source_type,
+                            metadata, content_hash, session_id, session_sequence)
+                           VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6, $7, $8)
+                           RETURNING id, agent_id, content, source_type, metadata,
+                                     content_hash, session_id, session_sequence,
+                                     created_at""",
+                        agent_id,
+                        content,
+                        emb_str,
+                        source_type,
+                        meta_json,
+                        content_hash,
+                        session_id,
+                        session_sequence,
+                    )
+            else:
+                row = await conn.fetchrow(
+                    """INSERT INTO episode
+                       (agent_id, content, embedding, source_type,
+                        metadata, content_hash, session_id, session_sequence)
+                       VALUES ($1, $2, $3::vector, $4, $5::jsonb, $6, $7, $8)
+                       RETURNING id, agent_id, content, source_type, metadata,
+                                 content_hash, session_id, session_sequence,
+                                 created_at""",
+                    agent_id,
+                    content,
+                    emb_str,
+                    source_type,
+                    meta_json,
+                    content_hash,
+                    session_id,
+                    session_sequence,
+                )
         return self._row_to_episode(row)
 
     async def get_episode(self, id: int) -> Episode | None:
         row = await self._pg.fetchrow(
-            "SELECT id, agent_id, content, source_type, metadata, created_at FROM episode WHERE id = $1",
+            "SELECT id, agent_id, content, source_type, metadata, session_id, session_sequence, created_at "
+            "FROM episode WHERE id = $1",
             id,
         )
         return self._row_to_episode(row) if row else None
@@ -274,14 +318,16 @@ class GraphService:
     async def list_episodes(self, agent_id: str | None = None, limit: int = 50) -> list[Episode]:
         if agent_id is not None:
             rows = await self._pg.fetch(
-                """SELECT id, agent_id, content, source_type, metadata, created_at
+                """SELECT id, agent_id, content, source_type, metadata, created_at,
+                          session_id, session_sequence
                    FROM episode WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2""",
                 agent_id,
                 limit,
             )
         else:
             rows = await self._pg.fetch(
-                """SELECT id, agent_id, content, source_type, metadata, created_at
+                """SELECT id, agent_id, content, source_type, metadata, created_at,
+                          session_id, session_sequence
                    FROM episode ORDER BY created_at DESC LIMIT $1""",
                 limit,
             )

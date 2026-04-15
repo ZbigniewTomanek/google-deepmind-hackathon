@@ -51,6 +51,8 @@ class MCPSettings(BaseSettings):
     # Hybrid recall weights (normalized at scoring time, so any ratio works)
     recall_weight_vector: float = 0.3
     recall_weight_text: float = 0.2
+    # For episodes, a separate STM boost (episode_stm_boost_factor) is applied
+    # multiplicatively on top when within episode_stm_window_hours.
     recall_weight_recency: float = 0.15
     recall_recency_half_life_hours: float = 168.0  # 7 days
     # Vector distance threshold: cosine distance below this counts as a match.
@@ -80,6 +82,18 @@ class MCPSettings(BaseSettings):
     recall_mmr_lambda: float = 0.7
     # Enable/disable MMR postprocessing (disable to compare A/B)
     recall_mmr_enabled: bool = True
+
+    # Short-term memory boost for recent episodes.
+    # Episodes younger than stm_window_hours get a multiplicative boost (linear decay
+    # from boost_factor at age=0 to 1.0 at the window boundary).
+    # Independent of recency_weight — applied on top of the hybrid score.
+    episode_stm_window_hours: float = 2.0  # episodes younger than this get STM boost
+    episode_stm_boost_factor: float = 1.5  # peak multiplier for brand-new episodes
+
+    # Temporal neighbor expansion (MemMachine nucleus+neighbors)
+    recall_expand_neighbors: bool = True
+    recall_neighbor_window: int = 3  # default: 1 before + 2 after
+    recall_neighbor_score_factor: float = 0.6
 
     # Supersession scoring adjustments
     recall_superseded_penalty: float = 0.5  # Multiplier for outdated nodes

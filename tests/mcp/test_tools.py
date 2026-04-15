@@ -32,6 +32,7 @@ async def test_recall_with_empty_repo_returns_empty_results(test_server) -> None
         "results": [],
         "total": 0,
         "query": "missing",
+        "formatted_context": "(no episodes recalled)",
     }
 
 

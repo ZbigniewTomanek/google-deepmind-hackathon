@@ -160,9 +160,26 @@ do_start() {
     wait_for_postgres
     apply_migrations
 
-    # --- Source .env ---
+    # --- Source .env (without overwriting caller-exported vars) ---
+    # Using read-based parsing instead of `set -a; source .env` so that
+    # env vars already set by the caller (e.g. run_e2e.sh) are preserved.
     if [[ -f "$PROJECT_DIR/.env" ]]; then
-        set -a; source "$PROJECT_DIR/.env"; set +a
+        while IFS='=' read -r key value; do
+            # Skip comments and blank lines
+            [[ "$key" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "$key" ]] && continue
+            # Strip leading/trailing whitespace and optional 'export' prefix from key
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key%"${key##*[![:space:]]}"}"
+            key="${key#export }"
+            # Strip surrounding quotes from value
+            value="${value#\"}" ; value="${value%\"}"
+            value="${value#\'}" ; value="${value%\'}"
+            # Only export if the variable is not already set by the caller
+            if [[ -z "${!key+x}" ]]; then
+                export "$key=$value"
+            fi
+        done < "$PROJECT_DIR/.env"
     fi
 
     # --- MCP server ---
@@ -176,6 +193,11 @@ do_start() {
     echo $! > "$PIDFILE_MCP"
     log "  PID $(cat "$PIDFILE_MCP") → log: $LOGDIR/mcp_stdout.log"
 
+    # Wait for MCP to be healthy before starting ingestion server —
+    # both run create_services() which provisions shared schemas, and
+    # concurrent schema creation causes "tuple concurrently updated" errors.
+    wait_for_healthy "http://127.0.0.1:${MCP_PORT}/health" "$MAX_WAIT"
+
     # --- Ingestion server ---
     log "Starting ingestion server (port $INGESTION_PORT)..."
     NEOCORTEX_AUTH_MODE=dev_token \
@@ -186,8 +208,7 @@ do_start() {
     echo $! > "$PIDFILE_INGESTION"
     log "  PID $(cat "$PIDFILE_INGESTION") → log: $LOGDIR/ingestion_stdout.log"
 
-    # --- Health checks ---
-    wait_for_healthy "http://127.0.0.1:${MCP_PORT}/health" "$MAX_WAIT"
+    # --- Health check for ingestion ---
     wait_for_healthy "http://127.0.0.1:${INGESTION_PORT}/health" "$MAX_WAIT"
 
     ok "All services running. Ready for testing."

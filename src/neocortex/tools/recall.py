@@ -1,11 +1,77 @@
+import json
 import random
+from collections import defaultdict
+from datetime import datetime
 
 from fastmcp import Context
 from loguru import logger
 
 from neocortex.auth.dependencies import ensure_provisioned, get_agent_id_from_context
 from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
-from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency
+from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency, truncate_preserving_neighbors
+
+
+def _format_recall_context(results: list[RecallItem]) -> str:
+    """Return JSON blocks for recalled episodes, grouped by session."""
+    episodes = [r for r in results if r.source_kind == "episode"]
+    clustered: dict[tuple[str, str | None], list[RecallItem]] = defaultdict(list)
+    isolated: list[RecallItem] = []
+
+    for ep in episodes:
+        if ep.session_id:
+            clustered[(ep.session_id, ep.graph_name)].append(ep)
+        else:
+            isolated.append(ep)
+
+    parts: list[str] = []
+    for (session_id, graph_name), cluster in clustered.items():
+        cluster.sort(
+            key=lambda e: (
+                e.session_sequence is None,
+                e.session_sequence or 0,
+                e.created_at or datetime.min,
+                e.item_id,
+            )
+        )
+        parts.append(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "graph_name": graph_name,
+                    "episodes": [
+                        {
+                            "id": ep.item_id,
+                            "created_at": ep.created_at.isoformat() if ep.created_at else None,
+                            "session_sequence": ep.session_sequence,
+                            "content": ep.content,
+                            "is_context_neighbor": ep.neighbor_of is not None,
+                            "neighbor_of": ep.neighbor_of,
+                            "score": round(ep.score, 4),
+                        }
+                        for ep in cluster
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
+    for ep in isolated:
+        parts.append(
+            json.dumps(
+                {
+                    "id": ep.item_id,
+                    "graph_name": ep.graph_name,
+                    "created_at": ep.created_at.isoformat() if ep.created_at else None,
+                    "content": ep.content,
+                    "score": round(ep.score, 4),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
+    return "\n---\n".join(parts) if parts else "(no episodes recalled)"
 
 
 async def _maybe_decay_edges(repo, agent_id: str, settings, *, force: bool = False) -> None:
@@ -39,7 +105,9 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
 
     Args:
         query: What you want to know, in natural language.
-        limit: Maximum number of results to return (1-100).
+        limit: Maximum number of primary results to return (1-100).
+               Session-context neighbors are included additionally,
+               so the actual result count may exceed this value.
     """
     if ctx is None:
         raise RuntimeError("FastMCP context is required for recall().")
@@ -52,11 +120,22 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
 
     embeddings = ctx.lifespan_context.get("embeddings")
     query_embedding = None
+    episode_query_embedding = None
     if embeddings:
         query_embedding = await embeddings.embed(query)
+        # Role-bias correction: prefix plain queries with "user:" for episode vector search
+        if not query.lower().startswith(("user:", "assistant:")):
+            episode_query_embedding = await embeddings.embed(f"user: {query}")
 
     # Episode + existing node recall
-    results = await repo.recall(query=query, agent_id=agent_id, limit=limit, query_embedding=query_embedding)
+    results = await repo.recall(
+        query=query,
+        agent_id=agent_id,
+        limit=limit,
+        query_embedding=query_embedding,
+        expand_neighbors=settings.recall_expand_neighbors,
+        episode_query_embedding=episode_query_embedding,
+    )
 
     # Node search with graph traversal
     matched_node_tuples = await repo.search_nodes(
@@ -174,7 +253,7 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     all_results.sort(key=lambda item: item.score, reverse=True)
 
     # Record access for returned results (ACT-R activation tracking)
-    final_results = all_results[:limit]
+    final_results = truncate_preserving_neighbors(all_results, limit)
     recalled_node_ids = [r.item_id for r in final_results if r.source_kind == "node"]
     recalled_episode_ids = [r.item_id for r in final_results if r.source_kind == "episode"]
     if recalled_node_ids:
@@ -207,16 +286,22 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     # Lazy forget sweep — 1 in 20 recall calls
     await _maybe_forget_sweep(repo, agent_id, settings)
 
+    formatted_context = _format_recall_context(final_results)
+
     logger.bind(action_log=True).info(
         "recall_with_graph_traversal",
         agent_id=agent_id,
         query=query,
         total_results=len(all_results),
         node_results_with_context=sum(1 for r in all_results if r.graph_context is not None),
+        session_ids_returned=list({r.session_id for r in final_results if r.session_id}),
+        neighbor_episodes_included=sum(1 for r in final_results if r.neighbor_of is not None),
+        episode_role_bias_applied=episode_query_embedding is not None,
     )
 
     return RecallResult(
         results=final_results,
         total=len(final_results),
         query=query,
+        formatted_context=formatted_context,
     )

@@ -10,6 +10,7 @@ from neocortex.scoring import (
     compute_base_activation,
     compute_hybrid_score,
     compute_recency_score,
+    compute_stm_boost,
     compute_supersession_adjustment,
     mmr_rerank,
 )
@@ -202,6 +203,34 @@ class TestMMRRerank:
         ]
         reranked = mmr_rerank(results, lambda_param=0.7)
         assert reranked == results
+
+
+class TestSTMBoost:
+    """Tests for short-term memory boost for recent episodes."""
+
+    def test_brand_new_episode(self):
+        assert compute_stm_boost(0.0, 2.0, 1.5) == pytest.approx(1.5)
+
+    def test_halfway_through_window(self):
+        assert compute_stm_boost(1.0, 2.0, 1.5) == pytest.approx(1.25)
+
+    def test_at_window_boundary(self):
+        assert compute_stm_boost(2.0, 2.0, 1.5) == pytest.approx(1.0)
+
+    def test_outside_window(self):
+        assert compute_stm_boost(5.0, 2.0, 1.5) == pytest.approx(1.0)
+
+    def test_window_disabled_zero(self):
+        assert compute_stm_boost(0.0, 0.0, 1.5) == pytest.approx(1.0)
+
+    def test_boost_factor_one_no_effect(self):
+        assert compute_stm_boost(0.0, 2.0, 1.0) == pytest.approx(1.0)
+
+    def test_boost_factor_below_one_no_effect(self):
+        assert compute_stm_boost(0.0, 2.0, 0.8) == pytest.approx(1.0)
+
+    def test_negative_window_no_effect(self):
+        assert compute_stm_boost(0.0, -1.0, 1.5) == pytest.approx(1.0)
 
 
 class TestTemporalRecency:

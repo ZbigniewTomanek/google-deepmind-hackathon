@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -34,12 +35,17 @@ class RecallItem(BaseModel):
     source_kind: Literal["node", "episode"]
     graph_name: str | None = None
     graph_context: GraphContext | None = None
+    created_at: datetime | None = None
+    session_id: str | None = None
+    session_sequence: int | None = None
+    neighbor_of: int | None = None
 
 
 class RecallResult(BaseModel):
     results: list[RecallItem]
     total: int
     query: str
+    formatted_context: str | None = None
 
 
 class TypeInfo(BaseModel):

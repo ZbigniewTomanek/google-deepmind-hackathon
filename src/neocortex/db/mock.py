@@ -29,6 +29,8 @@ class EpisodeRecord(TypedDict, total=False):
     importance: float
     consolidated: bool
     content_hash: str | None
+    session_id: str | None
+    session_sequence: int | None
 
 
 class InMemoryRepository:
@@ -56,6 +58,7 @@ class InMemoryRepository:
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1
@@ -63,6 +66,12 @@ class InMemoryRepository:
         episode_metadata = metadata or {}
         if context:
             episode_metadata["context"] = context
+        # Compute session_sequence
+        session_sequence = None
+        if session_id is not None:
+            session_sequence = (
+                sum(1 for ep in self._episodes if ep["agent_id"] == agent_id and ep.get("session_id") == session_id) + 1
+            )
         self._episodes.append(
             {
                 "id": episode_id,
@@ -77,6 +86,8 @@ class InMemoryRepository:
                 "importance": importance,
                 "consolidated": False,
                 "content_hash": content_hash,
+                "session_id": session_id,
+                "session_sequence": session_sequence,
             }
         )
         return episode_id
@@ -91,20 +102,39 @@ class InMemoryRepository:
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         episode_id = self._next_id
         self._next_id += 1
+        now = datetime.now(UTC)
+        episode_metadata = metadata or {}
+        if context:
+            episode_metadata["context"] = context
+        # Compute session_sequence from schema bucket
+        session_sequence = None
+        schema_eps = self._schema_episodes.setdefault(target_schema, [])
+        if session_id is not None:
+            session_sequence = (
+                sum(1 for ep in schema_eps if ep["agent_id"] == agent_id and ep.get("session_id") == session_id) + 1
+            )
         record: EpisodeRecord = {
             "id": episode_id,
             "agent_id": agent_id,
             "content": content,
             "context": context,
             "source_type": source_type,
-            "created_at": datetime.now(UTC),
+            "metadata": episode_metadata,
+            "created_at": now,
+            "access_count": 0,
+            "last_accessed_at": now,
+            "importance": importance,
+            "consolidated": False,
             "content_hash": content_hash,
+            "session_id": session_id,
+            "session_sequence": session_sequence,
         }
         self._episodes.append(record)
-        self._schema_episodes.setdefault(target_schema, []).append(record)
+        schema_eps.append(record)
         return episode_id
 
     async def check_episode_hashes(
@@ -125,7 +155,13 @@ class InMemoryRepository:
         return result
 
     async def recall(
-        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+        self,
+        query: str,
+        agent_id: str,
+        limit: int = 10,
+        query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         query_lower = query.lower()
         # Must stay in sync with MCPSettings defaults
@@ -403,6 +439,8 @@ class InMemoryRepository:
                     last_accessed_at=ep.get("last_accessed_at"),
                     importance=ep.get("importance", 0.5),
                     consolidated=ep.get("consolidated", False),
+                    session_id=ep.get("session_id"),
+                    session_sequence=ep.get("session_sequence"),
                     created_at=ep.get("created_at", datetime.now(UTC)),
                 )
         return None
@@ -848,11 +886,14 @@ class InMemoryRepository:
 
     # ── Episodic Consolidation ──
 
-    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> None:
         for ep in self._episodes:
             if ep["id"] == episode_id and ep["agent_id"] == agent_id:
                 ep["consolidated"] = True
                 return
+
+    async def link_personal_episode_to_session_predecessor(self, agent_id: str, episode_id: int) -> None:
+        pass
 
     # ── Access Tracking ──
 

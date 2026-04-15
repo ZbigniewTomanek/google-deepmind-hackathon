@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 import asyncpg
@@ -21,8 +22,10 @@ from neocortex.scoring import (
     compute_base_activation,
     compute_hybrid_score,
     compute_recency_score,
+    compute_stm_boost,
     compute_supersession_adjustment,
     mmr_rerank,
+    truncate_preserving_neighbors,
 )
 
 if TYPE_CHECKING:
@@ -139,6 +142,17 @@ class GraphServiceAdapter:
             return graph_scoped_connection(self._pool, schema_name, agent_id=agent_id)
         return schema_scoped_connection(self._pool, schema_name)
 
+    def _apply_stm_boost(self, score: float, created_at: datetime | None) -> float:
+        """Apply short-term memory boost for recent episodes."""
+        if created_at is None:
+            return score
+        hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
+        return score * compute_stm_boost(
+            hours_ago=hours_ago,
+            stm_window_hours=self._settings.episode_stm_window_hours,
+            boost_factor=self._settings.episode_stm_boost_factor,
+        )
+
     async def _resolve_schema(self, agent_id: str, target_schema: str | None = None) -> str:
         """Resolve the target schema name for write operations."""
         if target_schema is not None:
@@ -155,6 +169,7 @@ class GraphServiceAdapter:
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         episode_metadata = metadata or {}
         if context:
@@ -166,14 +181,31 @@ class GraphServiceAdapter:
                 source_type=source_type,
                 metadata=episode_metadata,
                 content_hash=content_hash,
+                session_id=session_id,
             )
             return episode.id
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
+            # Assign session_sequence under advisory lock if session_id is set
+            session_sequence = None
+            if session_id is not None:
+                # Advisory lock keyed on deterministic hash of (schema_name, agent_id, session_id)
+                lock_material = f"{schema_name}:{agent_id}:{session_id}"
+                lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+                seq_row = await conn.fetchrow(
+                    "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                    "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                    agent_id,
+                    session_id,
+                )
+                session_sequence = seq_row["next_seq"]
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, content_hash)
-                   VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+                """INSERT INTO episode
+                   (agent_id, content, source_type, metadata,
+                    importance, content_hash, session_id, session_sequence)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
                    RETURNING id""",
                 agent_id,
                 content,
@@ -181,6 +213,8 @@ class GraphServiceAdapter:
                 json.dumps(episode_metadata),
                 importance,
                 content_hash,
+                session_id,
+                session_sequence,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -196,6 +230,7 @@ class GraphServiceAdapter:
         metadata: dict | None = None,
         importance: float = 0.5,
         content_hash: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         episode_metadata = metadata or {}
         if context:
@@ -204,9 +239,25 @@ class GraphServiceAdapter:
             raise RuntimeError("Connection pool required for store_episode_to.")
 
         async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+            # Assign session_sequence under advisory lock if session_id is set
+            session_sequence = None
+            if session_id is not None:
+                lock_material = f"{target_schema}:{agent_id}:{session_id}"
+                lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+                seq_row = await conn.fetchrow(
+                    "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
+                    "FROM episode WHERE agent_id = $1 AND session_id = $2",
+                    agent_id,
+                    session_id,
+                )
+                session_sequence = seq_row["next_seq"]
             row = await conn.fetchrow(
-                """INSERT INTO episode (agent_id, content, source_type, metadata, importance, owner_role, content_hash)
-                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
+                """INSERT INTO episode
+                   (agent_id, content, source_type, metadata,
+                    importance, owner_role, content_hash,
+                    session_id, session_sequence)
+                   VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)
                    RETURNING id""",
                 agent_id,
                 content,
@@ -215,6 +266,8 @@ class GraphServiceAdapter:
                 importance,
                 agent_id,
                 content_hash,
+                session_id,
+                session_sequence,
             )
         if row is None:
             raise RuntimeError("Failed to store episode.")
@@ -251,7 +304,13 @@ class GraphServiceAdapter:
         return {row["content_hash"]: int(row["id"]) for row in rows}
 
     async def recall(
-        self, query: str, agent_id: str, limit: int = 10, query_embedding: list[float] | None = None
+        self,
+        query: str,
+        agent_id: str,
+        limit: int = 10,
+        query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         if self._pool is None or self._router is None:
             return await self._recall_via_graph(
@@ -261,13 +320,23 @@ class GraphServiceAdapter:
         schemas = await self._router.route_recall(agent_id)
         results_per_schema = await asyncio.gather(
             *(
-                self._recall_in_schema(schema_name, query, agent_id, limit, query_embedding=query_embedding)
+                self._recall_in_schema(
+                    schema_name,
+                    query,
+                    agent_id,
+                    limit,
+                    query_embedding=query_embedding,
+                    expand_neighbors=expand_neighbors,
+                    episode_query_embedding=episode_query_embedding if schema_name.endswith("__personal") else None,
+                )
                 for schema_name in schemas
             )
         )
         merged_results = [item for batch in results_per_schema for item in batch]
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
-        return _deduplicate_recall_items(merged_results)[:limit]
+        deduped = _deduplicate_recall_items(merged_results)
+        top_results = truncate_preserving_neighbors(deduped, limit)
+        return _sort_session_clusters_chronologically(top_results)
 
     async def update_episode_embedding(
         self, episode_id: int, embedding: list[float], agent_id: str, target_schema: str | None = None
@@ -550,7 +619,8 @@ class GraphServiceAdapter:
         async with self._scoped_conn(schema_name, agent_id, target_schema) as conn:
             row = await conn.fetchrow(
                 "SELECT id, agent_id, content, source_type, metadata, "
-                "access_count, last_accessed_at, importance, consolidated, created_at "
+                "access_count, last_accessed_at, importance, consolidated, "
+                "session_id, session_sequence, created_at "
                 "FROM episode WHERE id = $1",
                 episode_id,
             )
@@ -1726,16 +1796,110 @@ class GraphServiceAdapter:
 
     # ── Episodic Consolidation ──
 
-    async def mark_episode_consolidated(self, agent_id: str, episode_id: int) -> None:
+    async def mark_episode_consolidated(self, agent_id: str, episode_id: int, target_schema: str | None = None) -> None:
+        if self._pool is None or self._router is None:
+            return
+
+        if target_schema is not None:
+            async with graph_scoped_connection(self._pool, target_schema, agent_id=agent_id) as conn:
+                await conn.execute(
+                    "UPDATE episode SET consolidated = true WHERE id = $1",
+                    episode_id,
+                )
+        else:
+            schema_name = await self._router.route_store(agent_id)
+            async with schema_scoped_connection(self._pool, schema_name) as conn:
+                await conn.execute(
+                    "UPDATE episode SET consolidated = true WHERE id = $1",
+                    episode_id,
+                )
+
+    async def link_personal_episode_to_session_predecessor(self, agent_id: str, episode_id: int) -> None:
         if self._pool is None or self._router is None:
             return
 
         schema_name = await self._router.route_store(agent_id)
         async with schema_scoped_connection(self._pool, schema_name) as conn:
-            await conn.execute(
-                "UPDATE episode SET consolidated = true WHERE id = $1",
+            current = await conn.fetchrow(
+                """
+                SELECT id, session_id, session_sequence, created_at
+                FROM episode
+                WHERE id = $1 AND agent_id = $2
+                """,
                 episode_id,
+                agent_id,
             )
+            if current is None or current["session_id"] is None:
+                return
+
+            session_id = str(current["session_id"])
+            lock_material = f"{schema_name}:{agent_id}:{session_id}"
+            lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
+
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+
+                previous = await conn.fetchrow(
+                    """
+                    SELECT id
+                    FROM episode
+                    WHERE agent_id = $1
+                      AND session_id = $2
+                      AND id <> $3
+                      AND (
+                        (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence < $4)
+                        OR ($4::int IS NULL AND (created_at, id) < ($5, $3))
+                      )
+                    ORDER BY session_sequence DESC NULLS LAST, created_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    agent_id,
+                    session_id,
+                    episode_id,
+                    current["session_sequence"],
+                    current["created_at"],
+                )
+                if previous is None:
+                    return
+
+                prev_id = int(previous["id"])
+                prev_node_id = await conn.fetchval(
+                    """
+                    SELECT id FROM node
+                    WHERE properties->>'_source_episode' = $1
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT 1
+                    """,
+                    str(prev_id),
+                )
+                curr_node_id = await conn.fetchval(
+                    """
+                    SELECT id FROM node
+                    WHERE properties->>'_source_episode' = $1
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT 1
+                    """,
+                    str(episode_id),
+                )
+                if prev_node_id is None or curr_node_id is None:
+                    return
+
+                follows_type_id = await conn.fetchval("SELECT id FROM edge_type WHERE name = 'FOLLOWS'")
+                if follows_type_id is None:
+                    return
+
+                await conn.execute(
+                    """
+                    INSERT INTO edge (source_id, target_id, type_id, weight, properties)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    ON CONFLICT (source_id, target_id, type_id) DO NOTHING
+                    """,
+                    curr_node_id,
+                    prev_node_id,
+                    follows_type_id,
+                    0.9,
+                    json.dumps({"episode_follows": episode_id, "episode_precedes": prev_id}),
+                )
 
     # ── Edge Reinforcement ──
 
@@ -1980,6 +2144,7 @@ class GraphServiceAdapter:
                 score *= 0.5
             else:
                 score *= self._settings.recall_unconsolidated_episode_boost
+            score = self._apply_stm_boost(score, created_at)
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -2008,6 +2173,8 @@ class GraphServiceAdapter:
         agent_id: str,
         limit: int,
         query_embedding: list[float] | None = None,
+        expand_neighbors: bool = True,
+        episode_query_embedding: list[float] | None = None,
     ) -> list[RecallItem]:
         if self._pool is None:
             raise RuntimeError("Connection pool is required for schema-scoped recall.")
@@ -2021,9 +2188,15 @@ class GraphServiceAdapter:
         )
         half_life = self._settings.recall_recency_half_life_hours
 
+        # Over-fetch episode candidates when neighbor expansion is on,
+        # so the SQL returns episodes from multiple sessions rather than
+        # only the most recent (which may all be from the same session).
+        episode_sql_limit = max(limit * 3, limit + 10) if expand_neighbors else limit
+
         async with graph_scoped_connection(self._pool, schema_name, agent_id=agent_id) as conn:
             if query_embedding is not None:
                 emb_str = str(query_embedding)
+                ep_emb_str = str(episode_query_embedding) if episode_query_embedding is not None else emb_str
                 node_rows = await conn.fetch(
                     """SELECT n.id, n.name, n.content, n.source, n.type_id,
                               COALESCE(nt.name, 'Untyped') AS resolved_type_name,
@@ -2052,7 +2225,7 @@ class GraphServiceAdapter:
                     """SELECT id, content, source_type,
                               access_count, last_accessed_at, importance,
                               consolidated,
-                              created_at,
+                              created_at, session_id, session_sequence,
                               CASE WHEN embedding IS NOT NULL
                                    THEN 1 - (embedding <=> $2::vector)
                                    ELSE NULL
@@ -2064,9 +2237,9 @@ class GraphServiceAdapter:
                        ORDER BY created_at DESC
                        LIMIT $4""",
                     escaped_query,
-                    emb_str,
+                    ep_emb_str,
                     self._settings.recall_vector_distance_threshold,
-                    limit,
+                    episode_sql_limit,
                 )
             else:
                 # Text-only path — no regression from existing behavior
@@ -2091,14 +2264,14 @@ class GraphServiceAdapter:
                     """SELECT id, content, source_type,
                               access_count, last_accessed_at, importance,
                               consolidated,
-                              created_at,
+                              created_at, session_id, session_sequence,
                               NULL::double precision AS vector_sim
                        FROM episode
                        WHERE content ILIKE '%' || $1 || '%' ESCAPE '\\'
                        ORDER BY created_at DESC
                        LIMIT $2""",
                     escaped_query,
-                    limit,
+                    episode_sql_limit,
                 )
 
             # Fetch supersession relationships for candidate nodes
@@ -2127,6 +2300,44 @@ class GraphServiceAdapter:
                     supersession_edges["superseded_by"].setdefault(r["target_id"], []).append(r)
                 for r in superseding_rows:
                     supersession_edges["supersedes"].setdefault(r["source_id"], []).append(r)
+
+            # Prefetch temporal neighbors for personal episode expansion
+            episode_row_dicts = [dict(r) for r in episode_rows]
+            neighbors_by_nucleus: dict[int, list[dict]] = {}
+
+            if expand_neighbors and self._settings.recall_expand_neighbors and schema_name.endswith("__personal"):
+                # Only the top-`limit` episodes (by vector similarity) are nucleus
+                # candidates.  Over-fetched episodes beyond `limit` can still be
+                # discovered as session neighbors — this is the whole point of
+                # over-fetching.  Replace episode_row_dicts with the nucleus set
+                # so only they get scored as primary results later.
+                episode_row_dicts = sorted(
+                    episode_row_dicts,
+                    key=lambda r: (r.get("vector_sim") or 0.0),
+                    reverse=True,
+                )[:limit]
+                seen_episode_ids = {int(r["id"]) for r in episode_row_dicts}
+                for ep in episode_row_dicts:
+                    if ep.get("session_id") is None:
+                        continue
+                    neighbors = await self._fetch_episode_neighbors(
+                        conn=conn,
+                        episode_id=int(ep["id"]),
+                        session_id=str(ep["session_id"]),
+                        created_at=ep["created_at"],
+                        session_sequence=ep.get("session_sequence"),
+                        window=self._settings.recall_neighbor_window,
+                    )
+                    unique_neighbors: list[dict] = []
+                    for nb in neighbors:
+                        nb_id = int(nb["id"])
+                        if nb_id in seen_episode_ids:
+                            continue
+                        seen_episode_ids.add(nb_id)
+                        nb["neighbor_of"] = int(ep["id"])
+                        unique_neighbors.append(nb)
+                    if unique_neighbors:
+                        neighbors_by_nucleus[int(ep["id"])] = unique_neighbors
 
         # Build intermediate dicts (includes embedding for MMR, stripped before return)
         result_dicts: list[dict] = []
@@ -2188,7 +2399,29 @@ class GraphServiceAdapter:
                 }
             )
 
-        for row in episode_rows:
+        def _episode_result_dict(
+            row: dict, score: float, activation: float | None, importance: float, neighbor_of: int | None = None
+        ) -> dict:
+            embedding_vec = row.get("embedding_vec")
+            return {
+                "score": score,
+                "embedding": list(embedding_vec) if embedding_vec is not None else None,
+                "item_id": int(row["id"]),
+                "name": f"Episode #{int(row['id'])}",
+                "content": str(row["content"]),
+                "item_type": "Episode",
+                "activation_score": activation,
+                "importance": importance,
+                "source": str(row["source_type"]) if row.get("source_type") is not None else None,
+                "source_kind": "episode",
+                "graph_name": schema_name,
+                "created_at": row.get("created_at"),
+                "session_id": str(row["session_id"]) if row.get("session_id") is not None else None,
+                "session_sequence": int(row["session_sequence"]) if row.get("session_sequence") is not None else None,
+                "neighbor_of": neighbor_of,
+            }
+
+        for row in episode_row_dicts:
             vector_sim = float(row["vector_sim"]) if row["vector_sim"] is not None else None
             created_at = row["created_at"]
             recency = compute_recency_score(created_at, half_life) if created_at else 0.5
@@ -2223,22 +2456,31 @@ class GraphServiceAdapter:
                 # Unconsolidated episodes get a boost to compensate for lack of graph traversal bonus
                 score *= self._settings.recall_unconsolidated_episode_boost
 
-            embedding_vec = row.get("embedding_vec")
-            result_dicts.append(
-                {
-                    "score": score,
-                    "embedding": list(embedding_vec) if embedding_vec is not None else None,
-                    "item_id": int(row["id"]),
-                    "name": f"Episode #{int(row['id'])}",
-                    "content": str(row["content"]),
-                    "item_type": "Episode",
-                    "activation_score": activation,
-                    "importance": ep_importance,
-                    "source": str(row["source_type"]) if row["source_type"] is not None else None,
-                    "source_kind": "episode",
-                    "graph_name": schema_name,
-                }
-            )
+            score = self._apply_stm_boost(score, created_at)
+
+            primary_id = int(row["id"])
+            result_dicts.append(_episode_result_dict(row, score, activation, ep_importance))
+
+            # Append neighbor episodes with discounted score
+            for nb in neighbors_by_nucleus.get(primary_id, []):
+                nb_created = nb.get("created_at")
+                nb_access = int(nb.get("access_count") or 0)
+                nb_last_acc = nb.get("last_accessed_at") or nb_created
+                nb_activation = (
+                    compute_base_activation(
+                        nb_access,
+                        nb_last_acc,
+                        decay_rate=self._settings.activation_decay_rate,
+                        access_exponent=self._settings.activation_access_exponent,
+                    )
+                    if nb_last_acc
+                    else None
+                )
+                nb_importance = float(nb["importance"]) if nb.get("importance") is not None else 0.5
+                nb_score = score * self._settings.recall_neighbor_score_factor
+                result_dicts.append(
+                    _episode_result_dict(nb, nb_score, nb_activation, nb_importance, neighbor_of=primary_id)
+                )
 
         # Apply MMR diversity reranking if enabled
         if self._settings.recall_mmr_enabled:
@@ -2264,9 +2506,77 @@ class GraphServiceAdapter:
                     source=d["source"],
                     source_kind=d["source_kind"],
                     graph_name=d["graph_name"],
+                    created_at=d.get("created_at"),
+                    session_id=d.get("session_id"),
+                    session_sequence=d.get("session_sequence"),
+                    neighbor_of=d.get("neighbor_of"),
                 )
             )
         return results
+
+    async def _fetch_episode_neighbors(
+        self,
+        conn,
+        episode_id: int,
+        session_id: str,
+        created_at,
+        session_sequence: int | None,
+        window: int = 3,
+    ) -> list[dict]:
+        """Fetch temporal neighbor episodes within the same session."""
+        if window <= 0:
+            return []
+        before_limit = max(1, window // 3)
+        after_limit = max(1, window - before_limit)
+
+        before = await conn.fetch(
+            f"""
+            SELECT id, content, source_type,
+                   access_count, last_accessed_at, importance, consolidated,
+                   created_at, session_id, session_sequence,
+                   NULL::double precision AS vector_sim,
+                   NULL::float[] AS embedding_vec
+            FROM episode
+            WHERE session_id = $1
+              AND id <> $2
+              AND (
+                (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence < $4)
+                OR ($4::int IS NULL AND (created_at, id) < ($3, $2))
+              )
+            ORDER BY session_sequence DESC NULLS LAST, created_at DESC, id DESC
+            LIMIT {before_limit}
+            """,
+            session_id,
+            episode_id,
+            created_at,
+            session_sequence,
+        )
+        after = await conn.fetch(
+            f"""
+            SELECT id, content, source_type,
+                   access_count, last_accessed_at, importance, consolidated,
+                   created_at, session_id, session_sequence,
+                   NULL::double precision AS vector_sim,
+                   NULL::float[] AS embedding_vec
+            FROM episode
+            WHERE session_id = $1
+              AND id <> $2
+              AND (
+                (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence > $4)
+                OR ($4::int IS NULL AND (created_at, id) > ($3, $2))
+              )
+            ORDER BY session_sequence ASC NULLS LAST, created_at ASC, id ASC
+            LIMIT {after_limit}
+            """,
+            session_id,
+            episode_id,
+            created_at,
+            session_sequence,
+        )
+        rows: list[dict] = []
+        rows.extend(dict(r) | {"neighbor_position": "before"} for r in before)
+        rows.extend(dict(r) | {"neighbor_position": "after"} for r in after)
+        return rows
 
     async def _get_types(self, table_name: str, count_table: str, agent_id: str | None = None) -> list[TypeInfo]:
         if self._pool is None or self._router is None or agent_id is None:
@@ -2388,3 +2698,38 @@ def _deduplicate_recall_items(items: Iterable[RecallItem]) -> list[RecallItem]:
         deduplicated.append(item)
 
     return deduplicated
+
+
+def _sort_session_clusters_chronologically(items: list[RecallItem]) -> list[RecallItem]:
+    """Reorder results so episodes from the same session appear in chronological order."""
+    result: list[RecallItem] = []
+    consumed: set[tuple[str, int, str | None]] = set()
+
+    def key_for(item: RecallItem) -> tuple[str, int, str | None]:
+        return (item.source_kind, item.item_id, item.graph_name)
+
+    for item in items:
+        key = key_for(item)
+        if key in consumed:
+            continue
+        if item.source_kind != "episode" or not item.session_id:
+            consumed.add(key)
+            result.append(item)
+            continue
+
+        cluster = [
+            x
+            for x in items
+            if x.source_kind == "episode"
+            and x.graph_name == item.graph_name
+            and x.session_id == item.session_id
+            and key_for(x) not in consumed
+        ]
+        cluster.sort(
+            key=lambda x: (x.session_sequence is None, x.session_sequence or 0, x.created_at or datetime.min, x.item_id)
+        )
+        for c in cluster:
+            consumed.add(key_for(c))
+            result.append(c)
+
+    return result
