@@ -293,14 +293,16 @@ class GraphService:
     async def list_episodes(self, agent_id: str | None = None, limit: int = 50) -> list[Episode]:
         if agent_id is not None:
             rows = await self._pg.fetch(
-                """SELECT id, agent_id, content, source_type, metadata, created_at
+                """SELECT id, agent_id, content, source_type, metadata, created_at,
+                          session_id, session_sequence
                    FROM episode WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2""",
                 agent_id,
                 limit,
             )
         else:
             rows = await self._pg.fetch(
-                """SELECT id, agent_id, content, source_type, metadata, created_at
+                """SELECT id, agent_id, content, source_type, metadata, created_at,
+                          session_id, session_sequence
                    FROM episode ORDER BY created_at DESC LIMIT $1""",
                 limit,
             )

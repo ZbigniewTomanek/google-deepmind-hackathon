@@ -177,8 +177,11 @@ class GraphServiceAdapter:
             # Assign session_sequence under advisory lock if session_id is set
             session_sequence = None
             if session_id is not None:
-                # Advisory lock keyed on hash of (schema_name, agent_id, session_id)
-                lock_key = hash((schema_name, agent_id, session_id)) & 0x7FFFFFFFFFFFFFFF
+                # Advisory lock keyed on deterministic hash of (schema_name, agent_id, session_id)
+                import hashlib
+
+                lock_material = f"{schema_name}:{agent_id}:{session_id}"
+                lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
                 seq_row = await conn.fetchrow(
                     "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
@@ -228,7 +231,10 @@ class GraphServiceAdapter:
             # Assign session_sequence under advisory lock if session_id is set
             session_sequence = None
             if session_id is not None:
-                lock_key = hash((target_schema, agent_id, session_id)) & 0x7FFFFFFFFFFFFFFF
+                import hashlib
+
+                lock_material = f"{target_schema}:{agent_id}:{session_id}"
+                lock_key = int(hashlib.sha256(lock_material.encode()).hexdigest()[:16], 16) % (2**63 - 1)
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
                 seq_row = await conn.fetchrow(
                     "SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_seq "
@@ -2132,12 +2138,13 @@ class GraphServiceAdapter:
             else:
                 score *= self._settings.recall_unconsolidated_episode_boost
             # Short-term memory boost for very recent episodes
-            stm_hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
-            score *= compute_stm_boost(
-                hours_ago=stm_hours_ago,
-                stm_window_hours=self._settings.episode_stm_window_hours,
-                boost_factor=self._settings.episode_stm_boost_factor,
-            )
+            if created_at:
+                stm_hours_ago = (datetime.now(UTC) - created_at).total_seconds() / 3600.0
+                score *= compute_stm_boost(
+                    hours_ago=stm_hours_ago,
+                    stm_window_hours=self._settings.episode_stm_window_hours,
+                    boost_factor=self._settings.episode_stm_boost_factor,
+                )
             content = ep.content if hasattr(ep, "content") else str(ep.get("content", ""))
             source_type = ep.source_type if hasattr(ep, "source_type") else str(ep.get("source_type", ""))
             episode_results.append(
@@ -2509,6 +2516,8 @@ class GraphServiceAdapter:
         window: int = 3,
     ) -> list[dict]:
         """Fetch temporal neighbor episodes within the same session."""
+        if window <= 0:
+            return []
         before_limit = max(1, window // 3)
         after_limit = max(1, window - before_limit)
 
@@ -2708,7 +2717,9 @@ def _sort_session_clusters_chronologically(items: list[RecallItem]) -> list[Reca
             and x.session_id == item.session_id
             and key_for(x) not in consumed
         ]
-        cluster.sort(key=lambda x: (x.session_sequence is None, x.session_sequence or 0, x.created_at or "", x.item_id))
+        cluster.sort(
+            key=lambda x: (x.session_sequence is None, x.session_sequence or 0, x.created_at or datetime.min, x.item_id)
+        )
         for c in cluster:
             consumed.add(key_for(c))
             result.append(c)
