@@ -1,7 +1,7 @@
 # Stage 4: Short-Term Recency Boost
 
 **Goal**: Add a separate short-term recency boost for episodes created within the last N hours so that intra-session context naturally surfaces above older memories, without disrupting the existing 7-day exponential decay curve for longer-term recall.
-**Dependencies**: None (parallel to Stages 1–3; operates only on scoring.py and settings)
+**Dependencies**: None for the scoring helper. Adapter wiring can be done independently of session work, but tests that combine STM with neighbor expansion depend on Stage 3.
 
 ---
 
@@ -55,7 +55,7 @@ def compute_stm_boost(
     Returns:
         Boost multiplier >= 1.0.
     """
-    if hours_ago >= stm_window_hours or stm_window_hours <= 0:
+    if hours_ago >= stm_window_hours or stm_window_hours <= 0 or boost_factor <= 1.0:
         return 1.0
     fraction_remaining = 1.0 - (hours_ago / stm_window_hours)
     return 1.0 + (boost_factor - 1.0) * fraction_remaining
@@ -78,13 +78,20 @@ hours_ago = (
 
 stm_multiplier = compute_stm_boost(
     hours_ago=hours_ago,
-    stm_window_hours=self.settings.episode_stm_window_hours,
-    boost_factor=self.settings.episode_stm_boost_factor,
+    stm_window_hours=self._settings.episode_stm_window_hours,
+    boost_factor=self._settings.episode_stm_boost_factor,
 )
-episode_score = base_score * stm_multiplier
+score = score * stm_multiplier
 ```
 
 Import `compute_stm_boost` at the top of the file where the other scoring imports live.
+
+Apply the same setting names consistently everywhere. The canonical names are:
+
+- `episode_stm_window_hours`
+- `episode_stm_boost_factor`
+
+Do not use `episode_stm_boost`.
 
 ### 4. Extend existing recency weight documentation in settings
 
@@ -106,6 +113,7 @@ Update the docstring or comment on `recency_weight` to note: "For episodes, a se
 - [ ] Integration test: ingest two episodes with same query-matching content, one "now" and one 24 hours ago (set `created_at` directly in test DB). Recall the query and assert the recent episode ranks above the older one.
 - [ ] Confirm STM boost does NOT apply to graph nodes — only episodes.
 - [ ] Confirm disabling `episode_stm_boost_factor = 1.0` (or `episode_stm_window_hours = 0`) has no effect on scores.
+- [ ] Confirm `InMemoryRepository.recall` either mirrors the STM boost or documents that mock recall intentionally uses simplified scoring. If tests assert STM behavior, run them against the implementation that actually applies the boost.
 
 ---
 

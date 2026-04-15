@@ -1,219 +1,319 @@
 # Stage 3: Temporal Neighbor Expansion in Recall
 
-**Goal**: When an episode is matched during recall, optionally expand it by fetching the 1 immediately preceding and 2 immediately following episodes in the same session, mirroring MemMachine's nucleus+neighbors cluster strategy.
-**Dependencies**: Stage 1 (session_id), Stage 2 (FOLLOWS edges — not strictly required, but session_id must exist)
+**Goal**: When a personal episode is matched during recall, optionally expand it with the 1 immediately preceding and 2 immediately following personal episodes in the same session, carrying explicit `neighbor_of` provenance.
+**Dependencies**: Stage 1 (`session_id`, `session_sequence`); Stage 2 is not required for SQL neighbor expansion.
 
 ---
 
 ## Background
 
-MemMachine's key insight is that a single matched episode is often insufficient: the relevant information is spread across adjacent conversational turns. Their ablation shows multi-session accuracy climbs from 0.797 to 0.872 when retrieval depth is increased, and the nucleus+neighbors strategy provides the context window needed for the answer LLM to reason correctly.
+Current `_recall_in_schema` fetches `episode_rows` inside the DB connection, exits the connection scope, then scores rows into `result_dicts`. There is no `scored_episode_rows` accumulator. Neighbor expansion must therefore either happen inside the connection scope or prefetch neighbor rows before the connection closes.
 
-Currently `_recall_in_schema` in `db/adapter.py` returns episodes as atomic units. This stage adds an optional second pass: for each matched episode, fetch its session neighbors and append them to the result set (deduplicating by episode ID). Neighbor episodes are tagged with a reduced score (they weren't directly matched) so they don't displace primary hits in the top-K ranking.
+This stage uses the latter approach:
+
+1. Fetch primary episode rows as dicts.
+2. While still inside the connection scope, fetch neighbor rows for each primary personal episode.
+3. During scoring, build primary episode result dicts and append neighbor result dicts with `score = nucleus_score * recall_neighbor_score_factor`.
+4. Convert dicts to `RecallItem` objects with session/neighbor metadata.
+
+Neighbor expansion is personal-only: only schemas whose name ends in `__personal` are expanded.
 
 ---
 
 ## Steps
 
-### 1. Add `recall_expand_neighbors` setting to `MCPSettings`
+### 1. Add recall neighbor settings
 
 File: `src/neocortex/mcp_settings.py`
 
-Find the recall-related settings block (around lines 52–104). Add:
+In the recall settings block, add:
 
 ```python
 recall_expand_neighbors: bool = True
-recall_neighbor_window: int = 3  # 1 before + 2 after = 3 neighbors max
-recall_neighbor_score_factor: float = 0.6  # score multiplier for neighbor episodes
+recall_neighbor_window: int = 3  # default: 1 before + 2 after
+recall_neighbor_score_factor: float = 0.6
 ```
 
-### 2. Add `_fetch_episode_neighbors` helper to the adapter
+### 2. Add RecallItem temporal fields
+
+File: `src/neocortex/schemas/memory.py`
+
+Add to `RecallItem`:
+
+```python
+created_at: datetime | None = None
+session_id: str | None = None
+session_sequence: int | None = None
+neighbor_of: int | None = None
+```
+
+Import `datetime` if needed. These fields are used by recall sorting and Stage 5 output.
+
+### 3. Update repository recall signatures
+
+Files:
+- `src/neocortex/db/protocol.py`
+- `src/neocortex/db/adapter.py`
+- `src/neocortex/db/mock.py`
+- `src/neocortex/tools/recall.py`
+
+Change recall signatures to accept:
+
+```python
+expand_neighbors: bool = True
+```
+
+In `GraphServiceAdapter.recall`, pass `expand_neighbors` through the `asyncio.gather(...)` call into `_recall_in_schema`. Add the same keyword to `_recall_in_schema`:
+
+```python
+async def _recall_in_schema(
+    self,
+    schema_name: str,
+    query: str,
+    agent_id: str,
+    limit: int,
+    query_embedding: list[float] | None = None,
+    expand_neighbors: bool = True,
+) -> list[RecallItem]:
+    ...
+```
+
+In `tools/recall.py`, pass:
+
+```python
+results = await repo.recall(
+    query=query,
+    agent_id=agent_id,
+    limit=limit,
+    query_embedding=query_embedding,
+    expand_neighbors=settings.recall_expand_neighbors,
+)
+```
+
+In `InMemoryRepository.recall`, accept the parameter. Either ignore it with a comment or implement simple same-session expansion. PostgreSQL integration tests are required for the production behavior.
+
+### 4. Add `_fetch_episode_neighbors`
 
 File: `src/neocortex/db/adapter.py`
 
-Add a new private async method to `GraphServiceAdapter` (near the `_recall_in_schema` method, around line 2004). `recall_neighbor_window` controls the total neighbor budget: floor(window/3) episodes before, window - floor(window/3) episodes after. With the default `window=3` this is 1 before + 2 after.
+Add a private helper near `_recall_in_schema`. It receives an open scoped connection and uses unqualified table names.
 
 ```python
 async def _fetch_episode_neighbors(
     self,
-    conn,
-    schema: str,
+    conn: asyncpg.Connection,
     episode_id: int,
     session_id: str,
-    created_at,  # datetime of the nucleus episode
+    created_at,
+    session_sequence: int | None,
     window: int = 3,
 ) -> list[dict]:
-    """Return up to `window` neighboring episodes in the same session.
-
-    Allocates floor(window/3) slots before and the remainder after the nucleus.
-    With the default window=3: 1 preceding + 2 following.
-    Episodes are returned as asyncpg Record objects (dict-like) so the caller
-    can access columns by name.
-    """
     before_limit = max(1, window // 3)
     after_limit = max(1, window - before_limit)
-    # 1 before (default)
+
     before = await conn.fetch(
         f"""
-        SELECT id, content, source_type, metadata,
+        SELECT id, content, source_type,
                access_count, last_accessed_at, importance, consolidated,
-               created_at, session_id, session_sequence
-        FROM {schema}.episode
+               created_at, session_id, session_sequence,
+               NULL::double precision AS vector_sim,
+               NULL::float[] AS embedding_vec
+        FROM episode
         WHERE session_id = $1
-          AND id != $2
-          AND created_at < $3
-        ORDER BY created_at DESC
+          AND id <> $2
+          AND (
+            (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence < $4)
+            OR ($4::int IS NULL AND (created_at, id) < ($3, $2))
+          )
+        ORDER BY session_sequence DESC NULLS LAST, created_at DESC, id DESC
         LIMIT {before_limit}
         """,
-        session_id, episode_id, created_at,
+        session_id,
+        episode_id,
+        created_at,
+        session_sequence,
     )
-    # 2 after (default)
     after = await conn.fetch(
         f"""
-        SELECT id, content, source_type, metadata,
+        SELECT id, content, source_type,
                access_count, last_accessed_at, importance, consolidated,
-               created_at, session_id, session_sequence
-        FROM {schema}.episode
+               created_at, session_id, session_sequence,
+               NULL::double precision AS vector_sim,
+               NULL::float[] AS embedding_vec
+        FROM episode
         WHERE session_id = $1
-          AND id != $2
-          AND created_at > $3
-        ORDER BY created_at ASC
+          AND id <> $2
+          AND (
+            (session_sequence IS NOT NULL AND $4::int IS NOT NULL AND session_sequence > $4)
+            OR ($4::int IS NULL AND (created_at, id) > ($3, $2))
+          )
+        ORDER BY session_sequence ASC NULLS LAST, created_at ASC, id ASC
         LIMIT {after_limit}
         """,
-        session_id, episode_id, created_at,
+        session_id,
+        episode_id,
+        created_at,
+        session_sequence,
     )
-    return list(before) + list(after)
+    rows: list[dict] = []
+    rows.extend(dict(r) | {"neighbor_position": "before"} for r in before)
+    rows.extend(dict(r) | {"neighbor_position": "after"} for r in after)
+    return rows
 ```
 
-### 3. Add `session_id` and `session_sequence` to the episode SELECT queries
+The `LIMIT` values are integers computed by trusted code, not user input. Keep them bounded by the setting validation/defaults.
+
+### 5. Fetch session columns and prefetch neighbors inside `_recall_in_schema`
 
 File: `src/neocortex/db/adapter.py`
 
-In `_recall_in_schema` (line 2004), the episode `SELECT` query (around line 2051) currently does **not** include `session_id` or `session_sequence`. These columns are needed both for neighbor expansion (this stage) and for output formatting (Stage 5). Add them to the projection now so the `asyncpg.Record` rows returned from `conn.fetch` carry these fields.
+Add `session_id`, `session_sequence`, and `created_at` to both episode SELECT projections. Current SELECTs start around `episode_rows = await conn.fetch(...)`.
 
-Find the episode SELECT that starts with:
-```python
-episode_rows = await conn.fetch(
-    """SELECT id, content, source_type,
-              access_count, last_accessed_at, importance,
-```
-and extend the column list to include `session_id, session_sequence`.
-
-Do the same in the text-only branch (the second `conn.fetch` for episodes that runs when `query_embedding is None`).
-
-### 4. Wire neighbor expansion into `_recall_in_schema`
-
-File: `src/neocortex/db/adapter.py`
-
-**Important**: The expansion code operates on `asyncpg.Record` objects (the raw rows returned by `conn.fetch`), not on the final `RecallItem` Pydantic instances. Insert the expansion pass **after the episode scoring loop** (around line 2241) but **before** the point where scored episodes are assembled into `RecallItem` objects and the final top-K is cut.
-
-Add `expand_neighbors: bool = True` to `_recall_in_schema`'s parameter signature.
-
-Then, after the episode scoring loop, insert:
+After `episode_rows` is fetched, while still inside `async with graph_scoped_connection(...)`, convert rows to dicts and prefetch neighbors:
 
 ```python
-if expand_neighbors and self._settings.recall_expand_neighbors:
-    # scored_episode_rows is the list of (score, asyncpg.Record) tuples
-    # built during the episode scoring loop above.
-    neighbor_ids_seen = {row["id"] for _, row in scored_episode_rows}
-    expansion: list[tuple[float, asyncpg.Record]] = []
+episode_row_dicts = [dict(r) for r in episode_rows]
+neighbors_by_nucleus: dict[int, list[dict]] = {}
 
-    for score, ep_row in scored_episode_rows:
-        if ep_row["session_id"] is None:
+if expand_neighbors and self._settings.recall_expand_neighbors and schema_name.endswith("__personal"):
+    seen_episode_ids = {int(r["id"]) for r in episode_row_dicts}
+    for ep in episode_row_dicts:
+        if ep.get("session_id") is None:
             continue
         neighbors = await self._fetch_episode_neighbors(
             conn=conn,
-            schema=schema_name,
-            episode_id=ep_row["id"],
-            session_id=ep_row["session_id"],
-            created_at=ep_row["created_at"],
+            episode_id=int(ep["id"]),
+            session_id=str(ep["session_id"]),
+            created_at=ep["created_at"],
+            session_sequence=ep.get("session_sequence"),
             window=self._settings.recall_neighbor_window,
         )
+        unique_neighbors: list[dict] = []
         for nb in neighbors:
-            if nb["id"] in neighbor_ids_seen:
+            nb_id = int(nb["id"])
+            if nb_id in seen_episode_ids:
                 continue
-            neighbor_ids_seen.add(nb["id"])
-            neighbor_score = score * self._settings.recall_neighbor_score_factor
-            expansion.append((neighbor_score, nb))
-
-    scored_episode_rows.extend(expansion)
+            seen_episode_ids.add(nb_id)
+            nb["neighbor_of"] = int(ep["id"])
+            unique_neighbors.append(nb)
+        if unique_neighbors:
+            neighbors_by_nucleus[int(ep["id"])] = unique_neighbors
 ```
 
-Note: the exact variable name for the scored episode rows (e.g. `scored_episode_rows`) must match whatever accumulator the episode scoring loop already uses in the method. Read the loop to confirm the variable name before inserting.
+Use `episode_row_dicts` for the later episode scoring loop instead of the raw `episode_rows`.
 
-### 5. Expose `expand_neighbors` in the top-level `recall()` method (line 253)
+### 6. Score primary episodes and append neighbor result dicts
 
 File: `src/neocortex/db/adapter.py`
 
-The `recall()` method at line 253 calls `_recall_in_schema` via `asyncio.gather`. Thread `expand_neighbors` from settings:
+Refactor the current episode loop at [adapter.py](/Users/zbigniewtomanek/work/neocortex/src/neocortex/db/adapter.py):2191 into a small local helper that turns a row dict into a result dict:
 
 ```python
-expand_neighbors = self._settings.recall_expand_neighbors
-results_per_schema = await asyncio.gather(
-    *(
-        self._recall_in_schema(
-            schema_name, query, agent_id, limit,
-            query_embedding=query_embedding,
-            expand_neighbors=expand_neighbors,
-        )
-        for schema_name in schemas
-    )
-)
+def _episode_result_dict(row: dict, score: float, activation: float | None, importance: float) -> dict:
+    return {
+        "score": score,
+        "embedding": list(row["embedding_vec"]) if row.get("embedding_vec") is not None else None,
+        "item_id": int(row["id"]),
+        "name": f"Episode #{int(row['id'])}",
+        "content": str(row["content"]),
+        "item_type": "Episode",
+        "activation_score": activation,
+        "importance": importance,
+        "source": str(row["source_type"]) if row.get("source_type") is not None else None,
+        "source_kind": "episode",
+        "graph_name": schema_name,
+        "created_at": row.get("created_at"),
+        "session_id": row.get("session_id"),
+        "session_sequence": row.get("session_sequence"),
+        "neighbor_of": row.get("neighbor_of"),
+    }
 ```
 
-### 6. Sort final results chronologically within each session cluster
+For each primary episode row:
+
+- Compute its existing hybrid score exactly as today.
+- Append the primary result dict with `neighbor_of=None`.
+- For each row in `neighbors_by_nucleus.get(primary_id, [])`, append a neighbor result dict with:
+  - `score = primary_score * self._settings.recall_neighbor_score_factor`
+  - `neighbor_of = primary_id`
+  - activation/importance can be computed from the neighbor row using the same formulas, but do not recompute text/vector relevance for neighbors.
+
+Do not mutate `asyncpg.Record` objects.
+
+### 7. Convert temporal fields into RecallItem
 
 File: `src/neocortex/db/adapter.py`
 
-After the top-K cut, apply a secondary sort: within groups of episodes from the same session (including neighbors), sort by `created_at`. This mirrors MemMachine's explicit "Sort Chronologically" step and ensures the answer LLM receives episodes in temporal order.
-
-This sort operates on the final `RecallItem` list (after construction), using `RecallItem` attribute access. Add after the score-sorted top-K slice:
+When converting `result_dicts` to `RecallItem`, add:
 
 ```python
-def _chronological_stable_sort(items: list[RecallItem]) -> list[RecallItem]:
-    """Preserve overall score ranking but sort session clusters chronologically."""
+created_at=d.get("created_at"),
+session_id=d.get("session_id"),
+session_sequence=d.get("session_sequence"),
+neighbor_of=d.get("neighbor_of"),
+```
+
+Node result dicts may leave these fields absent/`None`.
+
+### 8. Sort final merged results chronologically within session clusters
+
+File: `src/neocortex/db/adapter.py`
+
+After `_deduplicate_recall_items(merged_results)[:limit]` in top-level `recall()`, apply a stable cluster sort. The sort must reorder the entire cluster, including the nucleus, not append the current item before earlier neighbors.
+
+```python
+def _sort_session_clusters_chronologically(items: list[RecallItem]) -> list[RecallItem]:
     result: list[RecallItem] = []
-    seen: set[int] = set()
-    for item in items:
-        if item.item_id in seen:
-            continue
-        seen.add(item.item_id)
-        sid = getattr(item, "session_id", None)
-        if sid:
-            cluster = [
-                x for x in items
-                if getattr(x, "session_id", None) == sid and x.item_id not in seen
-            ]
-            cluster.sort(key=lambda x: getattr(x, "created_at", None) or "")
-            result.append(item)
-            for c in cluster:
-                seen.add(c.item_id)
-                result.append(c)
-        else:
-            result.append(item)
-    return result
+    consumed: set[tuple[str, int, str | None]] = set()
 
-top_results = _chronological_stable_sort(top_results)
+    def key_for(item: RecallItem) -> tuple[str, int, str | None]:
+        return (item.source_kind, item.item_id, item.graph_name)
+
+    for item in items:
+        key = key_for(item)
+        if key in consumed:
+            continue
+        if item.source_kind != "episode" or not item.session_id:
+            consumed.add(key)
+            result.append(item)
+            continue
+
+        cluster = [
+            x for x in items
+            if x.source_kind == "episode"
+            and x.graph_name == item.graph_name
+            and x.session_id == item.session_id
+            and key_for(x) not in consumed
+        ]
+        cluster.sort(key=lambda x: (x.session_sequence is None, x.session_sequence or 0, x.created_at or "", x.item_id))
+        for c in cluster:
+            consumed.add(key_for(c))
+            result.append(c)
+
+    return result
 ```
 
-### 7. Update `MemoryRepository` protocol if needed
+Use:
 
-File: `src/neocortex/db/protocol.py`
-
-If the protocol defines a typed `recall` method signature, add `expand_neighbors: bool = True` as a keyword argument. Update `db/mock.py` to accept (and ignore) this parameter so tests don't break.
+```python
+deduped = _deduplicate_recall_items(merged_results)
+top_results = deduped[:limit]
+return _sort_session_clusters_chronologically(top_results)
+```
 
 ---
 
 ## Verification
 
-- [ ] `uv run pytest tests/ -v` passes
-- [ ] Unit test: ingest 4 episodes with the same `session_id` in order, recall with a query that matches episode #3. Assert that the result includes episodes #2 and #4 as neighbors (tagged with `_neighbor_of`).
-- [ ] Disable neighbors via `recall_expand_neighbors: false` in settings and confirm neighbors are not returned.
-- [ ] Confirm neighbor episodes appear AFTER their nucleus in the chronological sort: within the session cluster, episode #2 < #3 < #4.
-- [ ] Confirm episodes from DIFFERENT sessions are NOT expanded into neighbors of each other.
+- [ ] `uv run pytest tests/ -v` passes.
+- [ ] PostgreSQL integration test: store 4 personal episodes with the same `session_id`; recall a query matching episode #3; assert episodes #2 and #4 are included with `neighbor_of == id_of_episode_3`.
+- [ ] Disable `recall_expand_neighbors` and confirm only direct matches are returned.
+- [ ] Confirm chronological cluster order is #2, #3, #4 even when #3 has the highest score.
+- [ ] Confirm episodes from different sessions are not returned as neighbors.
+- [ ] Confirm shared/domain schema episode matches do not expand neighbors.
 
 ---
 
 ## Commit
 
-`feat(recall): expand recalled episodes with temporal session neighbors (MemMachine nucleus+context)`
+`feat(recall): expand personal episode recall with temporal neighbors`

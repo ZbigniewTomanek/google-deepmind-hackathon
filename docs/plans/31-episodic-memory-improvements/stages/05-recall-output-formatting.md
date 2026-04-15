@@ -1,101 +1,143 @@
 # Stage 5: Recall Output Formatting & Provenance
 
-**Goal**: Include `session_id`, `session_sequence`, and `_neighbor_of` in recalled episode results, and format multi-episode session clusters as structured JSON blocks so the answer LLM can read conversational flow without ambiguity.
-**Dependencies**: Stages 1, 3 (session_id + neighbor expansion)
+**Goal**: Expose session/neighbor provenance in structured recall results and add an optional JSON-formatted context block for LLM consumption without replacing the existing `RecallResult` model.
+**Dependencies**: Stage 3 (`RecallItem` already has `created_at`, `session_id`, `session_sequence`, and `neighbor_of`)
 
 ---
 
 ## Background
 
-MemMachine's ablation shows +2.0% from structured context formatting (JSON-str with explicit field names vs. wall-of-text concatenation). The paper also shows +1.4% from role bias correction — prepending "user:" to search queries corrects for assistant messages dominating embedding space.
+Current `tools/recall.py` returns a `RecallResult` Pydantic object. FastMCP exposes that as structured content; there is no plain-text formatter path to replace. This stage preserves the structured API and adds a deliberate formatted field instead of mutating episode `content`.
 
-Currently NeoCortex's recall tool returns episode content as raw text strings. When the MCP tool returns multiple episodes to the agent, there's no structural cue about which episodes belong to the same session, what order they occurred in, or which ones are direct hits vs. context neighbors. This stage:
-
-1. Adds temporal metadata to episode recall results
-2. Formats session clusters as structured JSON in the returned text
-3. Applies query-role bias correction to the vector embedding search
+The role-bias correction from MemMachine applies to episode vector search only. The current tool embeds the query before calling `repo.recall`, and `GraphServiceAdapter` does not own an embedding service. Therefore, compute the biased episode embedding in `tools/recall.py` and pass it explicitly through the repository contract.
 
 ---
 
 ## Steps
 
-### 1. Add session metadata to the `RecallItem` model
+### 1. Add formatted_context to RecallResult
 
 File: `src/neocortex/schemas/memory.py`
 
-The recall tool's output model is `RecallItem` (lines 24–36), **not** `EpisodeResult`. `src/neocortex/models.py` contains the DB-layer `Episode` model which is not the recall output. Add the following optional fields to `RecallItem`:
+`RecallItem` temporal fields were added in Stage 3. Add a new optional field to `RecallResult`:
 
 ```python
-session_id: str | None = None
-session_sequence: int | None = None
-neighbor_of: int | None = None  # item_id of the nucleus episode if this is an expansion
+formatted_context: str | None = None
 ```
 
-### 2. Propagate session fields when constructing `RecallItem` from episode rows
+This is the caller-facing JSON context block. The existing `results`, `total`, and `query` fields remain unchanged.
 
-File: `src/neocortex/db/adapter.py`
+### 2. Pass separate episode vector embedding through recall
 
-The `session_id` and `session_sequence` columns are already added to the episode SELECT in Stage 3 (Step 3). Here, propagate them when constructing `RecallItem` instances from scored episode rows. Also carry `_neighbor_of` (the nucleus episode's id) through from the expansion step (Stage 3) into the `neighbor_of` field.
+Files:
+- `src/neocortex/db/protocol.py`
+- `src/neocortex/db/adapter.py`
+- `src/neocortex/db/mock.py`
+- `src/neocortex/tools/recall.py`
 
-Find the code that builds `RecallItem(..., source_kind="episode", ...)` and add:
+Extend `MemoryRepository.recall`:
 
 ```python
-session_id=ep_row.get("session_id"),
-session_sequence=ep_row.get("session_sequence"),
-neighbor_of=ep_row.get("_neighbor_of"),
+async def recall(
+    self,
+    query: str,
+    agent_id: str,
+    limit: int = 10,
+    query_embedding: list[float] | None = None,
+    expand_neighbors: bool = True,
+    episode_query_embedding: list[float] | None = None,
+) -> list[RecallItem]:
+    ...
 ```
 
-### 3. Format session clusters as structured JSON in the recall tool response
+In `tools/recall.py`:
+
+```python
+query_embedding = None
+episode_query_embedding = None
+episode_query_text = query
+if embeddings:
+    query_embedding = await embeddings.embed(query)
+    if not query.lower().startswith(("user:", "assistant:")):
+        episode_query_text = f"user: {query}"
+        episode_query_embedding = await embeddings.embed(episode_query_text)
+
+results = await repo.recall(
+    query=query,
+    agent_id=agent_id,
+    limit=limit,
+    query_embedding=query_embedding,
+    expand_neighbors=settings.recall_expand_neighbors,
+    episode_query_embedding=episode_query_embedding,
+)
+```
+
+In `GraphServiceAdapter._recall_in_schema`:
+
+- Add `episode_query_embedding: list[float] | None = None` to `_recall_in_schema`.
+- Thread the parameter from `GraphServiceAdapter.recall` through the `asyncio.gather(...)` call.
+- Keep node search on the original `query_embedding`.
+- Keep episode `ILIKE` text matching on the original `query`, not the `"user: "` text.
+- Use `episode_query_embedding or query_embedding` for the episode vector similarity.
+- Apply this only for personal schemas; for non-personal schemas, ignore `episode_query_embedding` and use the original `query_embedding`.
+
+In `InMemoryRepository.recall`, accept `episode_query_embedding` and ignore it unless the mock gains vector behavior.
+
+### 3. Build structured JSON context from RecallItem objects
 
 File: `src/neocortex/tools/recall.py`
 
-Currently the tool formats results as plain text. Add a formatter that groups episodes by `session_id` and renders session clusters as structured objects. This affects only the text returned to the MCP caller — not the internal scoring or storage.
-
-The formatter receives `RecallItem` Pydantic objects (not raw dicts), so use attribute access, not `ep.get(...)`. Implement a helper `_format_episode_results(episodes: list[RecallItem]) -> str`:
+Add helper:
 
 ```python
-def _format_episode_results(episodes: list[RecallItem]) -> str:
-    """Format recalled episodes for LLM consumption.
-
-    Episodes within the same session are grouped into clusters and rendered
-    as structured JSON objects. Isolated episodes (no session_id) are rendered
-    as simple JSON objects. Clusters are sorted chronologically within the session.
-    """
+def _format_recall_context(results: list[RecallItem]) -> str:
+    """Return JSON blocks for recalled episodes, grouped by session."""
     import json
     from collections import defaultdict
 
-    clustered: dict[str, list[RecallItem]] = defaultdict(list)
+    episodes = [r for r in results if r.source_kind == "episode"]
+    clustered: dict[tuple[str, str | None], list[RecallItem]] = defaultdict(list)
     isolated: list[RecallItem] = []
 
     for ep in episodes:
         if ep.session_id:
-            clustered[ep.session_id].append(ep)
+            clustered[(ep.session_id, ep.graph_name)].append(ep)
         else:
             isolated.append(ep)
 
-    parts = []
-
-    for sid, cluster in clustered.items():
-        cluster.sort(key=lambda e: (e.session_sequence or 0))
-        cluster_obj = {
-            "session_id": sid,
-            "episodes": [
+    parts: list[str] = []
+    for (session_id, graph_name), cluster in clustered.items():
+        cluster.sort(key=lambda e: (e.session_sequence is None, e.session_sequence or 0, e.created_at or "", e.item_id))
+        parts.append(
+            json.dumps(
                 {
-                    "id": ep.item_id,
-                    "content": ep.content,
-                    "is_context_neighbor": ep.neighbor_of is not None,
-                    "score": round(ep.score, 4),
-                }
-                for ep in cluster
-            ],
-        }
-        parts.append(json.dumps(cluster_obj, ensure_ascii=False, indent=2))
+                    "session_id": session_id,
+                    "graph_name": graph_name,
+                    "episodes": [
+                        {
+                            "id": ep.item_id,
+                            "created_at": ep.created_at.isoformat() if ep.created_at else None,
+                            "session_sequence": ep.session_sequence,
+                            "content": ep.content,
+                            "is_context_neighbor": ep.neighbor_of is not None,
+                            "neighbor_of": ep.neighbor_of,
+                            "score": round(ep.score, 4),
+                        }
+                        for ep in cluster
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
     for ep in isolated:
         parts.append(
             json.dumps(
                 {
                     "id": ep.item_id,
+                    "graph_name": ep.graph_name,
+                    "created_at": ep.created_at.isoformat() if ep.created_at else None,
                     "content": ep.content,
                     "score": round(ep.score, 4),
                 },
@@ -107,38 +149,28 @@ def _format_episode_results(episodes: list[RecallItem]) -> str:
     return "\n---\n".join(parts) if parts else "(no episodes recalled)"
 ```
 
-Call this formatter for the episode section of the recall tool response, passing only the `RecallItem` entries where `r.source_kind == "episode"`.
-
-### 4. Apply query-role bias correction to the **episode** vector search only
-
-File: `src/neocortex/db/adapter.py`
-
-MemMachine observed +1.4% by prepending "user:" to search queries for conversational memory. The bias is only meaningful for personal episode retrieval; applying it to shared domain schemas (scientific facts, entity graphs) is inappropriate.
-
-In `_recall_in_schema`, apply the bias **only for the episode `conn.fetch` call**, not for the node query. Scope it further to personal schemas (schema name ends in `__personal`):
+After `final_results` is computed, call:
 
 ```python
-# Role bias correction for episode search: user queries about personal memory
-# typically reference user-turn content. Only applied to personal schemas.
-# Ref: MemMachine ablation (+1.4%).
-if schema_name.endswith("__personal") and not query.lower().startswith(("user:", "assistant:")):
-    episode_query_text = f"user: {query}"
-    if query_embedding is not None:
-        episode_query_embedding = await self._embedding_service.embed(episode_query_text)
-    else:
-        episode_query_embedding = None
-else:
-    episode_query_text = query
-    episode_query_embedding = query_embedding
+formatted_context = _format_recall_context(final_results)
 ```
 
-Use `episode_query_embedding` and `episode_query_text` only for the episode `conn.fetch` calls. The node search continues using the original `query` / `query_embedding`.
+Return it:
 
-### 5. Add `session_id` + neighbor info to recall audit log
+```python
+return RecallResult(
+    results=final_results,
+    total=len(final_results),
+    query=query,
+    formatted_context=formatted_context,
+)
+```
+
+### 4. Add recall audit fields
 
 File: `src/neocortex/tools/recall.py`
 
-The recall tool's `logger.bind(action_log=True).info(...)` audit entry is at **lines 210–216** (not 176–183; those lines are the access recording block). Add `session_ids_returned` and `neighbor_episodes_included` to the audit entry so operators can observe how often neighbor expansion is triggered:
+Extend the existing audit entry at the end of the tool:
 
 ```python
 logger.bind(action_log=True).info(
@@ -149,26 +181,37 @@ logger.bind(action_log=True).info(
     node_results_with_context=sum(1 for r in all_results if r.graph_context is not None),
     session_ids_returned=list({r.session_id for r in final_results if r.session_id}),
     neighbor_episodes_included=sum(1 for r in final_results if r.neighbor_of is not None),
+    episode_role_bias_applied=episode_query_embedding is not None,
 )
 ```
+
+### 5. Update MCP tests
+
+Files:
+- `tests/mcp/test_tools.py`
+- Add focused tests near existing recall tests, or create `tests/test_recall_session_output.py`
+
+Tests should assert structured model output, not plain text:
+
+- `structured_content["results"]` contains episode items with `session_id`, `session_sequence`, `neighbor_of`, and `created_at` where applicable.
+- `structured_content["formatted_context"]` contains JSON with `"session_id"`, `"created_at"`, and `"is_context_neighbor"`.
+- Isolated episodes render as single JSON objects without an `"episodes"` array.
+- Cluster episodes sort by `session_sequence`, falling back to `created_at`.
+- Role-bias correction is applied only when embeddings are available and the query lacks `user:` / `assistant:` prefix. Use a fake embedding service that records the strings embedded.
 
 ---
 
 ## Verification
 
-- [ ] `uv run pytest tests/ -v` passes
-- [ ] Recall a query and assert that the returned text contains `"session_id"` and `"created_at"` keys when episodes have sessions.
-- [ ] Recall a query that matches a session cluster and assert the returned JSON has `"episodes"` array sorted by `session_sequence`.
-- [ ] Recall a query that matches an isolated episode (no `session_id`) and assert it renders as a simple JSON object without `"episodes"` nesting.
-- [ ] Confirm `is_context_neighbor: true` appears for neighbor episodes and `false` for directly-matched ones.
-- [ ] Confirm role bias correction: log or debug-print the biased query for a plain search and confirm "user: " prefix is prepended. Confirm it is NOT prepended if query already starts with "user:" or "assistant:".
-- [ ] Run full `uv run pytest tests/ -v` with mock DB mode:
-  ```bash
-  NEOCORTEX_MOCK_DB=true uv run pytest tests/ -v
-  ```
+- [ ] `uv run pytest tests/ -v` passes.
+- [ ] `NEOCORTEX_MOCK_DB=true uv run pytest tests/ -v` passes.
+- [ ] Recall a query with a session cluster and confirm `formatted_context` contains `"episodes"` sorted chronologically.
+- [ ] Confirm `is_context_neighbor: true` for neighbor episodes and `false` for direct hits.
+- [ ] Confirm role bias embeds `"user: <query>"` for plain personal recall queries and does not double-prefix queries that already start with `user:` or `assistant:`.
+- [ ] Confirm node search still uses the original query embedding.
 
 ---
 
 ## Commit
 
-`feat(tools): structured session-cluster formatting and role bias correction for recalled episodes`
+`feat(tools): expose structured session recall context`

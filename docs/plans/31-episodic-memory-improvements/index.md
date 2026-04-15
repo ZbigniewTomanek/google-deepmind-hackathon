@@ -45,7 +45,7 @@ This plan targets the highest-ROI subset of these gaps.
 
 ## Strategy
 
-**Phase A — Temporal grounding (Stages 1–2)**: Add `session_id` to the episode schema and create `FOLLOWS` edges in the extraction pipeline to give the knowledge graph a temporal spine. This is purely additive and does not touch recall behavior.
+**Phase A — Temporal grounding (Stages 1–2)**: Add `session_id` to the episode schema and create `FOLLOWS` edges in the personal extraction path to give the personal knowledge graph a temporal spine. This is additive and does not touch recall behavior. Shared/domain graphs may store session metadata on episodes, but they do not receive `FOLLOWS` edges.
 
 **Phase B — Context-aware recall (Stages 3–4)**: Implement episode neighborhood expansion during recall (MemMachine's nucleus+neighbors strategy) and add differentiated short-term recency boosting so intra-session episodes surface first. Both changes operate in `db/adapter.py` and `scoring.py`.
 
@@ -57,9 +57,10 @@ This plan targets the highest-ROI subset of these gaps.
 
 | Metric | Baseline | Target | Rationale |
 |--------|----------|--------|-----------|
-| Episode sessions queryable | None | `session_id` present on all new episodes | Enables session-aware temporal queries |
-| FOLLOWS edges created | 0 per extraction | ≥1 per episode that has a predecessor in same session | Temporal spine in graph |
-| Neighbor expansion in recall | Not available | Neighbor episodes returned when requested | MemMachine core technique |
+| Episode sessions queryable | None | `session_id` present on every newly stored episode across text/events/document/audio/video and processor-direct paths | Enables session-aware temporal queries |
+| FOLLOWS edges created | 0 per personal extraction | ≥1 per personal episode that has a predecessor in same session and extracted nodes | Temporal spine in the personal graph |
+| Shared/domain FOLLOWS edges | Not applicable | 0 edges created in shared/domain schemas | Preserves graph-local personal chronology |
+| Neighbor expansion in recall | Not available | Neighbor episodes returned with `neighbor_of` provenance when requested | MemMachine core technique |
 | Short-term recency boost | None (uniform 7d half-life) | Separate boost for episodes < 2h old | Intra-session context surfaces first |
 | Unit tests passing | Current | All existing + new tests pass | No regressions |
 
@@ -72,21 +73,23 @@ This plan targets the highest-ROI subset of these gaps.
 - `migrations/graph/007_episode_session.sql` (new) -- same columns for per-agent graph schemas
 
 ### Ingestion
-- `src/neocortex/ingestion/episode_processor.py` -- propagate `session_id` from ingestion payload into episode metadata
+- `src/neocortex/ingestion/models.py` -- accept optional `session_id` in JSON ingestion request bodies
+- `src/neocortex/ingestion/protocol.py` -- expose session parameters on ingestion processor methods
+- `src/neocortex/ingestion/episode_processor.py` -- propagate `session_id` to episode storage for every ingestion path
 
 ### Ingestion API
-- `src/neocortex/ingestion/routes.py` -- accept optional `session_id` in text/event ingestion request body
+- `src/neocortex/ingestion/routes.py` -- accept optional `session_id` in text/event JSON bodies and document/audio/video form fields
 
 ### Extraction
-- `src/neocortex/extraction/pipeline.py` -- after marking episode consolidated, query for previous episode in same session and create `FOLLOWS` edge
+- `src/neocortex/extraction/pipeline.py` -- mark consolidation in the episode's source schema; call personal-only FOLLOWS linking only for personal extraction
 
 ### Recall & Scoring
-- `src/neocortex/db/adapter.py` -- add optional `expand_neighbors: bool` flag to recall that fetches temporal neighbors of matched episodes
+- `src/neocortex/db/adapter.py` -- add optional `expand_neighbors: bool` flag to recall that fetches temporal neighbors of matched personal episodes
 - `src/neocortex/scoring.py` -- add short-term recency boost function (separate from standard recency decay)
-- `src/neocortex/mcp_settings.py` -- new settings: `episode_stm_window_hours`, `episode_stm_boost`, `recall_expand_neighbors`
+- `src/neocortex/mcp_settings.py` -- new settings: `episode_stm_window_hours`, `episode_stm_boost_factor`, `recall_expand_neighbors`
 
 ### Tools
-- `src/neocortex/tools/recall.py` -- pass `expand_neighbors` setting through to adapter; include `session_id` in returned episode results
+- `src/neocortex/tools/recall.py` -- pass separate episode-query embedding context as needed; include session/neighbor provenance in returned structured results
 
 ### Tests
 - `tests/test_episode_session.py` (new) -- tests for session tagging, FOLLOWS edge creation, neighbor expansion
@@ -144,10 +147,12 @@ revise affected stages, and get user confirmation before continuing.
 
 ## Decisions
 
-**D1 — session_id is caller-supplied, not auto-generated**: Rather than auto-generating sessions by time-gap heuristics on the server side, the ingestion API will accept an optional `session_id` string. When absent, a UUID is generated per ingestion request. This keeps the system simple and lets clients group episodes explicitly (e.g., one session = one MCP conversation turn batch). Auto-session detection can be added as a follow-up.
+**D1 — session_id is caller-supplied, not auto-generated by heuristics**: Rather than inferring sessions by time gaps on the server side, the ingestion API accepts an optional `session_id` string. When absent, `EpisodeProcessor` generates one UUID per ingestion request and applies it to every episode created by that request (for example, all events in one `/ingest/events` batch share the fallback UUID). This keeps the system simple and lets clients group episodes explicitly. Auto-session detection can be added as a follow-up.
 
-**D2 — FOLLOWS edges are graph-local (per-agent schema only)**: Session ordering is a personal memory concern. FOLLOWS edges are written only to the originating agent's personal schema, never to shared domain graphs.
+**D2 — FOLLOWS edges are personal-only**: Session ordering is a personal memory concern. `FOLLOWS` edges are written only during extraction into the originating agent's personal schema. Domain-routed extraction and explicit `target_graph` extraction must not create `FOLLOWS` edges in shared schemas, even if those schemas contain session-tagged episodes.
 
 **D3 — Neighbor expansion is opt-in via settings flag**: Adding neighbors to every recall response would inflate token usage. The `recall_expand_neighbors` setting (default `true`) can be disabled for latency-sensitive use cases.
 
 **D4 — Sentence-level sub-indexing deferred**: MemMachine's sentence chunking contributes only +0.8% on LongMemEval. The extraction pipeline already achieves fine-grained indexing via entity/relation nodes. Sentence-level chunking is excluded from this plan to keep scope focused.
+
+**D5 — session_sequence is derived from ingestion chronology, not extraction completion**: Extraction jobs may complete out of order. `session_sequence` is assigned when an episode is stored, under a per-agent/session advisory lock in the PostgreSQL adapter. Neighbor expansion and output sorting fall back to `(created_at, id)` if old rows have `NULL` sequence.

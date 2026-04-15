@@ -56,22 +56,29 @@ uv run python -m neocortex.migrations graph ncx_<agent_id>__personal
 ## Test session-tagged ingestion
 
 ```bash
-# Ingest with explicit session_id
-.claude/skills/neocortex/scripts/ingest.sh text \
-  --content "First message in session" \
-  --session-id "test-session-001"
+# Ingest with explicit session_id.
+# The current ingest.sh wrapper must be updated before it can pass session_id;
+# until then use raw curl.
+curl -sS -X POST http://localhost:8001/ingest/text \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer claude-code-work" \
+  -d '{"text":"First message in session","session_id":"test-session-001"}'
 
-.claude/skills/neocortex/scripts/ingest.sh text \
-  --content "Second message in session" \
-  --session-id "test-session-001"
+curl -sS -X POST http://localhost:8001/ingest/text \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer claude-code-work" \
+  -d '{"text":"Second message in session","session_id":"test-session-001"}'
 
-.claude/skills/neocortex/scripts/ingest.sh text \
-  --content "Third message in session" \
-  --session-id "test-session-001"
+curl -sS -X POST http://localhost:8001/ingest/text \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer claude-code-work" \
+  -d '{"text":"Third message in session","session_id":"test-session-001"}'
 
-# Ingest without session_id (auto-UUID assigned)
-.claude/skills/neocortex/scripts/ingest.sh text \
-  --content "Isolated episode with no explicit session"
+# Ingest without session_id (EpisodeProcessor assigns one request-level UUID)
+curl -sS -X POST http://localhost:8001/ingest/text \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer claude-code-work" \
+  -d '{"text":"Isolated episode with no explicit session"}'
 ```
 
 ---
@@ -96,5 +103,6 @@ uv run python -m neocortex.tui
 curl -X POST http://localhost:8000/mcp/v1/call_tool \
   -H "Content-Type: application/json" \
   -d '{"tool": "recall", "arguments": {"query": "test session tagging"}}'
-# Response should contain structured JSON with session_id, created_at, is_context_neighbor fields
+# Response structured_content should include formatted_context with
+# session_id, created_at, is_context_neighbor fields
 ```

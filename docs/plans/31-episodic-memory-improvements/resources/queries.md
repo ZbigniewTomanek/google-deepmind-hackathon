@@ -35,8 +35,8 @@ ORDER BY session_sequence ASC NULLS LAST, created_at ASC;
 ```sql
 SELECT
     e.id,
-    e.properties->>'_episode_follows' AS episode_follows,
-    e.properties->>'_episode_precedes' AS episode_precedes,
+    e.properties->>'episode_follows' AS episode_follows,
+    e.properties->>'episode_precedes' AS episode_precedes,
     et.name AS edge_type,
     sn.name AS source_node,
     tn.name AS target_node
@@ -45,7 +45,7 @@ JOIN {schema}.edge_type et ON et.id = e.type_id
 JOIN {schema}.node sn ON sn.id = e.source_id
 JOIN {schema}.node tn ON tn.id = e.target_id
 WHERE et.name = 'FOLLOWS'
-  AND e.properties ? '_episode_follows'
+  AND e.properties ? 'episode_follows'
 ORDER BY e.created_at DESC
 LIMIT 20;
 ```
@@ -62,7 +62,7 @@ SELECT
 FROM {schema}.episode ep
 LEFT JOIN {schema}.edge e ON
     e.type_id = (SELECT id FROM {schema}.edge_type WHERE name = 'FOLLOWS')
-    AND (e.properties->>'_episode_follows')::int = ep.id
+    AND (e.properties->>'episode_follows')::int = ep.id
 WHERE ep.session_id IS NOT NULL
 GROUP BY ep.session_id
 ORDER BY total_episodes DESC;
@@ -84,10 +84,13 @@ WHERE session_id IS NULL;
 
 ```sql
 EXPLAIN SELECT id FROM {schema}.node
-WHERE (properties->>'_source_episode')::int = 42;
+WHERE properties->>'_source_episode' = '42';
 ```
 
-After Stage 2 migration: should show `Index Scan` on `idx_node_source_episode`, not `Seq Scan`.
+After Stage 1 migration: this predicate is compatible with
+`idx_node_source_episode`. On tiny tables PostgreSQL may still choose a
+sequential scan; use enough rows or `SET enable_seqscan = off` when verifying
+index compatibility.
 
 ---
 
