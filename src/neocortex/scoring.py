@@ -250,6 +250,23 @@ def mmr_rerank(
     return selected + without_emb
 
 
+def truncate_preserving_neighbors(items: list, limit: int) -> list:
+    """Keep top ``limit`` primary items plus neighbors of surviving nuclei.
+
+    Without this, neighbors (scored at 0.6x of their nucleus) are always
+    cut by a naive ``[:limit]`` slice, making session-context expansion
+    useless.  The returned list may exceed ``limit`` — it contains
+    ``limit`` primary results plus their session-context neighbors.
+
+    Works with any objects that have ``neighbor_of`` and ``item_id``
+    attributes (e.g. ``RecallItem``).
+    """
+    primary = [i for i in items if i.neighbor_of is None][:limit]
+    primary_ids = {i.item_id for i in primary}
+    neighbors = [i for i in items if i.neighbor_of is not None and i.neighbor_of in primary_ids]
+    return primary + neighbors
+
+
 def neighborhood_to_adjacency(
     neighborhood: list[dict],
     center_node_id: int,

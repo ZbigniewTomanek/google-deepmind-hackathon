@@ -183,6 +183,8 @@ async def _wait_for_extraction(baseline_job_id: int) -> None:
                     return
                 if failed > 0:
                     raise AssertionError(f"All {failed} extraction jobs failed")
+                # No jobs were enqueued at all
+                raise AssertionError("No extraction jobs found after baseline — nothing was enqueued")
             await asyncio.sleep(JOB_POLL_INTERVAL)
         raise AssertionError(f"Extraction jobs did not complete within {JOB_WAIT_TIMEOUT}s")
     finally:

@@ -8,7 +8,7 @@ from loguru import logger
 
 from neocortex.auth.dependencies import ensure_provisioned, get_agent_id_from_context
 from neocortex.schemas.memory import GraphContext, RecallItem, RecallResult
-from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency
+from neocortex.scoring import compute_spreading_activation, neighborhood_to_adjacency, truncate_preserving_neighbors
 
 
 def _format_recall_context(results: list[RecallItem]) -> str:
@@ -105,7 +105,9 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
 
     Args:
         query: What you want to know, in natural language.
-        limit: Maximum number of results to return (1-100).
+        limit: Maximum number of primary results to return (1-100).
+               Session-context neighbors are included additionally,
+               so the actual result count may exceed this value.
     """
     if ctx is None:
         raise RuntimeError("FastMCP context is required for recall().")
@@ -250,12 +252,8 @@ async def recall(query: str, limit: int = 10, ctx: Context | None = None) -> Rec
     # Re-sort by updated score
     all_results.sort(key=lambda item: item.score, reverse=True)
 
-    # Keep top `limit` primary items (non-neighbors) plus all neighbors
-    # of surviving nuclei, so that session-context expansion isn't lost.
-    primary = [i for i in all_results if i.neighbor_of is None][:limit]
-    primary_ids = {i.item_id for i in primary}
-    neighbors = [i for i in all_results if i.neighbor_of is not None and i.neighbor_of in primary_ids]
-    final_results = primary + neighbors
+    # Record access for returned results (ACT-R activation tracking)
+    final_results = truncate_preserving_neighbors(all_results, limit)
     recalled_node_ids = [r.item_id for r in final_results if r.source_kind == "node"]
     recalled_episode_ids = [r.item_id for r in final_results if r.source_kind == "episode"]
     if recalled_node_ids:

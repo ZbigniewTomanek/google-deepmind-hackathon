@@ -160,15 +160,25 @@ do_start() {
     wait_for_postgres
     apply_migrations
 
-    # --- Source .env ---
-    # Preserve caller-set NEOCORTEX_DEV_TOKENS_FILE (e.g. from run_e2e.sh)
-    # since .env may override it.
-    local _saved_tokens="${NEOCORTEX_DEV_TOKENS_FILE:-}"
+    # --- Source .env (without overwriting caller-exported vars) ---
+    # Using read-based parsing instead of `set -a; source .env` so that
+    # env vars already set by the caller (e.g. run_e2e.sh) are preserved.
     if [[ -f "$PROJECT_DIR/.env" ]]; then
-        set -a; source "$PROJECT_DIR/.env"; set +a
-    fi
-    if [[ -n "$_saved_tokens" ]]; then
-        NEOCORTEX_DEV_TOKENS_FILE="$_saved_tokens"
+        while IFS='=' read -r key value; do
+            # Skip comments and blank lines
+            [[ "$key" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "$key" ]] && continue
+            # Strip leading/trailing whitespace from key
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key%"${key##*[![:space:]]}"}"
+            # Strip surrounding quotes from value
+            value="${value#\"}" ; value="${value%\"}"
+            value="${value#\'}" ; value="${value%\'}"
+            # Only export if the variable is not already set by the caller
+            if [[ -z "${!key+x}" ]]; then
+                export "$key=$value"
+            fi
+        done < "$PROJECT_DIR/.env"
     fi
 
     # --- MCP server ---

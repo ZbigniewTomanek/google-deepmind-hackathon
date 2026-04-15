@@ -24,6 +24,7 @@ from neocortex.scoring import (
     compute_stm_boost,
     compute_supersession_adjustment,
     mmr_rerank,
+    truncate_preserving_neighbors,
 )
 
 if TYPE_CHECKING:
@@ -326,13 +327,7 @@ class GraphServiceAdapter:
         merged_results = [item for batch in results_per_schema for item in batch]
         merged_results.sort(key=lambda item: (item.score, item.source_kind == "node"), reverse=True)
         deduped = _deduplicate_recall_items(merged_results)
-        # Keep top `limit` primary items (non-neighbors), plus all neighbors
-        # of surviving nuclei.  Without this, neighbors (scored at 0.6x) are
-        # always cut by a naive [:limit] slice, making expansion useless.
-        primary = [i for i in deduped if i.neighbor_of is None][:limit]
-        primary_ids = {i.item_id for i in primary}
-        neighbors = [i for i in deduped if i.neighbor_of is not None and i.neighbor_of in primary_ids]
-        top_results = primary + neighbors
+        top_results = truncate_preserving_neighbors(deduped, limit)
         return _sort_session_clusters_chronologically(top_results)
 
     async def update_episode_embedding(
